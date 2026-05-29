@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>KarinCore</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+
+  <div id="splash-screen">
+    <img src="/karincore-icon-main.png" alt="KarinCore" class="splash-img">
+    <div class="splash-text">Initializing KarinCore...</div>
+  </div>
+
+  <div class="titlebar">
+    <div class="titlebar-drag-area" data-tauri-drag-region>
+      KarinCore Engine
+    </div>
+    <div class="titlebar-actions">
+      <div class="titlebar-button" id="titlebar-minimize">_</div>
+      <div class="titlebar-button" id="titlebar-maximize">◻</div>
+      <div class="titlebar-button" id="titlebar-close">✕</div>
+    </div>
+  </div>
+
+  <div id="overlay" class="overlay"></div>
+  <div id="sidebar" class="sidebar">
+    <div class="sidebar-header">KarinCore</div>
+    
+    <div class="sidebar-item" data-target="page-main">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.686 15A14.5 14.5 0 0 1 12 22a14.5 14.5 0 0 1 0-20 10 10 0 1 0 9.542 13"/><path d="M2 12h8.5"/><path d="M20 6V4a2 2 0 1 0-4 0v2"/><rect width="8" height="5" x="14" y="6" rx="1"/></svg>
+      <span data-i18n="menu_home">Главная</span>
+    </div>
+    
+    <div class="sidebar-item" data-target="page-routing">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.828 14.828 21 21"/><path d="M21 16v5h-5"/><path d="m21 3-9 9-4-4-6 6"/><path d="M21 8V3h-5"/></svg>
+      <span data-i18n="menu_routing">Маршрутизация</span>
+    </div>
+    
+    <div class="sidebar-item" data-target="page-logs">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/></svg>
+      <span data-i18n="menu_logs">Логи</span>
+    </div>
+    
+    <div class="sidebar-item" data-target="page-settings">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
+      <span data-i18n="menu_settings">Настройки</span>
+    </div>
+    
+    <div class="sidebar-item" data-target="page-about">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>
+      <span data-i18n="menu_about">О проекте</span>
+    </div>
+    
+    <div class="sidebar-footer">v 1.0</div>
+  </div>
+
+  <div class="app-header">
+    <button id="btn-menu" class="icon-btn">☰</button>
+    <h2 style="margin: 0; font-weight: 600;">KarinCore</h2>
+  </div>
+
+  <div id="page-main" class="page-view active">
+    
+    <div class="karin-console">
+      <span class="karin-prompt">karin@core:~$</span>
+      <span id="karin-msg" class="karin-message"></span><span class="karin-cursor"></span>
+    </div>
+
+    <div class="panel status-bar">
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <div>
+          <span data-i18n="status_label">Статус:</span> 
+          <span id="status-text" class="status-inactive" data-i18n="status_inactive">Отключено</span>
+        </div>
+        <div id="status-ip-box" style="display: none; font-size: 12px; color: var(--text-dim); background: var(--input-bg); padding: 4px 8px; border-radius: 4px; font-family: monospace;">
+          IP: <span id="status-ip" style="color: #bac2de;">...</span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <button id="btn-ping" class="btn-ping" style="display: none;" data-i18n="btn_ping">Пинг</button>
+        <button id="btn-disconnect" class="secondary" style="display: none;" data-i18n="btn_disconnect">Отключить</button>
+      </div>
+    </div>
+
+    <div class="panel links-wrapper">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 data-i18n="config_title">Конфигурации</h3>
+        <button id="btn-edit-mode" style="background: transparent; border: none; cursor: pointer; padding: 0;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+        </button>
+      </div>
+      
+      <div class="input-group" id="import-bar">
+        <input type="text" id="link-input" data-i18n-placeholder="input_placeholder" placeholder="vless:// или URL подписки...">
+        <button id="btn-save" data-i18n="btn_save">Сохранить</button>
+      </div>
+
+      <div id="edit-bar" class="edit-bar" style="display: none;">
+        <button id="btn-edit-select-all" class="secondary" style="margin-right: auto;" data-i18n="btn_edit_select_all">Выбрать всё</button>
+        <button id="btn-edit-group" class="secondary" data-i18n="btn_edit_group">В группу</button>
+        <button id="btn-edit-rename" class="secondary" data-i18n="btn_rename">Переименовать</button>
+        <button id="btn-edit-ungroup" class="secondary" data-i18n="btn_edit_ungroup">Разгруппировать</button>
+        <button id="btn-edit-pin" class="secondary" data-i18n="btn_pin">Закрепить</button>
+        <button id="btn-edit-delete" class="danger" data-i18n="btn_delete">Удалить</button>
+        <button id="btn-edit-cancel" style="background: transparent; border: 1px solid var(--text-dim); color: var(--text-color);" data-i18n="btn_cancel">Отмена</button>
+      </div>
+
+      <div id="links-container" class="links-list"></div>
+    </div>
+  </div>
+
+  <div id="page-routing" class="page-view">
+    <div class="panel links-wrapper">
+      
+      <div style="display: flex; justify-content: space-between; align-items: center;" class="header-actions">
+        <h3 style="margin-bottom: 5px;">
+          <span data-i18n="routing_title">Маршрутизация</span> 
+          (<span data-i18n="routing_default">По умолчанию:</span> <span id="default-outbound-label" style="color:var(--accent);">Proxy</span>)
+        </h3>
+        <button id="btn-route-action" style="background: transparent; border: none; cursor: pointer; padding: 0;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share-icon lucide-share"><path d="M12 2v13"/><path d="m16 6-4-4-4 4"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
+        </button>
+      </div>
+      
+      <p style="font-size: 12px; color: var(--text-dim); margin-top: 10px; margin-bottom: 15px;" data-i18n="routing_hint">
+        Кликните на фон колонки, чтобы сделать её маршрутом по умолчанию.
+      </p>
+      
+      <div class="links-list" style="padding-bottom: 30px;">
+        <div class="routing-container">
+          <div class="route-column" id="col-direct" data-zone="direct">
+            <h3 style="color: var(--success); pointer-events: none;">Direct</h3>
+            <div class="drop-zone" id="zone-direct"></div>
+          </div>
+          <div class="route-column active-default" id="col-proxy" data-zone="proxy">
+            <h3 style="color: var(--accent); pointer-events: none;">Proxy</h3>
+            <div class="drop-zone" id="zone-proxy"></div>
+          </div>
+          <div class="route-column" id="col-block" data-zone="block">
+            <h3 style="color: var(--danger); pointer-events: none;">Block</h3>
+            <div class="drop-zone" id="zone-block"></div>
+          </div>
+        </div>
+
+        <div class="dns-grid">
+          <div class="dns-card">
+            <h4 style="margin: 0; color: #bac2de;">Domestic DNS</h4>
+            <div class="dns-row">
+              <span>Type:</span> 
+              <select id="dns-dom-type">
+                <option value="doh">DoH</option>
+                <option value="dou">DoU</option>
+              </select>
+            </div>
+            <div class="dns-row"><span>URL:</span> <input type="text" id="dns-dom-url" value="https://dns.yandex.ru/dns-query"></div>
+            <div class="dns-row"><span>IP:</span> <input type="text" id="dns-dom-ip" value="77.88.8.8"></div>
+          </div>
+          <div class="dns-card">
+            <h4 style="margin: 0; color: #bac2de;">Remote DNS</h4>
+            <div class="dns-row">
+              <span>Type:</span> 
+              <select id="dns-rem-type">
+                <option value="doh">DoH</option>
+                <option value="dou">DoU</option>
+              </select>
+            </div>
+            <div class="dns-row"><span>URL:</span> <input type="text" id="dns-rem-url" value="https://1.1.1.1/dns-query"></div>
+            <div class="dns-row"><span>IP:</span> <input type="text" id="dns-rem-ip" value="1.1.1.1"></div>
+          </div>
+        </div>
+        
+        <div class="profiles-section">
+            <h3 style="font-size: 15px;" data-i18n="saved_profiles">Сохраненные профили</h3>
+            <div id="routing-profiles-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="page-logs" class="page-view">
+    <div class="panel links-wrapper">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h3 style="margin: 0;" data-i18n="logs_title">Live Логи Xray</h3>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <label class="switch">
+            <input type="checkbox" id="toggle-logs" checked>
+            <span class="slider"></span>
+          </label>
+          <span style="font-size: 12px; color: var(--text-dim);" data-i18n="logs_stream">Стриминг</span>
+        </div>
+      </div>
+      <pre id="log-output" style="background: #11111b; border: 1px solid #313244; padding: 15px; border-radius: 8px; overflow-y: auto; flex-grow: 1; margin-bottom: 10px; font-size: 12px; color: #a6adc8; white-space: pre-wrap; word-wrap: break-word; font-family: monospace;"></pre>
+    </div>
+  </div>
+
+  <div id="page-settings" class="page-view">
+    <div class="panel">
+      <h3 data-i18n="settings_title">Настройки</h3>
+      <div style="margin-top: 15px; display: flex; align-items: center; gap: 15px;">
+        <label style="font-size: 14px;" data-i18n="settings_lang">Язык интерфейса:</label>
+        <select id="lang-select">
+          <option value="en">English</option>
+          <option value="ru">Русский</option>
+          <option value="fr">Français</option>
+          <option value="zh">中文</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  
+  <div id="page-about" class="page-view">
+    <div class="about-page-container">
+      <div class="panel" id="about-info-panel"></div>
+      <div class="panel" id="about-patch-panel"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+
+  <dialog id="search-modal" class="panel" style="width: 400px;">
+    <h3 data-i18n="modal_add_rule">Добавить правило</h3>
+    <input type="text" id="modal-search" data-i18n-placeholder="modal_search" placeholder="Поиск GeoSite...">
+    <div id="search-results" class="links-list" style="margin-top: 10px; max-height: 200px;"></div>
+    
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #45475a;">
+    
+    <div class="input-group">
+      <input type="text" id="manual-input" data-i18n-placeholder="modal_manual" placeholder="IP или домен...">
+      <button id="btn-manual-add" data-i18n="btn_add">Добавить</button>
+    </div>
+    <button class="secondary" style="margin-top: 20px; width: 100%;" onclick="document.getElementById('search-modal').close()" data-i18n="btn_close">Закрыть</button>
+  </dialog>
+
+  <dialog id="prompt-modal" class="panel">
+    <h3 id="prompt-title" style="margin-bottom: 15px; font-size: 16px;">Введите значение</h3>
+    <input type="text" id="prompt-input" style="width: 100%; box-sizing: border-box; margin-bottom: 20px;">
+    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+      <button id="prompt-cancel" class="secondary" style="flex: 1;" data-i18n="btn_cancel">Отмена</button>
+      <button id="prompt-ok" style="flex: 1;">ОК</button>
+    </div>
+  </dialog>
+
+  <dialog id="route-action-modal" class="panel">
+    <h3 style="margin-bottom: 15px; font-size: 16px;" data-i18n="route_actions">Действия с профилем</h3>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <button id="btn-route-save" class="secondary" data-i18n="route_save_new">Сохранить как новый профиль</button>
+      <button id="btn-route-import" class="secondary" data-i18n="route_import">Импортировать из файла</button>
+      <button class="secondary" onclick="document.getElementById('route-action-modal').close()" data-i18n="btn_cancel">Отмена</button>
+    </div>
+    <input type="file" id="route-file-input" accept=".json" style="display: none;">
+  </dialog>
+
+</body>
+</html>
