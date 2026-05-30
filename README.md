@@ -69,7 +69,7 @@ The recommended installation method for Arch-based systems (Manjaro, EndeavourOS
 
 ```bash
 
-yay -S karincore
+yay -S karincore-git
 
 ```
 
