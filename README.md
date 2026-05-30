@@ -49,8 +49,8 @@ No bloated Electron apps, no restrictive sandboxes breaking your system routing.
 ## 📸 Screenshots
 
 <div align="center">
-<img src=".github/assets/screenshot-main.png" alt="Main Interface" width="45%"/>
-<img src=".github/assets/screenshot-routing.png" alt="Routing Options" width="45%"/>
+<img src=".github/assets/screenshot-main.jpeg" alt="Main Interface" width="45%"/>
+<img src=".github/assets/screenshot-routing.jpeg" alt="Routing Options" width="45%"/>
 </div>
 
 ---
