@@ -137,7 +137,7 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
                 attempts += 1;
                 continue;
             } else {
-                return Err("Провайдер отдает сырой JSON-конфиг. Пожалуйста, используйте ссылку в формате Base64 (V2Ray).".to_string());
+                break;
             }
         }
         break; 
@@ -148,32 +148,38 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
     // Inline Helper: Parse JSON subscription format
     let parse_json = |json_str: &str, out_links: &mut Vec<String>| {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
-            if let Some(arr) = json.as_array() {
-                for item in arr {
-                    let remarks = item.get("remarks").and_then(|v| v.as_str()).unwrap_or("Proxy");
-                    if let Some(outbounds) = item.get("outbounds").and_then(|v| v.as_array()) {
-                        for out in outbounds {
-                            if out.get("protocol").and_then(|v| v.as_str()) == Some("vless") {
-                                let address = out.pointer("/settings/vnext/0/address").and_then(|v| v.as_str()).unwrap_or("");
-                                let port = out.pointer("/settings/vnext/0/port").and_then(|v| v.as_u64()).unwrap_or(443);
-                                let id = out.pointer("/settings/vnext/0/users/0/id").and_then(|v| v.as_str()).unwrap_or("");
-                                let flow = out.pointer("/settings/vnext/0/users/0/flow").and_then(|v| v.as_str()).unwrap_or("");
-                                
-                                let stream = out.get("streamSettings");
-                                let network = stream.and_then(|v| v.pointer("/network")).and_then(|v| v.as_str()).unwrap_or("tcp");
-                                let security = stream.and_then(|v| v.pointer("/security")).and_then(|v| v.as_str()).unwrap_or("none");
-                                let pbk = stream.and_then(|v| v.pointer("/realitySettings/publicKey")).and_then(|v| v.as_str()).unwrap_or("");
-                                let sni = stream.and_then(|v| v.pointer("/realitySettings/serverName")).and_then(|v| v.as_str()).unwrap_or("");
-                                let sid = stream.and_then(|v| v.pointer("/realitySettings/shortId")).and_then(|v| v.as_str()).unwrap_or("");
-                                let fp = stream.and_then(|v| v.pointer("/realitySettings/fingerprint")).and_then(|v| v.as_str()).unwrap_or("firefox");
+            // Магия: если пришел одиночный объект (сырой конфиг Xray) — оборачиваем его в массив.
+            // Если пришел нормальный массив (как в подписках) — берем его.
+            let arr = if let Some(a) = json.as_array() {
+                a.clone()
+            } else {
+                vec![json]
+            };
 
-                                let safe_remarks = remarks.replace(' ', "%20");
-                                let link = format!("vless://{}@{}:{}?type={}&security={}&pbk={}&sni={}&sid={}&fp={}&flow={}#{}",
-                                    id, address, port, network, security, pbk, sni, sid, fp, flow, safe_remarks
-                                );
-                                out_links.push(link);
-                                break;
-                            }
+            for item in arr {
+                let remarks = item.get("remarks").and_then(|v| v.as_str()).unwrap_or("Proxy");
+                if let Some(outbounds) = item.get("outbounds").and_then(|v| v.as_array()) {
+                    for out in outbounds {
+                        if out.get("protocol").and_then(|v| v.as_str()) == Some("vless") {
+                            let address = out.pointer("/settings/vnext/0/address").and_then(|v| v.as_str()).unwrap_or("");
+                            let port = out.pointer("/settings/vnext/0/port").and_then(|v| v.as_u64()).unwrap_or(443);
+                            let id = out.pointer("/settings/vnext/0/users/0/id").and_then(|v| v.as_str()).unwrap_or("");
+                            let flow = out.pointer("/settings/vnext/0/users/0/flow").and_then(|v| v.as_str()).unwrap_or("");
+                            
+                            let stream = out.get("streamSettings");
+                            let network = stream.and_then(|v| v.pointer("/network")).and_then(|v| v.as_str()).unwrap_or("tcp");
+                            let security = stream.and_then(|v| v.pointer("/security")).and_then(|v| v.as_str()).unwrap_or("none");
+                            let pbk = stream.and_then(|v| v.pointer("/realitySettings/publicKey")).and_then(|v| v.as_str()).unwrap_or("");
+                            let sni = stream.and_then(|v| v.pointer("/realitySettings/serverName")).and_then(|v| v.as_str()).unwrap_or("");
+                            let sid = stream.and_then(|v| v.pointer("/realitySettings/shortId")).and_then(|v| v.as_str()).unwrap_or("");
+                            let fp = stream.and_then(|v| v.pointer("/realitySettings/fingerprint")).and_then(|v| v.as_str()).unwrap_or("firefox");
+
+                            let safe_remarks = remarks.replace(' ', "%20");
+                            let link = format!("vless://{}@{}:{}?type={}&security={}&pbk={}&sni={}&sid={}&fp={}&flow={}#{}",
+                                id, address, port, network, security, pbk, sni, sid, fp, flow, safe_remarks
+                            );
+                            out_links.push(link);
+                            break;
                         }
                     }
                 }
