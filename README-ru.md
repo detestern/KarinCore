@@ -63,7 +63,7 @@ KarinCore разработана с прицелом на максимальну
 Рекомендуемый способ установки для пользователей Arch-based систем (Manjaro, EndeavourOS и др.). Пакет автоматически соберет ядро, установит зависимости и настроит системные службы.
 
 ```bash
-yay -S karincore
+yay -S karincore-git
 ```
 
 ### Ubuntu / Debian / Linux Mint
