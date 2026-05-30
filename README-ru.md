@@ -1,19 +1,22 @@
-[🇬🇧 English](README.md) | [🇷🇺 Русский](README-ru.md)
-
 <div align="center">
-  <img src="public/karincore-icon-main.png" alt="KarinCore Logo" width="200"/>
-  <h1>KarinCore</h1>
-  <p><strong>Современный, эстетичный и безопасный прокси-клиент для Linux</strong></p>
+<img src="public/karincore-icon-main.png" alt="KarinCore Logo" width="200"/>
+<h1>KarinCore</h1>
+<p><strong>Современный, эстетичный и безопасный прокси-клиент для Linux</strong></p>
+<p>
+<a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a>
+</p>
 
-  <p>
-      <a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a>
-    </p>
+![Platform](https://img.shields.io/badge/Platform-Linux-informational?style=flat&logo=linux)
 
-  ![Platform](https://img.shields.io/badge/Platform-Linux-informational?style=flat&logo=linux)
-  ![Built with Rust](https://img.shields.io/badge/Built_with-Rust-orange?style=flat&logo=rust)
-  ![Tauri](https://img.shields.io/badge/Framework-Tauri-blue?style=flat&logo=tauri)
-  ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
+![Built with Rust](https://img.shields.io/badge/Built_with-Rust-orange?style=flat&logo=rust)
+
+![Tauri](https://img.shields.io/badge/Framework-Tauri-blue?style=flat&logo=tauri)
+
+![License](https://img.shields.io/badge/License-MIT-green?style=flat)
+
 </div>
+
+
 
 ## 🌌 Философия проекта
 
@@ -25,6 +28,8 @@ KarinCore создана для того, чтобы навсегда избав
 
 ---
 
+
+
 ## ✨ Ключевые возможности
 
 *   **Нативная интеграция:** Ядро работает как системный демон (`karin-proxy-daemon.service`), обеспечивая стабильность даже при закрытом интерфейсе.
@@ -35,19 +40,24 @@ KarinCore создана для того, чтобы навсегда избав
 
 ---
 
+
+
 ## 📸 Скриншоты
 
 <div align="center">
-  <!-- Помести свои красивые скриншоты с Hyprland в папку .github/assets/ после создания репозитория -->
-  <img src=".github/assets/screenshot-main.png" alt="Main Interface" width="45%"/>
-  <img src=".github/assets/screenshot-routing.png" alt="Routing Options" width="45%"/>
+<img src=".github/assets/screenshot-main.png" alt="Main Interface" width="45%"/>
+<img src=".github/assets/screenshot-routing.png" alt="Routing Options" width="45%"/>
 </div>
 
 ---
 
+
+
 ## 🚀 Установка
 
 KarinCore разработана с прицелом на максимальную совместимость с современными дистрибутивами Linux.
+
+
 
 ### Arch Linux (AUR)
 Рекомендуемый способ установки для пользователей Arch-based систем (Manjaro, EndeavourOS и др.). Пакет автоматически соберет ядро, установит зависимости и настроит системные службы.
@@ -56,16 +66,18 @@ KarinCore разработана с прицелом на максимальну
 yay -S karincore
 ```
 
-Ubuntu / Debian / Linux Mint
+### Ubuntu / Debian / Linux Mint
 
-В разделе Releases всегда доступен свежий .deb пакет. Он автоматически настроит правила sudoers и systemd во время распаковки.
+В разделе [Releases](../../releases) всегда доступен свежий `.deb` пакет. Он автоматически настроит правила `sudoers` и `systemd` во время распаковки.
 
 ```bash
 sudo dpkg -i KarinCore_1.0.0_amd64.deb
 sudo apt install -f # если потребуются дополнительные зависимости
 ```
 
-Запуск и использование
+
+
+### Запуск и использование
 
 После установки обязательно включите бэкенд-демон, чтобы графический интерфейс мог с ним общаться:
 Bash
@@ -76,7 +88,9 @@ sudo systemctl enable --now karin-proxy-daemon.service
 
 После этого просто найдите KarinCore в меню приложений вашего десктопного окружения.
 
-🛠 Архитектура (Для гиков)
+
+
+## 🛠 Архитектура (Для гиков)
 
 Приложение разделено на два независимых бинарника:
 
@@ -85,11 +99,12 @@ sudo systemctl enable --now karin-proxy-daemon.service
     Frontend (karincore): Легковесный GUI на Tauri. Работает в пространстве пользователя (user-space), общается с демоном через IPC/сокеты и безопасно перезапускает его через заранее настроенные правила sudoers.
 
 Такое разделение прав позволяет сохранить систему в безопасности, не запуская весь графический стек с правами суперпользователя.
-🤝 Контрибьютинг и обратная связь
+
+
+
+## 🤝 Контрибьютинг и обратная связь
 
 Баг-репорты, пулл-реквесты и идеи по улучшению интерфейса горячо приветствуются!
 Если программа оказалась вам полезна — поставьте ⭐️ этому репозиторию.
 
-Этот файл нужно просто сохранить. В нем уже заложены места для скриншотов — тебе останется только сделать пару красивых снимков твоего рабочего стола, сложить их в папку .github/assets/ и закоммитить вместе с остальным кодом перед торжественным пушем.
-
-<p><a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a></p>
+<div align="center"><p><a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a></p></div>
