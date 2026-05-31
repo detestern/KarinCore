@@ -7,7 +7,6 @@
 }
 
 :root {
-    /* Color Palette (Catppuccin Mocha inspired) */
     --bg-color: #11111b;
     --panel-bg: #1e1e2e;
     --input-bg: #313244;
@@ -17,6 +16,29 @@
     --accent-hover: #cba6f7;
     --danger: #f38ba8;
     --success: #a6e3a1;
+
+    --base-crust: #11111b;
+    --base-mantle: #181825;
+    --border-color: #313244;
+    --border-hover: #45475a;
+    --console-text: #a6adc8;
+}
+
+:root[data-theme="light"] {
+    --bg-color: #e9eaec; 
+    --panel-bg: #ffffff; 
+    --input-bg: #d0d4dc; 
+    --text-color: #1a1a24; 
+    --text-dim: #505463; 
+    --accent: #ea76cb; 
+    --accent-hover: #d25baf; 
+    --danger: #e63946; 
+    --success: #2a9d8f;
+    --base-crust: #d0d4dc; 
+    --base-mantle: #f1f2f5; 
+    --border-color: #a8adb8; 
+    --border-hover: #828896; 
+    --console-text: #2b2d38; 
 }
 
 body {
@@ -55,12 +77,12 @@ h3 {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #313244;
+    background: var(--border-color);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #45475a;
+    background: var(--border-hover);
 }
 
 /* **********************************
@@ -84,7 +106,7 @@ input[type="text"],
 select {
     flex: 1;
     background-color: var(--input-bg);
-    border: 1px solid #45475a;
+    border: 1px solid var(--border-hover);
     border-radius: 8px;
     padding: 12px;
     color: var(--text-color);
@@ -130,7 +152,7 @@ select {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #313244;
+    background-color: var(--border-color);
     transition: .4s;
     border-radius: 20px;
 }
@@ -177,11 +199,11 @@ button:hover {
 button.secondary {
     background-color: var(--input-bg);
     color: var(--text-color);
-    border: 1px solid #45475a;
+    border: 1px solid var(--border-hover);
 }
 
 button.secondary:hover {
-    background-color: #45475a;
+    background-color: var(--border-hover);
 }
 
 button.danger {
@@ -257,8 +279,8 @@ button.danger {
     left: -280px;
     width: 280px;
     height: calc(100vh - 40px) !important;
-    background: #11111b;
-    border-right: 1px solid #313244;
+    background: var(--base-crust);
+    border-right: 1px solid var(--border-color);
     transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 1000;
     padding: 20px 0;
@@ -273,7 +295,7 @@ button.danger {
 
 .sidebar-header {
     padding: 0 20px 20px 20px;
-    border-bottom: 1px solid #313244;
+    border-bottom: 1px solid var(--border-color);
     margin-bottom: 10px;
     color: var(--accent);
     font-weight: bold;
@@ -335,12 +357,12 @@ button.danger {
 
 .titlebar {
     height: 40px;
-    background: #11111b;
+    background: var(--base-crust);
     user-select: none;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #313244;
+    border-bottom: 1px solid var(--border-color);
     position: fixed;
     top: 0;
     left: 0;
@@ -390,7 +412,7 @@ button.danger {
 }
 
 .titlebar-button:hover {
-    background: #313244;
+    background: var(--border-color);
     color: var(--text-color);
 }
 
@@ -452,7 +474,7 @@ button.danger {
     align-items: center;
     padding: 12px 20px;
     border-radius: 8px;
-    background-color: #181825;
+    background-color: var(--base-mantle);
     font-size: 14px;
     flex-shrink: 0;
 }
@@ -552,13 +574,13 @@ button.danger {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #181825;
+    background: var(--base-mantle);
     padding: 10px 15px;
     border-radius: 8px;
     margin-top: 10px;
     font-weight: 600;
     cursor: pointer;
-    border: 1px solid #313244;
+    border: 1px solid var(--border-color);
 }
 
 .group-content {
@@ -566,7 +588,7 @@ button.danger {
     flex-direction: column;
     gap: 8px;
     padding: 10px 0 10px 15px;
-    border-left: 2px solid #313244;
+    border-left: 2px solid var(--border-color);
     margin-left: 10px;
 }
 
@@ -583,7 +605,7 @@ button.danger {
     flex-wrap: wrap;
     gap: 10px;
     padding: 10px;
-    background: #181825;
+    background: var(--base-mantle);
     border-radius: 8px;
     margin-top: 15px;
     border: 1px dashed var(--accent);
@@ -666,11 +688,11 @@ button.danger {
 }
 
 .route-column {
-    background-color: #181825;
+    background-color: var(--base-mantle);
     padding: 15px;
     border-radius: 8px;
     min-height: 150px;
-    border: 2px solid #313244;
+    border: 2px solid var(--border-color);
     cursor: pointer;
     transition: border-color 0.2s;
 }
@@ -723,10 +745,10 @@ button.danger {
 }
 
 .dns-card {
-    background: #181825;
+    background: var(--base-mantle);
     padding: 15px;
     border-radius: 8px;
-    border: 1px solid #313244;
+    border: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -751,7 +773,7 @@ button.danger {
 /* Profiles List */
 .profiles-section {
     margin-top: 20px;
-    border-top: 1px solid #313244;
+    border-top: 1px solid var(--border-color);
     padding-top: 15px;
     padding-bottom: 30px;
 }
@@ -826,14 +848,14 @@ button.danger {
    ********************************** */
 
 .karin-console {
-    background: #11111b;
-    border: 1px solid #313244;
+    background: var(--base-crust);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 12px 15px;
     margin-bottom: 10px;
     font-family: 'Fira Code', 'JetBrains Mono', monospace;
     font-size: 13px;
-    color: #a6adc8;
+    color: var(--console-text);
     display: flex;
     align-items: center;
     min-height: 44px;

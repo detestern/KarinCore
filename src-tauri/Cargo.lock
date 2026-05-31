@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "karin-proxy"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "axum",
  "base64 0.21.7",
