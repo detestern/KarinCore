@@ -25,6 +25,7 @@ function safeParse(key: string, fallback: any): any {
     }
 }
 
+let currentTheme = localStorage.getItem('karin_theme') || 'dark';
 let currentLang = localStorage.getItem('karin_lang') || 'en';
 let activeLink: string | null = sessionStorage.getItem('karin_active_link') || null;
 let allAvailableTags: string[] = [];
@@ -107,6 +108,8 @@ const searchModal = document.getElementById('search-modal') as HTMLDialogElement
 const modalSearch = document.getElementById('modal-search') as HTMLInputElement | null;
 const searchResults = document.getElementById('search-results') as HTMLDivElement | null;
 const manualInput = document.getElementById('manual-input') as HTMLInputElement | null;
+const themeToggle = document.getElementById('theme-toggle') as HTMLInputElement | null;
+const themeLabel = document.getElementById('theme-label') as HTMLLabelElement | null;
 
 // DNS Elements
 const domType = document.getElementById('dns-dom-type') as HTMLSelectElement | null;
@@ -476,7 +479,7 @@ function renderLinkItem(item: ProxyLink) {
           <div class="link-name" style="font-size: 14.5px; display: flex; align-items: center; ${isCurrentActive ? 'color: var(--success); font-weight: bold;' : 'font-weight: 500;'}">
             ${item.pinned && !item.groupId ? pinIcon : ''}${displayName}
           </div>
-          <div class="link-url" style="font-size: 12px; color: #bac2de; opacity: 0.95; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; letter-spacing: 0.3px;">
+          <div class="link-url" style="font-size: 12px; color: var(--text-dim); opacity: 0.95; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; letter-spacing: 0.3px;">
             ${formattedProtocol}
           </div>
         </div>
@@ -595,7 +598,7 @@ function renderAboutPage() {
 
     if (infoPanel) {
         infoPanel.innerHTML = `
-            <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #313244; flex-shrink: 0;">
+            <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;">
                 <img src="/karin-about.png" alt="KarinCore" style="width: 90px; height: 90px; border-radius: 16px; object-fit: cover; border: 2px solid var(--accent); box-shadow: 0 0 15px rgba(203, 166, 247, 0.15);">
                 <div>
                     <h2 style="margin: 0; color: var(--accent); font-weight: 600; font-size: 26px; letter-spacing: 0.5px;">KarinCore</h2>
@@ -613,7 +616,7 @@ function renderAboutPage() {
                 
                 <div>
                     <h4 style="margin: 0 0 2px 0; color: var(--accent); font-size: 15px; font-weight: 600;">${t('about_roadmap_title')}</h4>
-                    <p style="margin: 0; padding-left: 10px; border-left: 2px solid #313244; text-align: justify;">${t('about_roadmap_p1')}</p>
+                    <p style="margin: 0; padding-left: 10px; border-left: 2px solid var(--border-color); text-align: justify;">${t('about_roadmap_p1')}</p>
                 </div>
                 
                 <div>
@@ -621,9 +624,9 @@ function renderAboutPage() {
                     <p style="margin: 0; text-align: justify;">${t('about_support_p1')}</p>
                 </div>
                 
-                <div style="background: #11111b; border: 1px solid #313244; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 13px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
+                <div style="background: var(--base-crust); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; font-family: monospace; font-size: 13px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
                     <div><span style="color: var(--accent);">• ${t('about_author')}:</span> detestern</div>
-                    <div><span style="color: var(--accent);">• GitHub:</span> <span class="copyable-item" data-copy="https://github.com/detestern/KarinProxy" style="color: var(--text-color);">https://github.com/detestern/KarinProxy</span></div>
+                    <div><span style="color: var(--accent);">• GitHub:</span> <span class="copyable-item" data-copy="https://github.com/detestern/KarinCore" style="color: var(--text-color);">https://github.com/detestern/KarinCore</span></div>
                     <div><span style="color: var(--accent);">• ${t('about_contact')}:</span> <span class="copyable-item" data-copy="detestern@proton.me" style="color: var(--text-color);">detestern@proton.me</span></div>
                     <div><span style="color: var(--accent);">• Crypto (USDT TRC20):</span> <span class="copyable-item" data-copy="TQCQhGQD6xgaDxwqAVcTiapS6rdcPyf24X" style="color: var(--success);">[TQCQhGQD6xgaDxwqAVcTiapS6rdcPyf24X]</span></div>
                 </div>
@@ -664,7 +667,7 @@ function renderAboutPage() {
 
     if (patchPanel) {
         patchPanel.innerHTML = `
-            <h3 style="margin-top: 0; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #313244; display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+            <h3 style="margin-top: 0; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                 ${t('patch_notes')}
             </h3>
@@ -745,6 +748,19 @@ function init() {
     renderAboutPage();
     loadDnsState(); 
     renderRoutingProfiles();
+    if (currentTheme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+        if (themeToggle) themeToggle.checked = true;
+        if (themeLabel) {
+            themeLabel.setAttribute('data-i18n', 'theme_light');
+            themeLabel.textContent = t('theme_light');
+        }
+    } else {
+        if (themeLabel) {
+            themeLabel.setAttribute('data-i18n', 'theme_dark');
+            themeLabel.textContent = t('theme_dark');
+        }
+    }
     
     // --- Static Event Bindings ---
     langSelect?.addEventListener('change', () => {
@@ -755,6 +771,27 @@ function init() {
         updateStatusUI(); 
         renderAboutPage();
         renderRoutingProfiles();
+    });
+
+    themeToggle?.addEventListener('change', (e) => {
+        const isLight = (e.target as HTMLInputElement).checked;
+        if (isLight) {
+            document.documentElement.setAttribute('data-theme', 'light');
+            localStorage.setItem('karin_theme', 'light');
+            currentTheme = 'light';
+            if (themeLabel) {
+                themeLabel.setAttribute('data-i18n', 'theme_light');
+                themeLabel.textContent = t('theme_light');
+            }
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+            localStorage.setItem('karin_theme', 'dark');
+            currentTheme = 'dark';
+            if (themeLabel) {
+                themeLabel.setAttribute('data-i18n', 'theme_dark');
+                themeLabel.textContent = t('theme_dark');
+            }
+        }
     });
     
     btnSave?.addEventListener('click', saveNewLink);
