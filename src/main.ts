@@ -36,17 +36,14 @@ let selectedLinks = new Set<string>();
 let selectedGroups = new Set<string>();
 let logInterval: number | null = null; 
 
-// Restore saved outbound route preference
 const savedOutbound = localStorage.getItem('karin_default_outbound');
 if (savedOutbound === 'direct' || savedOutbound === 'proxy' || savedOutbound === 'block') {
     defaultOutbound = savedOutbound;
 }
 
-// Initialize Groups
 let appGroups: ProxyGroup[] = safeParse('karin_groups', []);
 if (!Array.isArray(appGroups)) appGroups = [];
 
-// Initialize Links
 let rawLinks = safeParse('karin_links', []);
 if (!Array.isArray(rawLinks)) rawLinks = [];
 let appLinks: ProxyLink[] = rawLinks.map((l: any) => {
@@ -55,13 +52,11 @@ let appLinks: ProxyLink[] = rawLinks.map((l: any) => {
     return l;
 });
 
-// Initialize Routing Rules
 let routingState: Record<ZoneKey, RoutingRule[]> = safeParse('karin_routing', { direct: [], proxy: [], block: [] });
 if (!routingState.direct) routingState.direct = [];
 if (!routingState.proxy) routingState.proxy = [];
 if (!routingState.block) routingState.block = [];
 
-// Initialize Route Profiles
 let routeProfiles: RouteProfile[] = safeParse('karin_route_profiles', []);
 if (!Array.isArray(routeProfiles)) routeProfiles = [];
 routeProfiles = routeProfiles.map(p => {
@@ -110,8 +105,9 @@ const searchResults = document.getElementById('search-results') as HTMLDivElemen
 const manualInput = document.getElementById('manual-input') as HTMLInputElement | null;
 const themeToggle = document.getElementById('theme-toggle') as HTMLInputElement | null;
 const themeLabel = document.getElementById('theme-label') as HTMLLabelElement | null;
+const btnImportOvpn = document.getElementById('btn-import-ovpn') as HTMLButtonElement | null;
+const ovpnFileInput = document.getElementById('ovpn-file-input') as HTMLInputElement | null;
 
-// DNS Elements
 const domType = document.getElementById('dns-dom-type') as HTMLSelectElement | null;
 const domUrl = document.getElementById('dns-dom-url') as HTMLInputElement | null;
 const domIp = document.getElementById('dns-dom-ip') as HTMLInputElement | null;
@@ -133,28 +129,24 @@ const preventNativeZoom = (e: Event) => {
     const touchEvent = e as TouchEvent;
     const kbEvent = e as KeyboardEvent;
 
-    // 1. Block keyboard zoom (Ctrl + / Ctrl -)
     if (e.type === 'keydown' && (kbEvent.ctrlKey || kbEvent.metaKey) && 
        (kbEvent.key === '+' || kbEvent.key === '-' || kbEvent.key === '=' || kbEvent.key === '0')) {
         e.preventDefault();
         e.stopPropagation();
     }
     
-    // 2. Block touchpad and mouse wheel zoom (Ctrl + Scroll / Pinch-to-zoom)
     if ((e.type === 'wheel' || e.type === 'mousewheel' || e.type === 'DOMMouseScroll') && 
        (wheelEvent.ctrlKey || wheelEvent.metaKey)) {
         e.preventDefault();
         e.stopPropagation();
     }
 
-    // 3. Block multi-touch screen/touchpad gestures
     if (e.type === 'touchmove' && touchEvent.touches && touchEvent.touches.length > 1) {
         e.preventDefault();
         e.stopPropagation();
     }
 };
 
-// Attach listeners to the highest level (window) in the CAPTURE phase (capture: true)
 window.addEventListener('keydown', preventNativeZoom, { capture: true });
 window.addEventListener('wheel', preventNativeZoom, { passive: false, capture: true });
 window.addEventListener('mousewheel', preventNativeZoom, { passive: false, capture: true });
@@ -163,8 +155,6 @@ window.addEventListener('touchmove', preventNativeZoom, { passive: false, captur
 window.addEventListener('gesturestart', (e) => { e.preventDefault(); e.stopPropagation(); }, { capture: true });
 window.addEventListener('gesturechange', (e) => { e.preventDefault(); e.stopPropagation(); }, { capture: true });
 window.addEventListener('gestureend', (e) => { e.preventDefault(); e.stopPropagation(); }, { capture: true });
-
-// Always shut down the daemon when the window unloads
 window.addEventListener('beforeunload', () => { invoke('stop_proxy').catch(console.error); });
 
 // **********************************
@@ -249,7 +239,6 @@ async function saveNewLink() {
         }
     };
   
-    // Plain proxy link format
     if (input.startsWith('vless://') || input.startsWith('vmess://') || input.startsWith('trojan://') || input.startsWith('ss://')) {
         addLink(input); 
         saveData(); 
@@ -259,7 +248,6 @@ async function saveNewLink() {
         return;
     }
     
-    // Subscription URL format
     if (input.startsWith('http://') || input.startsWith('https://')) {
         if(!btnSave) return;
         const originalText = btnSave.innerText; 
@@ -407,6 +395,13 @@ function formatProxyInfo(linkUrl: string): string {
         if (linkUrl.startsWith('vmess://')) { if (!linkUrl.includes('?')) return 'VMESS | Base64'; }
         const url = new URL(linkUrl); 
         const protocol = url.protocol.replace(':', '').toUpperCase();
+
+        if (protocol === 'OVPN') {
+            const proto = (url.searchParams.get('proto') || 'UDP').toUpperCase();
+            const port = url.port || url.searchParams.get('port') || '1194';
+            return `OpenVPN | ${proto} | ${port}`;
+        }
+
         const type = (url.searchParams.get('type') || 'TCP').toUpperCase();
         let security = url.searchParams.get('security') || 'NONE';
         if (security.toLowerCase() === 'tls') security = 'TLS'; 
@@ -453,10 +448,19 @@ function renderLinkItem(item: ProxyLink) {
     let displayName = "Proxy";
     try {
         const url = new URL(item.url); 
-        displayName = `${url.hostname}:${url.port || '443'}`;
-        if (url.hash) displayName = decodeURIComponent(url.hash.substring(1)) + ` (${url.hostname})`;
-    } catch (e) { 
-        displayName = item.url.substring(0, 30) + '...'; 
+        if (url.protocol === 'ovpn:') {
+            const encodedName = url.searchParams.get('name');
+            if (encodedName) {
+                displayName = decodeURIComponent(encodedName).replace('.ovpn', '');
+            } else {
+                displayName = `OpenVPN (${url.hostname})`;
+            }
+        } else {
+            displayName = `${url.hostname}:${url.port || '443'}`;
+            if (url.hash) displayName = decodeURIComponent(url.hash.substring(1)) + ` (${url.hostname})`;
+        } 
+    }   catch (e) { 
+            displayName = item.url.substring(0, 30) + '...'; 
     }
 
     const formattedProtocol = formatProxyInfo(item.url);
@@ -536,7 +540,6 @@ function renderLinks() {
   
     linksContainer.innerHTML = html;
     
-    // Bind group checkbox events
     document.querySelectorAll('.edit-checkbox[data-group-id]').forEach(cb => {
         cb.addEventListener('change', (e) => {
             const gId = (e.target as HTMLInputElement).dataset.groupId!;
@@ -633,7 +636,6 @@ function renderAboutPage() {
             </div>
         `;
 
-        // Clipboard copy logic on click
         const copyItems = infoPanel.querySelectorAll('.copyable-item');
         copyItems.forEach(item => {
             item.addEventListener('click', async (e) => {
@@ -644,15 +646,12 @@ function renderAboutPage() {
                     try {
                         await navigator.clipboard.writeText(textToCopy);
                         
-                        // Save original text and color
                         const originalText = target.innerText;
                         const originalColor = target.style.color;
                         
-                        // Visual feedback
                         target.innerText = t('btn_copied');
                         target.style.color = 'var(--accent)';
                         
-                        // Revert after 1.5 seconds
                         setTimeout(() => {
                             target.innerText = originalText;
                             target.style.color = originalColor;
@@ -720,24 +719,21 @@ function addRule(value: string, type: string) {
 // INITIALIZATION & EVENT LISTENERS
 // **********************************
 function init() {
-    // --- Window Controls (Rust Integration) ---
     document.getElementById('titlebar-minimize')?.addEventListener('click', () => invoke('minimize_window'));
     document.getElementById('titlebar-maximize')?.addEventListener('click', () => invoke('maximize_window'));
     document.getElementById('titlebar-close')?.addEventListener('click', () => invoke('close_window'));
 
-    // --- Boot Sequence & Splash Screen ---
     setTimeout(() => {
         const splash = document.getElementById('splash-screen');
         if (splash) {
             splash.style.opacity = '0';
             setTimeout(() => {
                 splash.style.visibility = 'hidden';
-                typeKarinMessage('karin_greet'); // Greet only after splash disappears
+                typeKarinMessage('karin_greet');
             }, 500);
         }
     }, 1500);  
 
-    // Load initial states
     updateUIStrings();
     if (langSelect) langSelect.value = currentLang;
     renderLinks(); 
@@ -762,7 +758,6 @@ function init() {
         }
     }
     
-    // --- Static Event Bindings ---
     langSelect?.addEventListener('change', () => {
         currentLang = langSelect.value;
         localStorage.setItem('karin_lang', currentLang);
@@ -795,6 +790,71 @@ function init() {
     });
     
     btnSave?.addEventListener('click', saveNewLink);
+    
+    btnImportOvpn?.addEventListener('click', () => {
+        ovpnFileInput?.click();
+    });
+
+    ovpnFileInput?.addEventListener('change', (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (file) {
+            if (!file.name.toLowerCase().endsWith('.ovpn')) {
+                alert(t('err_invalid_file_type') || 'Ошибка: Пожалуйста, выберите файл профиля с расширением .ovpn');
+                if (ovpnFileInput) ovpnFileInput.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const content = evt.target?.result as string;
+                
+                let remote = "Unknown";
+                let port = "1194";
+                let proto = "UDP";
+
+                const lines = content.split('\n').map(l => l.trim().toLowerCase());
+
+                const protoLine = lines.find(l => l.startsWith('proto '));
+                if (protoLine) {
+                    if (protoLine.includes('tcp')) proto = 'TCP';
+                    else if (protoLine.includes('udp')) proto = 'UDP';
+                }
+
+                const remoteLine = lines.find(l => l.startsWith('remote '));
+                if (remoteLine) {
+                    const parts = remoteLine.split(/\s+/);
+                    if (parts.length >= 2) remote = parts[1];
+                    if (parts.length >= 3) {
+                        const p = parseInt(parts[2]);
+                        if (!isNaN(p)) port = parts[2];
+                    }
+                }
+
+                const portLine = lines.find(l => l.startsWith('port '));
+                if (portLine) {
+                    const parts = portLine.split(/\s+/);
+                    if (parts.length >= 2) port = parts[1];
+                }
+
+                const payload = btoa(unescape(encodeURIComponent(content)));
+                const safeName = encodeURIComponent(file.name);
+
+                const ovpnLink = `ovpn://${remote}:${port}?proto=${proto}&name=${safeName}&payload=${encodeURIComponent(payload)}`;
+
+                if (!appLinks.find(l => l.url === ovpnLink)) {
+                    appLinks.push({ id: 'link_' + Date.now() + Math.random(), url: ovpnLink, pinned: false, groupId: null });
+                    saveData();
+                    renderLinks();
+                } else {
+                    alert("Этот профиль OpenVPN уже добавлен!");
+                }
+
+                if (ovpnFileInput) ovpnFileInput.value = '';
+            };
+            reader.readAsText(file);
+        }
+    });
+    
     btnDisconnect?.addEventListener('click', disconnectProxy);
     document.getElementById('btn-manual-add')?.addEventListener('click', handleManualAdd);
     btnMenu?.addEventListener('click', () => toggleMenu());
@@ -824,7 +884,6 @@ function init() {
         renderSearchResults(filtered); 
     });
   
-    // Edit Mode Bindings
     btnEditMode?.addEventListener('click', () => {
         isEditMode = !isEditMode; 
         selectedLinks.clear(); 
@@ -901,7 +960,6 @@ function init() {
         }
     });
   
-    // Routing Export/Import Bindings
     const routeModal = document.getElementById('route-action-modal') as HTMLDialogElement | null;
     const fileInput = document.getElementById('route-file-input') as HTMLInputElement | null;
   
@@ -943,11 +1001,9 @@ function init() {
     });
 }
 
-// Global Click Delegation
 document.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;
   
-    // Handle Routing Column Default Selection
     const col = target.closest('.route-column');
     if (col && !target.closest('.btn-add') && !target.closest('.btn-delete-tag') && !target.closest('.tag-item')) {
       defaultOutbound = (col as HTMLElement).dataset.zone as ZoneKey;
@@ -955,42 +1011,35 @@ document.addEventListener('click', async (e) => {
       updateDefaultOutboundUI();
     }
   
-    // Handle Dropdown Menus Closure
     const isMenuDot = target.closest('.btn-menu-dots');
     const isDropdown = target.closest('.dropdown-menu');
     if (!isMenuDot && !isDropdown) { 
         document.querySelectorAll('.dropdown-menu').forEach(m => (m as HTMLElement).style.display = 'none'); 
     }
   
-    // Handle Ping Action
     if (target.id === 'btn-ping' || target.closest('#btn-ping')) {
       if(btnPing) btnPing.innerText = "...";
       invoke<string>('check_ping').then(res => { if(btnPing) btnPing.innerText = res; }).catch(() => { if(btnPing) btnPing.innerText = "Error"; });
     }
   
-    // Handle Add Tag
     if (target.classList.contains('btn-add')) { 
         currentZone = target.dataset.zone as ZoneKey; 
         searchModal?.showModal(); 
         modalSearch?.focus(); 
     }
     
-    // Handle Delete Tag
     if (target.classList.contains('btn-delete-tag')) {
       const tag = target.dataset.tag!; const zone = target.dataset.zone as ZoneKey;
       routingState[zone] = routingState[zone].filter((t: any) => t.value !== tag); renderRouting();
     }
   
-    // Handle Connect Proxy
     if (target.classList.contains('btn-connect')) connectProxy(target.dataset.url!);
   
-    // Handle Edit Mode Checkboxes
     if (target.classList.contains('edit-checkbox') && !target.hasAttribute('data-group-id')) {
         const id = target.dataset.id!;
         if ((target as HTMLInputElement).checked) selectedLinks.add(id); else selectedLinks.delete(id);
     }
   
-    // Handle Group Collapse/Expand
     const groupHeader = target.closest('.group-header');
     if (groupHeader && !target.closest('.edit-checkbox')) {
         const gId = (groupHeader as HTMLElement).dataset.id!;
@@ -998,7 +1047,6 @@ document.addEventListener('click', async (e) => {
         if (group) { group.isOpen = !group.isOpen; saveData(); renderLinks(); }
     }
   
-    // Handle Dropdown Toggle
     if (isMenuDot) {
       const btn = isMenuDot as HTMLElement; 
       const index = btn.dataset.index;
@@ -1021,7 +1069,6 @@ document.addEventListener('click', async (e) => {
       }
     }
   
-    // Handle Share URL
     if (target.classList.contains('btn-share') && !target.closest('.btn-export-profile')) {
       navigator.clipboard.writeText(target.dataset.url!).then(() => {
         const originalText = target.innerText; target.innerText = t('btn_copied') || 'Скопировано!';
@@ -1029,7 +1076,6 @@ document.addEventListener('click', async (e) => {
       }).catch(() => alert('Copy Error'));
     }
   
-    // Handle Pin/Unpin Proxy
     if (target.classList.contains('btn-pin') && !target.closest('#edit-bar')) {
         const id = target.dataset.id;
         const link = appLinks.find(l => l.id === id);
@@ -1037,14 +1083,12 @@ document.addEventListener('click', async (e) => {
         const menu = target.closest('.dropdown-menu') as HTMLElement; if (menu) menu.style.display = 'none';
     }
   
-    // Handle Delete Proxy Link
     if (target.classList.contains('btn-delete-link')) {
         const id = target.dataset.id;
         appLinks = appLinks.filter(l => l.id !== id);
         cleanEmptyGroups(); saveData(); renderLinks();
     }
     
-    // Handle Load Routing Profile
     const loadBtn = target.closest('.btn-load-profile') as HTMLElement;
     if (loadBtn) {
         try {
@@ -1076,7 +1120,6 @@ document.addEventListener('click', async (e) => {
         }
     }
   
-    // Handle Delete Routing Profile
     const delBtn = target.closest('.btn-del-profile') as HTMLElement;
     if (delBtn) {
         routeProfiles = routeProfiles.filter(x => x.id !== delBtn.dataset.id);
@@ -1084,7 +1127,6 @@ document.addEventListener('click', async (e) => {
         renderRoutingProfiles();
     }
   
-    // Handle Rename Routing Profile
     const editBtn = target.closest('.btn-edit-profile') as HTMLElement;
     if (editBtn) {
         const p = routeProfiles.find(x => x.id === editBtn.dataset.id);
@@ -1099,7 +1141,6 @@ document.addEventListener('click', async (e) => {
         const menu = target.closest('.dropdown-menu') as HTMLElement; if (menu) menu.style.display = 'none';
     }
   
-    // Handle Export Routing Profile
     const exportBtn = target.closest('.btn-export-profile') as HTMLElement;
     if (exportBtn) {
         const p = routeProfiles.find(x => x.id === exportBtn.dataset.id);
@@ -1118,7 +1159,6 @@ document.addEventListener('click', async (e) => {
     }
 });
 
-// Boot the App
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {

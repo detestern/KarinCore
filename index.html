@@ -53,7 +53,7 @@
       <span data-i18n="menu_about">О проекте</span>
     </div>
     
-    <div class="sidebar-footer">v 1.0</div>
+    <div class="sidebar-footer">v 1.1.0</div>
   </div>
 
   <div class="app-header">
@@ -84,12 +84,16 @@
       </div>
     </div>
 
-    <div class="panel links-wrapper">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
         <h3 data-i18n="config_title">Конфигурации</h3>
-        <button id="btn-edit-mode" style="background: transparent; border: none; cursor: pointer; padding: 0;">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
-        </button>
+        <div style="display: flex; gap: 15px; align-items: center;">
+          <button id="btn-import-ovpn" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);" title="Импорт OpenVPN">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download-icon lucide-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
+          </button>
+          <button id="btn-edit-mode" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+          </button>
+        </div>
       </div>
       
       <div class="input-group" id="import-bar">
@@ -258,6 +262,7 @@
       <button class="secondary" onclick="document.getElementById('route-action-modal').close()" data-i18n="btn_cancel">Отмена</button>
     </div>
     <input type="file" id="route-file-input" accept=".json" style="display: none;">
+    <input type="file" id="ovpn-file-input" accept=".ovpn" style="display: none;">
   </dialog>
 
 </body>
