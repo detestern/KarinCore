@@ -1,0 +1,4 @@
+#!/bin/sh
+cp /usr/share/karin-proxy/karincore-sudoers /etc/sudoers.d/karincore
+chmod 0440 /etc/sudoers.d/karincore
+chown root:root /etc/sudoers.d/karincore

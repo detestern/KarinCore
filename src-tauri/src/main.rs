@@ -15,13 +15,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 // **********************************
 // STATE & AUTHENTICATION
 // **********************************
-
-/// Stores the generated security token in app memory to secure local port access
 struct ProxyState {
     auth_token: Mutex<Option<String>>,
 }
 
-/// Generates a unique security token based on current nanoseconds
 fn generate_token() -> String {
     let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
     format!("karin_token_{:x}", time)
@@ -30,14 +27,10 @@ fn generate_token() -> String {
 // **********************************
 // CORE HELPER FUNCTIONS
 // **********************************
-
-/// HELPER: LOG PATHS RESOLVER
-/// Resolves and creates user-owned log directories to prevent Permission Denied (os error 13)
 fn get_log_paths() -> (String, String) {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let log_dir = format!("{}/.local/share/karin-proxy", home);
     
-    // Create directory if it doesn't exist (owned by the current user)
     let _ = std::fs::create_dir_all(&log_dir);
     
     let err_log = format!("{}/error.log", log_dir);
@@ -46,7 +39,6 @@ fn get_log_paths() -> (String, String) {
     (err_log, acc_log)
 }
 
-/// Parses the routing state JSON into an array of Xray-compatible routing rules
 fn build_xray_rules(state: Value) -> Value {
     let mut rules = Vec::new();
     
@@ -82,7 +74,6 @@ fn build_xray_rules(state: Value) -> Value {
     json!(rules)
 }
 
-/// Downloads missing GeoIP/GeoSite databases to the system directory on startup
 async fn ensure_geo_files() -> Result<(), String> {
     let files = vec![
         ("geosite.dat", "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"),
@@ -101,10 +92,22 @@ async fn ensure_geo_files() -> Result<(), String> {
     Ok(())
 }
 
+fn teardown_connections() {
+    std::process::Command::new("sudo").args(["systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
+    std::process::Command::new("sudo").args(["pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output().ok();
+    
+    std::process::Command::new("sudo")
+        .args(["cp", "/etc/karin-proxy/resolv.conf.bak", "/etc/resolv.conf"])
+        .output().ok();
+        
+    std::process::Command::new("sudo")
+        .args(["rm", "-f", "/etc/karin-proxy/resolv.conf.bak"])
+        .output().ok();
+}
+
 // **********************************
 // TAURI COMMANDS: PROXY & NETWORK MANAGEMENT
 // **********************************
-
 #[tauri::command]
 async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
     let client = reqwest::Client::builder()
@@ -116,7 +119,6 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
     let mut text = String::new();
     let mut attempts = 0;
 
-    // 1. Fetch raw configuration data (handle provider quirks like missing flags)
     while attempts < 2 {
         let response = client.get(&current_url).send().await.map_err(|e| format!("Ошибка сети: {}", e))?;
         let status = response.status();
@@ -145,11 +147,8 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
 
     let mut links = Vec::new();
     
-    // Inline Helper: Parse JSON subscription format
     let parse_json = |json_str: &str, out_links: &mut Vec<String>| {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
-            // Магия: если пришел одиночный объект (сырой конфиг Xray) — оборачиваем его в массив.
-            // Если пришел нормальный массив (как в подписках) — берем его.
             let arr = if let Some(a) = json.as_array() {
                 a.clone()
             } else {
@@ -187,7 +186,6 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
         }
     };
 
-    // Inline Helper: Parse plain text links format
     let parse_plain = |text_str: &str, out_links: &mut Vec<String>| {
         for line in text_str.lines() {
             let s = line.trim();
@@ -197,11 +195,9 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
         }
     };
 
-    // 2. Execute parsing based on format
     parse_json(&text, &mut links);
     if links.is_empty() { parse_plain(&text, &mut links); }
 
-    // 3. Fallback: Decode Base64 payload if not JSON/Plain
     if links.is_empty() {
         let b64 = text.replace(['\n', '\r', ' ', '\t'], "");
         let engines = [
@@ -214,7 +210,6 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
         let mut decoded_str = String::new();
         let mut decoded = false;
 
-        // Try direct decode
         for engine in &engines {
             if let Ok(bytes) = engine.decode(&b64) {
                 if let Ok(utf8) = String::from_utf8(bytes) { 
@@ -223,7 +218,6 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
             }
         }
         
-        // Try padded decode if necessary
         if !decoded {
             let mut padded = b64.clone();
             while padded.len() % 4 != 0 { padded.push('='); }
@@ -249,6 +243,85 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
     Ok(links)
 }
 
+async fn start_openvpn_proxy(
+    _state: State<'_, ProxyState>,
+    ovpn_link: String,
+) -> Result<String, String> {
+    let parsed_url = Url::parse(&ovpn_link).map_err(|e| e.to_string())?;
+    let mut b64_payload = String::new();
+    
+    for (k, v) in parsed_url.query_pairs() {
+        if k == "payload" {
+            b64_payload = v.to_string();
+        }
+    }
+
+    if b64_payload.is_empty() {
+        return Err("Ошибка: В полученной ссылке отсутствует payload конфигурации".into());
+    }
+
+    let decoded_bytes = general_purpose::STANDARD.decode(&b64_payload)
+        .map_err(|e| format!("Ошибка декодирования Base64: {}", e))?;
+    
+    let mut ovpn_config = String::from_utf8(decoded_bytes)
+        .map_err(|e| format!("Ошибка UTF-8 при сборке конфигурации: {}", e))?;
+
+    ovpn_config.push_str("\npull-filter ignore \"tun-mtu\"\ntun-mtu 1360\nmssfix 1320\n");
+
+    let config_path = "/etc/karin-proxy/openvpn.ovpn";
+    std::fs::write(config_path, ovpn_config).map_err(|e| format!("Ошибка записи файла на диск: {}", e))?;
+
+    let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
+    let _ = std::fs::write("/etc/karin-proxy/resolv.conf.vpn", vpn_dns_content);
+
+    if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() {
+        let _ = std::process::Command::new("sudo")
+            .args(["cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"])
+            .output();
+    }
+    
+    let _ = std::process::Command::new("sudo")
+        .args(["cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"])
+        .output();
+
+    std::process::Command::new("sudo")
+        .args(["systemctl", "stop", "karin-proxy-daemon.service"])
+        .output()
+        .ok();
+        
+    std::process::Command::new("sudo")
+        .args(["pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"])
+        .output()
+        .ok();
+
+    std::process::Command::new("sudo")
+        .args(["openvpn", "--config", config_path])
+        .spawn()
+        .map_err(|e| format!("Не удалось запустить процесс OpenVPN: {}", e))?;
+
+    let mut attempts = 0;
+    
+    while attempts < 20 {
+        if std::path::Path::new("/sys/class/net/tun0").exists() {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        attempts += 1;
+    }
+    
+    if attempts >= 20 {
+        teardown_connections();
+        return Err("Таймаут: сервер не отвечает или неверный сертификат".into());
+    }
+
+    if let Ok(mut guard) = _state.auth_token.lock() { 
+        *guard = Some("openvpn_active".to_string()); 
+    }
+
+    Ok("OK".into())
+}
+
 #[tauri::command]
 async fn start_proxy(
     _state: State<'_, ProxyState>, 
@@ -257,12 +330,16 @@ async fn start_proxy(
     default_outbound: String,
     dns_params: serde_json::Value
 ) -> Result<String, String> {
-    
-    // 1. Generate auth token and save it to the application state
+    teardown_connections();
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    if vless_link.starts_with("ovpn://") {
+        return start_openvpn_proxy(_state, vless_link).await;
+    }
+
     let token = generate_token();
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = Some(token.clone()); }
 
-    // 2. Parse proxy URL parameters
     let parsed_url = Url::parse(&vless_link).map_err(|e| e.to_string())?;
     let server = parsed_url.host_str().unwrap_or("").to_string();
     let port = parsed_url.port().unwrap_or(443);
@@ -284,7 +361,6 @@ async fn start_proxy(
     }
     if host.is_empty() { host = sni.clone(); }
 
-    // 3. Process Routing and DNS Settings
     let dynamic_rules = build_xray_rules(routing_state);
     
     let dom_dns = dns_params.get("domestic").and_then(|v| v.as_object());
@@ -323,7 +399,6 @@ async fn start_proxy(
         
     let final_network = if transport_type == "xhttp" || transport_type == "httpupgrade" { "xhttp" } else { "tcp" };
 
-    // 4. Construct Stream Settings
     let mut stream_settings = serde_json::Map::new();
     stream_settings.insert("network".to_string(), json!(final_network));
     stream_settings.insert("security".to_string(), json!(security));
@@ -352,7 +427,6 @@ async fn start_proxy(
         user_obj.insert("flow".to_string(), json!(flow));
     }
 
-    // 5. Build final Xray JSON Configuration
     let (err_log, acc_log) = get_log_paths();
 
     let config = serde_json::json!({
@@ -406,11 +480,8 @@ async fn start_proxy(
         ]
     });
 
-    // Write config to system directory
     std::fs::write("/etc/karin-proxy/config.json", config.to_string()).map_err(|e| e.to_string())?;
 
-    // --- NATIVE LOG CREATION & ROTATION ---
-    // If the file exceeds 5MB, clear it to prevent infinite growth on the user's disk
     let rotate_if_needed = |path: &str| {
         if let Ok(meta) = std::fs::metadata(path) {
             if meta.len() > 5 * 1024 * 1024 {
@@ -422,12 +493,9 @@ async fn start_proxy(
     rotate_if_needed(&err_log);
     rotate_if_needed(&acc_log);
 
-    // Ensure files exist and are owned by the current user before Xray starts
     let _ = std::fs::OpenOptions::new().create(true).append(true).open(&err_log);
     let _ = std::fs::OpenOptions::new().create(true).append(true).open(&acc_log);
-    // -----------------------------------------
 
-    // Restart the systemd daemon
     let output = std::process::Command::new("sudo")
         .args(["systemctl", "restart", "karin-proxy-daemon.service"])
         .output()
@@ -448,47 +516,87 @@ async fn start_proxy(
 #[tauri::command]
 fn stop_proxy(_state: State<'_, ProxyState>) -> Result<String, String> {
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = None; }
-    std::process::Command::new("sudo").args(["systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
+    teardown_connections();  
     Ok("Остановлено".into())
 }
 
 // **********************************
 // TAURI COMMANDS: UTILITIES & NETWORK
 // **********************************
-
 #[tauri::command]
 async fn get_vpn_ip(_state: State<'_, ProxyState>) -> Result<String, String> {
-    let proxy_url = {
+    let is_openvpn = {
         let guard = _state.auth_token.lock().unwrap();
-        if let Some(token) = guard.as_ref() { 
-            format!("http://karin:{}@127.0.0.1:2080", token) 
-        } else { 
-            "http://127.0.0.1:2080".to_string() 
-        }
+        guard.as_ref() == Some(&"openvpn_active".to_string())
     };
 
-    let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| e.to_string())?;
-    let client = reqwest::Client::builder().proxy(proxy).timeout(std::time::Duration::from_secs(10)).build().map_err(|e| e.to_string())?;
-    let ip = client.get("https://api.ipify.org").send().await.map_err(|_e| "Ошибка сети".to_string())?.text().await.map_err(|_e| "Ошибка парсинга".to_string())?;
+    let client = if is_openvpn {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?
+    } else {
+        let proxy_url = {
+            let guard = _state.auth_token.lock().unwrap();
+            if let Some(token) = guard.as_ref() { 
+                format!("http://karin:{}@127.0.0.1:2080", token) 
+            } else { 
+                "http://127.0.0.1:2080".to_string() 
+            }
+        };
+        let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| e.to_string())?;
+        reqwest::Client::builder()
+            .proxy(proxy)
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?
+    };
+
+    let ip = client.get("http://ifconfig.me/ip")
+        .send()
+        .await
+        .map_err(|e| format!("Ошибка сети: {}", e))?
+        .text()
+        .await
+        .map_err(|_e| "Ошибка парсинга".to_string())?;
+        
     Ok(ip)
 }
 
 #[tauri::command]
 async fn check_ping(_state: State<'_, ProxyState>) -> Result<String, String> {
-    let proxy_url = {
+    let is_openvpn = {
         let guard = _state.auth_token.lock().unwrap();
-        if let Some(token) = guard.as_ref() { 
-            format!("http://karin:{}@127.0.0.1:2080", token) 
-        } else { 
-            "http://127.0.0.1:2080".to_string() 
-        }
+        guard.as_ref() == Some(&"openvpn_active".to_string())
     };
 
-    let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| e.to_string())?;
-    let client = reqwest::Client::builder().proxy(proxy).timeout(std::time::Duration::from_secs(10)).build().map_err(|e| e.to_string())?;
-    
+    let client = if is_openvpn {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?
+    } else {
+        let proxy_url = {
+            let guard = _state.auth_token.lock().unwrap();
+            if let Some(token) = guard.as_ref() { 
+                format!("http://karin:{}@127.0.0.1:2080", token) 
+            } else { 
+                "http://127.0.0.1:2080".to_string() 
+            }
+        };
+        let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| e.to_string())?;
+        reqwest::Client::builder()
+            .proxy(proxy)
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| e.to_string())?
+    };
+
     let start = std::time::Instant::now();
-    let _ = client.get("http://cp.cloudflare.com/generate_204").send().await.map_err(|_e| "Ошибка сети".to_string())?; 
+    let _ = client.get("http://cp.cloudflare.com/generate_204")
+        .send()
+        .await
+        .map_err(|_e| "Ошибка сети".to_string())?; 
     
     Ok(format!("{} ms", start.elapsed().as_millis()))
 }
@@ -496,7 +604,6 @@ async fn check_ping(_state: State<'_, ProxyState>) -> Result<String, String> {
 // **********************************
 // TAURI COMMANDS: LOGS & PROFILES
 // **********************************
-
 #[tauri::command]
 fn get_logs() -> Result<String, String> {
     let (log_path, _) = get_log_paths();
@@ -507,7 +614,6 @@ fn get_logs() -> Result<String, String> {
                 return Ok("Ожидание логов (Прокси работает, ожидаем сетевой трафик)...".to_string());
             }
             let lines: Vec<&str> = content.lines().collect();
-            // Fetch only the last 50 lines for UI performance
             let last_lines = if lines.len() > 50 { &lines[lines.len() - 50..] } else { &lines[..] };
             Ok(last_lines.join("\n"))
         },
@@ -552,7 +658,6 @@ async fn export_profile(filename: String, content: String) -> Result<String, Str
 // **********************************
 // TAURI COMMANDS: WINDOW MANAGEMENT
 // **********************************
-
 #[tauri::command]
 fn minimize_window(window: tauri::Window) {
     let _ = window.minimize();
@@ -571,9 +676,8 @@ fn maximize_window(window: tauri::Window) {
 
 #[tauri::command]
 fn close_window(_window: tauri::Window, _state: State<'_, ProxyState>) {
-    // Terminate proxy and clean state before application exit
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = None; }
-    std::process::Command::new("sudo").args(["systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
+    teardown_connections();
     std::process::exit(0);
 }
 
@@ -581,7 +685,6 @@ fn close_window(_window: tauri::Window, _state: State<'_, ProxyState>) {
 // MAIN APPLICATION ENTRY POINT
 // **********************************
 fn main() {
-    // Initialize required environment before Tauri builder starts
     tokio::runtime::Runtime::new().unwrap().block_on(async { 
         let _ = ensure_geo_files().await; 
     });
@@ -590,7 +693,7 @@ fn main() {
         .manage(ProxyState { auth_token: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
             start_proxy, 
-            stop_proxy, 
+            stop_proxy,
             fetch_subscription, 
             get_geosite_list, 
             get_logs, 
@@ -607,8 +710,9 @@ fn main() {
 
     app.run(|_app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
-            // Failsafe: Ensure daemon stops if standard termination fails
             let _ = std::process::Command::new("sudo").args(["systemctl", "stop", "karin-proxy-daemon.service"]).output();
+            let _ = std::process::Command::new("sudo").args(["pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output();
+            let _ = std::process::Command::new("sudo").args(["cp", "/etc/karin-proxy/resolv.conf.bak", "/etc/resolv.conf"]).output();
         }
     });
 }

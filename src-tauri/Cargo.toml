@@ -1,6 +1,6 @@
 [package]
 name = "karin-proxy"
-version = "1.0.1"
+version = "1.1.0"
 description = "KarinCore - Modern and secure proxy client"
 authors = ["detestern <detestern@proton.me>"]
 edition = "2021"
