@@ -105,6 +105,10 @@ async fn ensure_geo_files() -> Result<(), String> {
 fn teardown_connections() {
     std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output().ok();
+    
+    std::process::Command::new("sudo").args(["/usr/bin/wg-quick", "down", "/etc/karin-proxy/wg0.conf"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "wg0", "-j", "MASQUERADE"]).output().ok();
+
     std::process::Command::new("sudo").args(["/usr/bin/ip", "rule", "del", "fwmark", "111", "lookup", "111"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "tun-ovpn", "-j", "MASQUERADE"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.bak", "/etc/resolv.conf"]).output().ok();
@@ -478,6 +482,247 @@ async fn start_openvpn_proxy(
     Ok("OK".into())
 }
 
+async fn start_wireguard_proxy(
+    _state: State<'_, ProxyState>,
+    wg_link: String,
+    routing_state: serde_json::Value,
+    default_outbound: String,
+    dns_params: serde_json::Value,
+) -> Result<String, String> {
+    println!("Разворачиваю профиль WireGuard в режиме Матрёшки...");
+
+    let parsed_url = Url::parse(&wg_link).map_err(|e| e.to_string())?;
+    let mut b64_payload = String::new();
+    
+    for (k, v) in parsed_url.query_pairs() {
+        if k == "payload" { b64_payload = v.to_string(); }
+    }
+
+    if b64_payload.is_empty() {
+        return Err("Ошибка: В полученной ссылке отсутствует payload конфигурации".into());
+    }
+
+    let decoded_bytes = general_purpose::STANDARD.decode(&b64_payload)
+        .map_err(|e| format!("Ошибка декодирования Base64: {}", e))?;
+    
+    let original_conf = String::from_utf8(decoded_bytes)
+        .map_err(|e| format!("Ошибка UTF-8: {}", e))?;
+
+    let mut modified_conf = String::new();
+    for line in original_conf.lines() {
+        let trimmed = line.trim().to_lowercase();
+        if trimmed.starts_with("dns") {
+            continue; 
+        }
+        modified_conf.push_str(line);
+        modified_conf.push('\n');
+        
+        if trimmed == "[interface]" {
+            modified_conf.push_str("Table = off\n");
+            modified_conf.push_str("FwMark = 255\n"); 
+        }
+    }
+
+    let config_path = "/etc/karin-proxy/wg0.conf";
+    std::fs::write(config_path, modified_conf).map_err(|e| format!("Ошибка записи файла: {}", e))?;
+
+    let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
+    let _ = std::fs::write("/etc/karin-proxy/resolv.conf.vpn", vpn_dns_content);
+    if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() {
+        let _ = std::process::Command::new("sudo").args(["cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output();
+    }
+    let _ = std::process::Command::new("sudo").args(["cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
+
+    std::process::Command::new("sudo").args(["systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
+    std::process::Command::new("sudo").args(["wg-quick", "down", config_path]).output().ok();
+
+    println!("Поднимаю интерфейс wg0...");
+    let output = std::process::Command::new("sudo")
+        .args(["/usr/bin/wg-quick", "up", config_path])
+        .output()
+        .map_err(|e| format!("Не удалось запустить wg-quick: {}", e))?;
+
+    let (err_log, _) = get_log_paths();
+
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&err_log) {
+        use std::io::Write;
+        let _ = writeln!(file, "[WireGuard] Инициализация интерфейса wg0...");
+        if !output.stdout.is_empty() { let _ = writeln!(file, "{}", String::from_utf8_lossy(&output.stdout)); }
+        if !output.stderr.is_empty() { let _ = writeln!(file, "{}", String::from_utf8_lossy(&output.stderr)); }
+    }
+
+    if !output.status.success() {
+        teardown_connections();
+        return Err(format!("Ошибка WireGuard:\n{}", String::from_utf8_lossy(&output.stderr)));
+    }
+
+    println!("Применяю PBR маршрутизацию для WireGuard...");
+    std::process::Command::new("sudo").args(["/usr/bin/ip", "rule", "del", "fwmark", "111", "lookup", "111"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/ip", "route", "add", "default", "dev", "wg0", "table", "111"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/ip", "rule", "add", "fwmark", "111", "lookup", "111"]).output().ok();
+    
+    std::process::Command::new("sudo").args(["/usr/bin/sysctl", "-w", "net.ipv4.conf.wg0.rp_filter=0"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/sysctl", "-w", "net.ipv4.conf.all.rp_filter=0"]).output().ok();
+    
+    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "wg0", "-j", "MASQUERADE"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "wg0", "-j", "MASQUERADE"]).output().ok();
+
+    let log_path_clone = err_log.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
+        loop {
+            interval.tick().await;
+            
+            if !std::path::Path::new("/sys/class/net/wg0").exists() {
+                break;
+            }
+
+            let wg_status = std::process::Command::new("sudo")
+                .args(["/usr/bin/wg", "show", "wg0"])
+                .output();
+
+            if let Ok(out) = wg_status {
+                if out.status.success() {
+                    let status_str = String::from_utf8_lossy(&out.stdout);
+                    let mut log_lines = Vec::new();
+                    
+                    for line in status_str.lines() {
+                        if line.contains("latest handshake:") || line.contains("transfer:") || line.contains("endpoint:") {
+                            log_lines.push(line.trim().to_string());
+                        }
+                    }
+
+                    if !log_lines.is_empty() {
+                        if let Ok(mut file) = tokio::fs::OpenOptions::new().create(true).append(true).open(&log_path_clone).await {
+                            use tokio::io::AsyncWriteExt;
+                            let formatted = format!("[WireGuard Status] {}\n", log_lines.join(" | "));
+                            let _ = file.write_all(formatted.as_bytes()).await;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    let dynamic_rules = build_xray_rules(routing_state);
+
+    let dom_dns = dns_params.get("domestic").and_then(|v| v.as_object());
+    let rem_dns = dns_params.get("remote").and_then(|v| v.as_object());
+    
+    let build_dns_server = |dns_obj: Option<&serde_json::Map<String, Value>>| -> String {
+        if let Some(obj) = dns_obj {
+            let d_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("doh");
+            let d_url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let d_ip = obj.get("ip").and_then(|v| v.as_str()).unwrap_or("");
+            
+            if d_type == "doh" && !d_url.is_empty() {
+                return format!("https+local://{}", d_url.replace("https://", ""));
+            } else if !d_ip.is_empty() {
+                return d_ip.to_string();
+            }
+        }
+        "8.8.8.8".to_string() 
+    };
+
+    let dom_server = build_dns_server(dom_dns);
+    let rem_server = build_dns_server(rem_dns);
+    let rem_ip = rem_dns.and_then(|v| v.get("ip")).and_then(|v| v.as_str()).unwrap_or("1.1.1.1");
+
+    let mut all_rules = vec![
+        json!({ "type": "field", "outboundTag": "proxy", "port": 53, "ip": [rem_ip] }),
+        json!({ "type": "field", "outboundTag": "proxy", "ip": [rem_ip] }),
+        json!({ "type": "field", "outboundTag": "direct", "port": 53 }),
+        json!({ "type": "field", "ip": ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"], "outboundTag": "direct" })
+    ];
+    
+    if let Some(rules_array) = dynamic_rules.as_array() { 
+        all_rules.extend(rules_array.clone()); 
+    }
+    all_rules.push(json!({ "type": "field", "network": "tcp,udp", "outboundTag": default_outbound }));
+
+    let (err_log, acc_log) = get_log_paths();
+
+    let config = serde_json::json!({
+        "log": { 
+            "loglevel": "debug",
+            "access": acc_log,
+            "error": err_log
+        },
+        "dns": {
+            "servers": [rem_server, dom_server, "localhost"],
+            "queryStrategy": "UseIP"
+        },
+        "routing": { 
+            "domainStrategy": "AsIs", 
+            "rules": all_rules 
+        },
+        "inbounds": [
+            { 
+                "port": 2080, 
+                "listen": "127.0.0.1", 
+                "protocol": "mixed", 
+                "settings": { 
+                    "accounts": [ { "user": "karin", "pass": "wireguard_mode" } ] 
+                } 
+            },
+            { 
+                "tag": "tun-in", 
+                "port": 2081, 
+                "listen": "127.0.0.1", 
+                "protocol": "tun", 
+                "settings": { 
+                    "name": "tun0", 
+                    "mtu": 1420, 
+                    "gateway": ["172.19.0.1/30"],
+                    "autoRoute": true 
+                }, 
+                "sniffing": { "enabled": true, "destOverride": ["http", "tls"] } 
+            }
+        ],
+        "outbounds": [
+            { 
+                "tag": "proxy", 
+                "protocol": "freedom", 
+                "settings": {}, 
+                "streamSettings": {
+                    "sockopt": {
+                        "mark": 111,
+                        "interface": "wg0" 
+                    }
+                } 
+            },
+            { 
+                "tag": "direct", 
+                "protocol": "freedom", 
+                "streamSettings": { "sockopt": { "mark": 255 } } 
+            },
+            { 
+                "tag": "block", 
+                "protocol": "blackhole" 
+            }
+        ]
+    });
+
+    std::fs::write("/etc/karin-proxy/config.json", config.to_string()).map_err(|e| e.to_string())?;
+
+    let output = std::process::Command::new("sudo")
+        .args(["systemctl", "restart", "karin-proxy-daemon.service"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        teardown_connections();
+        return Err("Ядро упало при попытке инициализации WireGuard".into());
+    }
+
+    if let Ok(mut guard) = _state.auth_token.lock() { 
+        *guard = Some("wireguard_mode".to_string()); 
+    }
+
+    println!("Матрёшка WireGuard успешно собрана и запущена!");
+    Ok("OK".into())
+}
+
 #[tauri::command]
 async fn start_proxy(
     _state: State<'_, ProxyState>, 
@@ -491,6 +736,10 @@ async fn start_proxy(
 
     if vless_link.starts_with("ovpn://") {
         return start_openvpn_proxy(_state, vless_link, routing_state, default_outbound, dns_params).await;
+    }
+
+    if vless_link.starts_with("wg://") {
+        return start_wireguard_proxy(_state, vless_link, routing_state, default_outbound, dns_params).await;
     }
 
     let token = generate_token();
