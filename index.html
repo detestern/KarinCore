@@ -54,7 +54,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 1.2.0</div>
+      <div class="app-version-text">v 1.2.1</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -91,7 +91,7 @@
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h3 data-i18n="config_title">Конфигурации</h3>
         <div style="display: flex; gap: 15px; align-items: center;">
-          <button id="btn-import-ovpn" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);" title="Импорт OpenVPN">
+          <button id="btn-import-file" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);" title="Импорт конфигурации (.ovpn, .conf)">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download-icon lucide-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
           </button>
           <button id="btn-edit-mode" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);">
@@ -274,8 +274,8 @@
       <button class="secondary" onclick="document.getElementById('route-action-modal').close()" data-i18n="btn_cancel">Отмена</button>
     </div>
     <input type="file" id="route-file-input" accept=".json" style="display: none;">
-    <input type="file" id="ovpn-file-input" accept=".ovpn" style="display: none;">
   </dialog>
+  <input type="file" id="import-file-input" accept=".ovpn,.conf" style="display: none;">
 
 </body>
 </html>

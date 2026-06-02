@@ -32,11 +32,12 @@ No bloated Electron apps, no restrictive sandboxes breaking your system routing.
 
 ## ✨ Key Features
 
-* **Multi-level Routing (Matryoshka Mode):** Full native integration of the OpenVPN protocol. Route your Xray traffic (VLESS/VMess/etc.) seamlessly over an encrypted OVPN tunnel.
+* **Multi-level Routing (Matryoshka Mode):** Full native integration of the OpenVPN and WireGuard protocols. Route your Xray traffic (VLESS/VMess/etc.) seamlessly over an encrypted OVPN or WG tunnel.
 * **Native Integration & Session Isolation:** The core runs as a background system daemon (`karin-proxy-daemon.service`). It intelligently handles MTU (MSS Clamping) and automatically tears down tunnels before new connections to prevent leaks.
 * **Seamless UX:** Thanks to dedicated `/etc/sudoers.d` rules, managing network interfaces, routing, and geo-databases is just a click away. No annoying root password prompts.
 * **Interactive Terminal Assistant:** Meet Karin — your built-in cyber-assistant who monitors the core, reacts to your actions, and respects your digital space without visual clutter.
 * **Smart Routing & Updates:** Built-in support for Direct, Proxy, and Block modes with automatic GeoIP/GeoSite database fetching and silent GitHub API update checks.
+* **Zero Telemetry & Absolute Privacy:** KarinCore operates entirely locally. No hidden trackers, no data collection, and no analytics. Your encryption keys, IP addresses, and routing profiles never leave your machine. Released under the open-source MIT License.
 
 ---
 
@@ -73,15 +74,12 @@ yay -S karincore-git
 
 ### Ubuntu / Debian / Linux Mint  
 
-Check the [Releases](../../releases) page for the latest `.deb` package. It automatically configures `sudoers` and `systemd` rules during installation.
+Check the [Releases](../../releases) page for the latest `.deb` package. It automatically configures `sudoers` and `systemd` rules during installation. Make sure you have `openvpn` and `wireguard-tools` installed on your system.
 
 ```bash
-
-sudo dpkg -i KarinCore_1.2.0_amd64.deb
+sudo dpkg -i KarinCore_1.2.1_amd64.deb
 sudo apt install -f # if any dependencies are missing
-
 ```
-
 
 
 ### First Launch

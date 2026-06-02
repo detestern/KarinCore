@@ -16,3 +16,10 @@ ALL ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -D POSTROUTING -o tun-ovpn -j M
 ALL ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /etc/karin-proxy/geo
 ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/geosite.dat /etc/karin-proxy/geo/geosite.dat
 ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/geoip.dat /etc/karin-proxy/geo/geoip.dat
+ALL ALL=(ALL) NOPASSWD: /usr/bin/wg-quick up /etc/karin-proxy/wg0.conf
+ALL ALL=(ALL) NOPASSWD: /usr/bin/wg-quick down /etc/karin-proxy/wg0.conf
+ALL ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE
+ALL ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
+ALL ALL=(ALL) NOPASSWD: /usr/bin/ip route add default dev wg0 table 111
+ALL ALL=(ALL) NOPASSWD: /usr/bin/sysctl -w net.ipv4.conf.wg0.rp_filter=0
+ALL ALL=(ALL) NOPASSWD: /usr/bin/wg show wg0

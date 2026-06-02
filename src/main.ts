@@ -104,8 +104,8 @@ const searchResults = document.getElementById('search-results') as HTMLDivElemen
 const manualInput = document.getElementById('manual-input') as HTMLInputElement | null;
 const themeToggle = document.getElementById('theme-toggle') as HTMLInputElement | null;
 const themeLabel = document.getElementById('theme-label') as HTMLLabelElement | null;
-const btnImportOvpn = document.getElementById('btn-import-ovpn') as HTMLButtonElement | null;
-const ovpnFileInput = document.getElementById('ovpn-file-input') as HTMLInputElement | null;
+const btnImportFile = document.getElementById('btn-import-file') as HTMLButtonElement | null;
+const importFileInput = document.getElementById('import-file-input') as HTMLInputElement | null;
 
 const domType = document.getElementById('dns-dom-type') as HTMLSelectElement | null;
 const domUrl = document.getElementById('dns-dom-url') as HTMLInputElement | null;
@@ -413,6 +413,12 @@ function formatProxyInfo(linkUrl: string): string {
             return `OpenVPN | ${proto} | ${port}`;
         }
 
+        if (protocol === 'WG') {
+            const ep = url.hostname;
+            const port = url.port || '51820';
+            return `WireGuard | UDP | ${ep}:${port}`;
+        }
+
         const type = (url.searchParams.get('type') || 'TCP').toUpperCase();
         let security = url.searchParams.get('security') || 'NONE';
         if (security.toLowerCase() === 'tls') security = 'TLS'; 
@@ -466,10 +472,17 @@ function renderLinkItem(item: ProxyLink) {
             } else {
                 displayName = `OpenVPN (${url.hostname})`;
             }
+        } else if (url.protocol === 'wg:') {
+            const encodedName = url.searchParams.get('name');
+            if (encodedName) {
+                displayName = decodeURIComponent(encodedName).replace('.conf', '');
+            } else {
+                displayName = `WireGuard (${url.hostname})`;
+            }
         } else {
             displayName = `${url.hostname}:${url.port || '443'}`;
             if (url.hash) displayName = decodeURIComponent(url.hash.substring(1)) + ` (${url.hostname})`;
-        } 
+        }
     }   catch (e) { 
             displayName = item.url.substring(0, 30) + '...'; 
     }
@@ -644,6 +657,18 @@ function renderAboutPage() {
                     <div><span style="color: var(--accent);">• ${t('about_contact')}:</span> <span class="copyable-item" data-copy="detestern@proton.me" style="color: var(--text-color);">detestern@proton.me</span></div>
                     <div><span style="color: var(--accent);">• Crypto (USDT TRC20):</span> <span class="copyable-item" data-copy="TQCQhGQD6xgaDxwqAVcTiapS6rdcPyf24X" style="color: var(--success);">[TQCQhGQD6xgaDxwqAVcTiapS6rdcPyf24X]</span></div>
                 </div>
+                
+                <div style="margin-top: 4px; background: var(--base-crust); border: 1px solid var(--border-color); padding: 14px; border-radius: 8px; flex-shrink: 0; position: relative; overflow: hidden;">
+                    <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--success);"></div>
+                    <h4 style="margin: 0 0 10px 0; color: var(--success); font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        ${t('about_legal_title')}
+                    </h4>
+                    <div style="font-size: 13px; color: var(--text-color); line-height: 1.6; text-align: justify; font-family: monospace;">
+                        <span style="color: var(--accent);">[COPYRIGHT]</span> ${t('about_legal_copyright')}<br><br>
+                        <span style="color: var(--accent);">[ZERO TELEMETRY]</span> ${t('about_legal_privacy')}
+                    </div>
+                </div>
             </div>
         `;
 
@@ -734,7 +759,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.2.0"; 
+        const CURRENT_VERSION = "1.2.1"; 
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -855,33 +880,39 @@ function init() {
     });
     
     btnSave?.addEventListener('click', saveNewLink);
-    btnImportOvpn?.addEventListener('click', () => { ovpnFileInput?.click(); });
+    btnImportFile?.addEventListener('click', () => { importFileInput?.click(); });
 
-    ovpnFileInput?.addEventListener('change', (e) => {
+    importFileInput?.addEventListener('change', (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
-        if (file) {
-            if (!file.name.toLowerCase().endsWith('.ovpn')) {
-                alert(t('err_invalid_file_type') || 'Ошибка: Пожалуйста, выберите файл профиля с расширением .ovpn');
-                if (ovpnFileInput) ovpnFileInput.value = '';
-                return;
-            }
+        if (!file) return;
 
-            const reader = new FileReader();
-            reader.onload = (evt) => {
-                const content = evt.target?.result as string;
-                
+        const isOvpn = file.name.toLowerCase().endsWith('.ovpn');
+        const isWg = file.name.toLowerCase().endsWith('.conf');
+
+        if (!isOvpn && !isWg) {
+            alert(t('err_invalid_file_type') || 'Ошибка: Выберите файл .ovpn или .conf');
+            if (importFileInput) importFileInput.value = '';
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const content = evt.target?.result as string;
+            const safeName = encodeURIComponent(file.name);
+            const payload = btoa(unescape(encodeURIComponent(content)));
+            let finalLink = "";
+
+            if (isOvpn) {
                 let remote = "Unknown";
                 let port = "1194";
                 let proto = "UDP";
 
                 const lines = content.split('\n').map(l => l.trim().toLowerCase());
-
                 const protoLine = lines.find(l => l.startsWith('proto '));
                 if (protoLine) {
                     if (protoLine.includes('tcp')) proto = 'TCP';
                     else if (protoLine.includes('udp')) proto = 'UDP';
                 }
-
                 const remoteLine = lines.find(l => l.startsWith('remote '));
                 if (remoteLine) {
                     const parts = remoteLine.split(/\s+/);
@@ -891,29 +922,37 @@ function init() {
                         if (!isNaN(p)) port = parts[2];
                     }
                 }
-
                 const portLine = lines.find(l => l.startsWith('port '));
                 if (portLine) {
                     const parts = portLine.split(/\s+/);
                     if (parts.length >= 2) port = parts[1];
                 }
-
-                const payload = btoa(unescape(encodeURIComponent(content)));
-                const safeName = encodeURIComponent(file.name);
-                const ovpnLink = `ovpn://${remote}:${port}?proto=${proto}&name=${safeName}&payload=${encodeURIComponent(payload)}`;
-
-                if (!appLinks.find(l => l.url === ovpnLink)) {
-                    appLinks.push({ id: 'link_' + Date.now() + Math.random(), url: ovpnLink, pinned: false, groupId: null });
-                    saveData();
-                    renderLinks();
-                } else {
-                    alert("Этот профиль OpenVPN уже добавлен!");
+                finalLink = `ovpn://${remote}:${port}?proto=${proto}&name=${safeName}&payload=${encodeURIComponent(payload)}`;
+            } 
+            else if (isWg) {
+                let endpoint = "Unknown";
+                const lines = content.split('\n').map(l => l.trim().toLowerCase());
+                const endpointLine = lines.find(l => l.startsWith('endpoint'));
+                if (endpointLine) {
+                    const epParts = endpointLine.split('=');
+                    if (epParts.length > 1) {
+                        endpoint = epParts[1].trim();
+                    }
                 }
+                finalLink = `wg://${endpoint}?name=${safeName}&payload=${encodeURIComponent(payload)}`;
+            }
 
-                if (ovpnFileInput) ovpnFileInput.value = '';
-            };
-            reader.readAsText(file);
-        }
+            if (!appLinks.find(l => l.url === finalLink)) {
+                appLinks.push({ id: 'link_' + Date.now() + Math.random(), url: finalLink, pinned: false, groupId: null });
+                saveData();
+                renderLinks();
+            } else {
+                alert("Этот профиль уже добавлен!");
+            }
+
+            if (importFileInput) importFileInput.value = '';
+        };
+        reader.readAsText(file);
     });
     
     btnDisconnect?.addEventListener('click', disconnectProxy);
