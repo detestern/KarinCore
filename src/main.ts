@@ -94,7 +94,6 @@ const sidebar = document.getElementById('sidebar') as HTMLDivElement | null;
 const overlay = document.getElementById('overlay') as HTMLDivElement | null;
 const sidebarItems = document.querySelectorAll('.sidebar-item');
 const pages = document.querySelectorAll('.page-view');
-const langSelect = document.getElementById('lang-select') as HTMLSelectElement | null;
 const btnEditMode = document.getElementById('btn-edit-mode') as HTMLButtonElement | null;
 const editBar = document.getElementById('edit-bar') as HTMLDivElement | null;
 const importBar = document.getElementById('import-bar') as HTMLDivElement | null;
@@ -119,6 +118,18 @@ const zones = {
     direct: document.getElementById('zone-direct') as HTMLDivElement | null, 
     proxy: document.getElementById('zone-proxy') as HTMLDivElement | null, 
     block: document.getElementById('zone-block') as HTMLDivElement | null 
+};
+
+const langBtn = document.getElementById('lang-select-btn') as HTMLDivElement | null;
+const langLabel = document.getElementById('lang-select-label') as HTMLSpanElement | null;
+const langMenu = document.getElementById('lang-menu') as HTMLDivElement | null;
+
+const langNames: Record<string, string> = {
+    en: "English",
+    ru: "Русский",
+    fr: "Français",
+    tr: "Türkçe",
+    zh: "中文"
 };
 
 // **********************************
@@ -203,7 +214,7 @@ function typeKarinMessage(key: string) {
 function resetKarinIdleTimer() {
     if (karinIdleTimer) window.clearInterval(karinIdleTimer);
     karinIdleTimer = window.setInterval(() => {
-        const idleMessages = ['karin_idle_1', 'karin_idle_2', 'karin_idle_3', 'karin_idle_4', 'karin_idle_5', 'karin_idle_6', 'karin_idle_7'];
+        const idleMessages = ['karin_idle_1', 'karin_idle_2', 'karin_idle_3', 'karin_idle_4', 'karin_idle_5', 'karin_idle_6', 'karin_idle_7', 'karin_idle_8', 'karin_idle_9', 'karin_idle_10', 'karin_idle_11', 'karin_idle_12', 'karin_idle_13', 'karin_idle_14', 'karin_idle_15'];
         const randomMsg = idleMessages[Math.floor(Math.random() * idleMessages.length)];
         typeKarinMessage(randomMsg);
     }, 25000); 
@@ -325,7 +336,7 @@ async function fetchLogs() {
             if (isScrolledToBottom) logOutput.scrollTop = logOutput.scrollHeight;
         }
     } catch (err) { 
-        console.error("Log error:", err); 
+        console.error(err); 
     }
 }
 
@@ -657,7 +668,7 @@ function renderAboutPage() {
                             target.style.color = originalColor;
                         }, 1500);
                     } catch (err) {
-                        console.error('Failed to copy text: ', err);
+                        console.error(err);
                     }
                 }
             });
@@ -716,6 +727,44 @@ function addRule(value: string, type: string) {
 }
 
 // **********************************
+// APPLICATION UPDATE CHECKER
+// **********************************
+async function checkApplicationUpdates() {
+    const statusEl = document.getElementById('update-status');
+    if (!statusEl) return;
+
+    try {
+        const CURRENT_VERSION = "1.2.0"; 
+
+        const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const latestVersion = data.tag_name.replace('v', '').trim();
+
+        if (latestVersion === CURRENT_VERSION) {
+            statusEl.innerHTML = `<span style="opacity: 0.6;">${t('update_current')}</span>`;
+        } else {
+            statusEl.innerHTML = `
+                <a class="update-link" href="https://github.com/detestern/KarinCore/releases/latest" target="_blank">
+                    ${t('update_available')}
+                    <span class="notification-dot"></span>
+                </a>
+            `;
+
+            const link = statusEl.querySelector('.update-link');
+            link?.addEventListener('click', (e) => {
+                e.preventDefault();
+                invoke('open_browser', { url: "https://github.com/detestern/KarinCore/releases/latest" })
+                    .catch(console.error);
+            });
+        }
+    } catch (err) {
+        console.error("Update check failed:", err);
+    }
+}
+
+// **********************************
 // INITIALIZATION & EVENT LISTENERS
 // **********************************
 function init() {
@@ -735,7 +784,7 @@ function init() {
     }, 1500);  
 
     updateUIStrings();
-    if (langSelect) langSelect.value = currentLang;
+    if (langLabel) langLabel.textContent = langNames[currentLang] || "English";
     renderLinks(); 
     updateStatusUI(); 
     updateDefaultOutboundUI(); 
@@ -744,6 +793,7 @@ function init() {
     renderAboutPage();
     loadDnsState(); 
     renderRoutingProfiles();
+    
     if (currentTheme === 'light') {
         document.documentElement.setAttribute('data-theme', 'light');
         if (themeToggle) themeToggle.checked = true;
@@ -758,14 +808,29 @@ function init() {
         }
     }
     
-    langSelect?.addEventListener('change', () => {
-        currentLang = langSelect.value;
-        localStorage.setItem('karin_lang', currentLang);
-        updateUIStrings(); 
-        renderLinks(); 
-        updateStatusUI(); 
-        renderAboutPage();
-        renderRoutingProfiles();
+    langBtn?.addEventListener('click', () => {
+        if (langMenu) {
+            const isO = langMenu.style.display === 'flex';
+            document.querySelectorAll('.dropdown-menu').forEach(m => (m as HTMLElement).style.display = 'none');
+            langMenu.style.display = isO ? 'none' : 'flex';
+        }
+    });
+
+    document.querySelectorAll('.lang-option').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const target = e.target as HTMLButtonElement;
+            currentLang = target.dataset.value!;
+            if (langLabel) langLabel.textContent = target.textContent;
+            if (langMenu) langMenu.style.display = 'none';
+            
+            localStorage.setItem('karin_lang', currentLang);
+            updateUIStrings(); 
+            renderLinks(); 
+            updateStatusUI(); 
+            renderAboutPage();
+            renderRoutingProfiles();
+            checkApplicationUpdates();
+        });
     });
 
     themeToggle?.addEventListener('change', (e) => {
@@ -790,10 +855,7 @@ function init() {
     });
     
     btnSave?.addEventListener('click', saveNewLink);
-    
-    btnImportOvpn?.addEventListener('click', () => {
-        ovpnFileInput?.click();
-    });
+    btnImportOvpn?.addEventListener('click', () => { ovpnFileInput?.click(); });
 
     ovpnFileInput?.addEventListener('change', (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
@@ -838,7 +900,6 @@ function init() {
 
                 const payload = btoa(unescape(encodeURIComponent(content)));
                 const safeName = encodeURIComponent(file.name);
-
                 const ovpnLink = `ovpn://${remote}:${port}?proto=${proto}&name=${safeName}&payload=${encodeURIComponent(payload)}`;
 
                 if (!appLinks.find(l => l.url === ovpnLink)) {
@@ -999,8 +1060,12 @@ function init() {
             reader.readAsText(file);
         }
     });
+    checkApplicationUpdates();
 }
 
+// **********************************
+// GLOBAL EVENT DELEGATION
+// **********************************
 document.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;
   
@@ -1013,7 +1078,9 @@ document.addEventListener('click', async (e) => {
   
     const isMenuDot = target.closest('.btn-menu-dots');
     const isDropdown = target.closest('.dropdown-menu');
-    if (!isMenuDot && !isDropdown) { 
+    const isCustomSelect = target.closest('.custom-select-btn'); 
+    
+    if (!isMenuDot && !isDropdown && !isCustomSelect) { 
         document.querySelectorAll('.dropdown-menu').forEach(m => (m as HTMLElement).style.display = 'none'); 
     }
   

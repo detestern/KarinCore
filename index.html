@@ -53,7 +53,10 @@
       <span data-i18n="menu_about">О проекте</span>
     </div>
     
-    <div class="sidebar-footer">v 1.1.0</div>
+    <div class="sidebar-footer" id="sidebar-footer">
+      <div class="app-version-text">v 1.2.0</div>
+      <div id="update-status" class="update-status"></div>
+    </div>
   </div>
 
   <div class="app-header">
@@ -84,7 +87,8 @@
       </div>
     </div>
 
-    <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="panel links-wrapper" style="margin-top: 5px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
         <h3 data-i18n="config_title">Конфигурации</h3>
         <div style="display: flex; gap: 15px; align-items: center;">
           <button id="btn-import-ovpn" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);" title="Импорт OpenVPN">
@@ -204,13 +208,21 @@
       <h3 data-i18n="settings_title">Настройки</h3>
       <div style="margin-top: 15px; display: flex; align-items: center; gap: 15px;">
         <label style="font-size: 14px;" data-i18n="settings_lang">Язык интерфейса:</label>
-        <select id="lang-select">
-          <option value="en">English</option>
-          <option value="ru">Русский</option>
-          <option value="fr">Français</option>
-          <option value="tr">Türkçe</option>
-          <option value="zh">中文</option>
-        </select>
+        
+        <div style="position: relative; flex: 1;">
+          <div id="lang-select-btn" class="custom-select-btn">
+            <span id="lang-select-label">English</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <div class="dropdown-menu" id="lang-menu" style="display: none; width: 100%; top: 100%; margin-top: 5px; z-index: 1000;">
+            <button class="lang-option" data-value="en">English</button>
+            <button class="lang-option" data-value="ru">Русский</button>
+            <button class="lang-option" data-value="fr">Français</button>
+            <button class="lang-option" data-value="tr">Türkçe</button>
+            <button class="lang-option" data-value="zh">中文</button>
+          </div>
+        </div>
+        
       </div>
       <div style="margin-top: 15px; display: flex; align-items: center; gap: 15px;">
         <label id="theme-label" style="font-size: 14px;" data-i18n="theme_dark">Темная тема:</label>

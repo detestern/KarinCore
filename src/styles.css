@@ -42,19 +42,19 @@
 }
 
 body {
-    touch-action: pan-x pan-y; /* Disables pinch-to-zoom on touchpads */
+    touch-action: pan-x pan-y;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
     margin: 0;
     padding: 24px;
-    padding-top: 64px !important; /* Space for the custom titlebar */
+    padding-top: 64px !important;
     height: 100vh;
     display: flex;
     flex-direction: column;
     gap: 20px;
     box-sizing: border-box;
-    overflow: hidden; /* Prevent body scrolling, handle scroll inside elements */
+    overflow: hidden;
 }
 
 h3 {
@@ -120,7 +120,6 @@ select:focus {
     border-color: var(--accent);
 }
 
-/* Custom Select Arrow */
 select {
     appearance: none;
     -webkit-appearance: none;
@@ -131,7 +130,6 @@ select {
     padding-right: 35px;
 }
 
-/* Toggle Switch (Checkbox) */
 .switch {
     position: relative;
     display: inline-block;
@@ -175,6 +173,26 @@ input:checked + .slider {
 
 input:checked + .slider:before {
     transform: translateX(20px);
+}
+
+.custom-select-btn {
+    flex: 1;
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-hover);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--text-color);
+    font-family: monospace;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: border-color 0.2s;
+}
+
+.custom-select-btn:hover {
+    border-color: var(--accent);
 }
 
 /* **********************************
@@ -252,7 +270,7 @@ button.danger {
     flex-direction: column;
     gap: 20px;
     animation: fadeIn 0.3s ease;
-    flex: 1; /* Takes exactly the remaining screen space */
+    flex: 1;
     min-height: 0;
     overflow: hidden;
 }
@@ -272,7 +290,6 @@ button.danger {
     }
 }
 
-/* --- SIDEBAR --- */
 .sidebar {
     position: fixed;
     top: 40px !important;
@@ -331,7 +348,6 @@ button.danger {
     padding-bottom: 20px;
 }
 
-/* --- OVERLAY --- */
 .overlay {
     position: fixed;
     top: 0;
@@ -540,7 +556,6 @@ button.danger {
     align-items: center;
 }
 
-/* Empty State Styling */
 .empty-state {
     display: flex;
     flex-direction: column;
@@ -569,7 +584,6 @@ button.danger {
     line-height: 1.5;
 }
 
-/* Edit Mode & Groups */
 .group-header {
     display: flex;
     justify-content: space-between;
@@ -661,7 +675,7 @@ button.danger {
     text-align: left;
     background: none;
     border-radius: 0;
-    color: #cdd6f4;
+    color: var(--text-color);
     font-size: 13px;
     font-weight: 500;
     transition: background 0.2s;
@@ -736,7 +750,6 @@ button.danger {
     padding-left: 10px;
 }
 
-/* DNS Grid */
 .dns-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -770,7 +783,6 @@ button.danger {
     width: 60%;
 }
 
-/* Profiles List */
 .profiles-section {
     margin-top: 20px;
     border-top: 1px solid var(--border-color);
@@ -904,4 +916,47 @@ dialog {
 dialog::backdrop {
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(3px);
+}
+
+/* **********************************
+   14. SYSTEM UPDATE CHECKER
+   ********************************** */
+
+.sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.update-status {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: system-ui, sans-serif;
+    min-height: 16px;
+}
+
+.update-link {
+    color: var(--danger);
+    text-decoration: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+    transition: color 0.2s, text-decoration 0.2s;
+}
+
+.update-link:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
+.notification-dot {
+    width: 6px;
+    height: 6px;
+    background-color: var(--danger);
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 8px var(--danger);
 }

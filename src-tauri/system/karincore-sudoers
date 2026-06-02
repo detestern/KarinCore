@@ -6,3 +6,13 @@ ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /etc/resolv.conf /etc/karin-proxy/resolv.con
 ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /etc/karin-proxy/resolv.conf.vpn /etc/resolv.conf
 ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /etc/karin-proxy/resolv.conf.bak /etc/resolv.conf
 ALL ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/karin-proxy/resolv.conf.bak
+ALL ALL=(ALL) NOPASSWD: /usr/bin/ip rule del fwmark 111 lookup 111
+ALL ALL=(ALL) NOPASSWD: /usr/bin/ip route add default dev tun-ovpn table 111
+ALL ALL=(ALL) NOPASSWD: /usr/bin/ip rule add fwmark 111 lookup 111
+ALL ALL=(ALL) NOPASSWD: /usr/bin/sysctl -w net.ipv4.conf.tun-ovpn.rp_filter=0
+ALL ALL=(ALL) NOPASSWD: /usr/bin/sysctl -w net.ipv4.conf.all.rp_filter=0
+ALL ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -A POSTROUTING -o tun-ovpn -j MASQUERADE
+ALL ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -D POSTROUTING -o tun-ovpn -j MASQUERADE
+ALL ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /etc/karin-proxy/geo
+ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/geosite.dat /etc/karin-proxy/geo/geosite.dat
+ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/geoip.dat /etc/karin-proxy/geo/geoip.dat

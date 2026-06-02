@@ -32,15 +32,11 @@ No bloated Electron apps, no restrictive sandboxes breaking your system routing.
 
 ## ✨ Key Features
 
-* **Native Integration:** The core runs as a background system daemon (`karin-proxy-daemon.service`), ensuring a stable connection even when the GUI is closed.
-
-* **Seamless UX:** Thanks to dedicated `/etc/sudoers.d` rules, managing network interfaces and routing is just a click away. No annoying root password prompts every time you connect.
-
-* **Smart Routing:** Built-in support for Direct, Proxy, and Block routing modes.
-
-* **Protocol Support:** Fully compatible with VLESS, VMess, Trojan, Shadowsocks, and other modern proxy standards.
-
-* **Minimalist & Lightweight:** Powered by Rust and Tauri. It consumes minimal RAM and has virtually zero CPU overhead.
+* **Multi-level Routing (Matryoshka Mode):** Full native integration of the OpenVPN protocol. Route your Xray traffic (VLESS/VMess/etc.) seamlessly over an encrypted OVPN tunnel.
+* **Native Integration & Session Isolation:** The core runs as a background system daemon (`karin-proxy-daemon.service`). It intelligently handles MTU (MSS Clamping) and automatically tears down tunnels before new connections to prevent leaks.
+* **Seamless UX:** Thanks to dedicated `/etc/sudoers.d` rules, managing network interfaces, routing, and geo-databases is just a click away. No annoying root password prompts.
+* **Interactive Terminal Assistant:** Meet Karin — your built-in cyber-assistant who monitors the core, reacts to your actions, and respects your digital space without visual clutter.
+* **Smart Routing & Updates:** Built-in support for Direct, Proxy, and Block modes with automatic GeoIP/GeoSite database fetching and silent GitHub API update checks.
 
 ---
 
@@ -81,8 +77,7 @@ Check the [Releases](../../releases) page for the latest `.deb` package. It auto
 
 ```bash
 
-sudo dpkg -i KarinCore_1.0.0_amd64.deb
-
+sudo dpkg -i KarinCore_1.2.0_amd64.deb
 sudo apt install -f # if any dependencies are missing
 
 ```
@@ -91,13 +86,9 @@ sudo apt install -f # if any dependencies are missing
 
 ### First Launch
 
-After installation, you must enable and start the backend daemon so the GUI can communicate with it:
+Unlike standard system services, the KarinCore daemon should **not** be enabled in autostart (to prevent it from hijacking your traffic before the GUI generates a valid configuration). 
 
-```bash
-
-sudo systemctl enable --now karin-proxy-daemon.service
-
-```
+Do **not** use `systemctl enable`. Simply launch KarinCore from your desktop environment's application menu. The graphical interface will automatically start, manage, and safely stop the daemon as needed using pre-configured sudo rules.
 
 Once the service is running, simply launch KarinCore from your desktop environment's application menu.
 
@@ -115,9 +106,19 @@ This privilege separation keeps your system secure by avoiding running the entir
 
 
 
-## 🤝 Contributing & Feedback
+## 🗺️ Roadmap (What's Next?)
 
-Bug reports, pull requests, and UI/UX ideas are highly appreciated!
-If you find this tool useful, please consider giving this repository a ⭐️.
+While KarinCore was born natively for Linux, the free internet has no OS boundaries. 
+**Cross-platform expansion is currently in the works:** Developing native versions for Windows and macOS is the next major milestone. Karin plans to take over other operating systems very soon!
+
+## 🤝 Support, Contributing & Feedback
+
+The project is created and maintained by a single independent developer. Bug reports, pull requests, and UI/UX ideas are highly appreciated! 
+
+If KarinCore helps you stay connected to the free world and you want to support the ongoing development (including the upcoming Windows port), you can buy me a coffee or donate via crypto:
+
+* **USDT (TRC20):** `TQCQhGQD6xgaDxwqAVcTiapS6rdcPyf24X`
+
+If you find this tool useful, please consider giving this repository a ⭐️!
 
 <div align="center"><p><a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a></p></div>
