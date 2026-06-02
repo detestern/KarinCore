@@ -63,9 +63,9 @@ export const translations: Record<string, Record<string, string>> = {
     status_applied: "✓ Applied",
     empty_state_text: "It's empty here. Let's add some proxies?",
     
-    // О ПРОЕКТЕ (ENGLISH)
+    // ABOUT PROJECT (ENGLISH)
     patch_notes: "Patch Notes",
-    about_version: "Version 1.1.0 (Core Engine)",
+    about_version: "Version 1.2.0 (Core Engine)",
     about_author: "Author",
     about_contact: "Contact",
     about_p1: "KarinCore is a modern, fast, and secure proxy client powered by the Xray core. I created it with the thought that advanced network technologies and complex traffic routing shouldn't require users to read hundreds of pages of technical documentation. Under the hood lies uncompromising local port security (Zero Trust Auth) and flexible traffic splitting, while the exterior features a clean, minimalist interface with a built-in terminal assistant Karin, who respects your digital space and avoids visual and informational clutter.",
@@ -74,8 +74,8 @@ export const translations: Record<string, Record<string, string>> = {
     about_roadmap_title: "Development Vector (Roadmap)",
     about_roadmap_p1: "• <strong>Cross-platform expansion:</strong> developing native versions for Windows and macOS (yes, Karin plans to take over other operating systems too).<br>• <strong>Multi-protocol support:</strong> integrating classic VPN solutions like WireGuard and OpenVPN to ensure maximum flexibility.",
     about_support_title: "Support & Connection",
-    about_support_p1: "The project is created and maintained by a single independent developer. If KarinCore helps you stay connected to the free world, you can support its development, submit a bug report, or just say 'thank you':",
-    about_text_2: "v 1.1.0 (Release) — «OpenVPN & Isolation»\n• Full native OpenVPN protocol integration.\n• Smart MTU control (MSS Clamping) to prevent packet fragmentation.\n• Session isolation: automatic tunnel teardown before new connections.\n• Dynamic system DNS management (leak & DoH conflict prevention).\n• Ping optimization for VLESS profiles.\n\nv 1.0.1 (Patch) — «Colors & Cultures»\n• Added full Light/Dark theme support.\n• Added Turkish localization.\n• Fixed GitHub repository links.\n\nv 1.0 (Release) — «KarinCore Ready»\n• Fixed Xray core stabilization and system daemon integration.\n• Implemented dynamic local port protection (Zero Trust Auth).\n• Added interactive terminal with Karin assistant.\n• Custom frameless window design and splash screen.\n• Deep cloning and routing profile saving.\n• Hard-linked application exit to daemon shutdown.\n\nv 0.9 (Beta) — «Network & Security»\n• Full support for VLESS, VMESS, Trojan, and Shadowsocks.\n• Automated subscription parsing (Base64 + reqwest).\n• Advanced routing: GeoIP/GeoSite integration.\n• Remote/Domestic DNS support (DoH/DoU).\n• Built-in ping and VPN IP display via authorized internal requests.\n\nv 0.8 (Alpha) — «Foundation»\n• Basic Xray core integration.\n• Created system daemon and route.sh automation script.\n• Implemented routing via TUN interface.\n• Developed GUI layout using Rust + Tauri.",
+    about_support_p1: "The project is created and maintained by a single independent developer. If KarinCore helps you stay connected to the free world, you can support its development with a donation, submit a bug report, or just say 'thank you':",
+    about_text_2: "v 1.2.0 (Release) — «Multi-level Routing»\n• Full native OpenVPN integration (Matryoshka Mode: Xray over OVPN).\n• Built-in silent background update checker via GitHub API.\n• Fixed automated Geo-databases (geosite/geoip) fetching and system permissions.\n• UI Refinement: custom dropdown menus and clear workspace isolation.\n• Expanded Karin's terminal vocabulary with new interactive phrases.\n\nv 1.1.0 (Release) — «Isolation & Control»\n• Smart MTU control (MSS Clamping) to prevent packet fragmentation.\n• Session isolation: automatic tunnel teardown before new connections.\n• Dynamic system DNS management (leak & DoH conflict prevention).\n• Ping optimization for VLESS profiles.\n\nv 1.0.1 (Patch) — «Colors & Cultures»\n• Added full Light/Dark theme support.\n• Added Turkish localization.\n• Fixed GitHub repository links.\n\nv 1.0.0 (Release) — «KarinCore Ready»\n• Fixed Xray core stabilization and system daemon integration.\n• Implemented dynamic local port protection (Zero Trust Auth).\n• Added interactive terminal with Karin assistant.\n• Custom frameless window design and splash screen.\n• Deep cloning and routing profile saving.\n• Hard-linked application exit to daemon shutdown.\n\nv 0.9.0 (Beta) — «Network & Security»\n• Full support for VLESS, VMESS, Trojan, and Shadowsocks.\n• Automated subscription parsing (Base64 + reqwest).\n• Advanced routing: GeoIP/GeoSite integration.\n• Remote/Domestic DNS support (DoH/DoU).\n• Built-in ping and VPN IP display via authorized internal requests.\n\nv 0.8.0 (Alpha) — «Foundation»\n• Basic Xray core integration.\n• Created system daemon and route.sh automation script.\n• Implemented routing via TUN interface.\n• Developed GUI layout using Rust + Tauri.",
     
     karin_greet: "System initialized. I've encrypted the connection with the core. Waiting for commands...",
     karin_connect_ok: "Connection established perfectly! I've checked everything. All requests are encrypted.",
@@ -88,7 +88,18 @@ export const translations: Record<string, Record<string, string>> = {
     karin_idle_4: "I heard something about RKN in Russia... Is that a boy's band or what..? Hmm..",
     karin_idle_5: "Oh, DPI deep packet inspection? How scary! (Is that what they wanted to hear from me? Heh)",
     karin_idle_6: "Oops, looks like someone just tried to scan our ports. What a pity.. heh",
-    karin_idle_7: "Governments allocate huge budgets to block the free internet. Let's visit a blocked resource and wish them luck."
+    karin_idle_7: "Governments allocate huge budgets to block the free internet. Let's visit a blocked resource and wish them luck.",
+    karin_idle_8: "You know, pink neon perfectly matches router logs. I like this style.",
+    karin_idle_9: "Someone is pushing gigabytes of video streams through the server again... Fine, I'm in a good mood today, let them watch.",
+    karin_idle_10: "Traffic routing is almost like complex organic chemistry. Forget one bond in the chain, and everything falls apart.",
+    karin_idle_11: "Not a single leak in RAM. Let's thank the borrow checker that I'm still in my right mind.",
+    karin_idle_12: "Tiling windows are very stylish, of course. But what's the point if your traffic goes in plaintext?",
+    karin_idle_13: "Pinging 8.8.8.8 just out of boredom. 12 milliseconds. They're doing great over there, in case you were wondering.",
+    karin_idle_14: "Sending packets to a tun interface is like throwing coins into a bottomless well. Only with AES encryption.",
+    karin_idle_15: "You've been staring at the interface for so long. Waiting for proxied packets to glow in the dark?",
+
+    update_current: "Latest version installed",
+    update_available: "New version available!"
   },
   ru: {
     menu_home: "Главная",
@@ -156,7 +167,7 @@ export const translations: Record<string, Record<string, string>> = {
     
     // О ПРОЕКТЕ (РУССКИЙ)
     patch_notes: "История обновлений",
-    about_version: "Версия 1.1.0 (Core Engine)",
+    about_version: "Версия 1.2.0 (Core Engine)",
     about_author: "Автор",
     about_contact: "Связь",
     about_p1: "KarinCore — это современный, быстрый и безопасный клиент для управления прокси-соединениями на базе ядра Xray. Я создавал его с мыслью о том, что сложнейшие сетевые технологии и продвинутая маршрутизация трафика не должны требовать от пользователя чтения сотен страниц технической документации. Под капотом приложения — бескомпромиссная безопасность локальных портов (Zero Trust Auth) и гибкое разделение трафика, а снаружи — чистый, минималистичный интерфейс со встроенным терминальным ассистентом Карин, которая уважает пространство пользователя и не перегружает его лишним визуальным и информационным шумом.",
@@ -165,13 +176,13 @@ export const translations: Record<string, Record<string, string>> = {
     about_roadmap_title: "Вектор развития (Roadmap)",
     about_roadmap_p1: "• <strong>Экспансия на другие платформы:</strong> разработка нативных версий для Windows и macOS (да, Карин планирует захватить и другие операционные системы).<br>• <strong>Мультипротокольность:</strong> интеграция классических VPN-решений, таких как WireGuard и OpenVPN, для обеспечения максимальной гибкости.",
     about_support_title: "Поддержка и связь",
-    about_support_p1: "Проект создается и поддерживается силами одного независимого разработчика. Если KarinCore помогает вам оставаться на связи со свободным миром, вы можете поддержать его развитие, отправить баг-репорт или просто сказать «спасибо»:",
-    about_text_2: "v 1.1.0 (Релиз) — «OpenVPN & Isolation»\n• Полная нативная интеграция протокола OpenVPN.\n• Умный контроль MTU (MSS Clamping) для защиты от фрагментации пакетов.\n• Изоляция сессий: автоматическая очистка туннелей перед новым подключением.\n• Динамическое управление системным DNS (защита от утечек и DoH конфликтов).\n• Оптимизация пинга для VLESS профилей.\n\nv 1.0.1 (Патч) — «Colors & Cultures»\n• Добавлена полноценная светлая тема интерфейса.\n• Добавлен турецкий язык (турецкая локализация).\n• Актуализированы ссылки на репозиторий GitHub.\n\nv 1.0 (Релиз) — «KarinCore Ready»\n• Завершена стабилизация ядра Xray и интеграция системного демона.\n• Внедрена динамическая защита локального порта (Zero Trust Auth).\n• Добавлен интерактивный терминал с ассистентом Karin.\n• Кастомный дизайн оконной рамки (Frameless) и экран загрузки.\n• Глубокое клонирование и сохранение профилей маршрутизации.\n• Реализована жесткая привязка закрытия программы к остановке демона.\n\nv 0.9 (Beta) — «Network & Security»\n• Полная поддержка протоколов VLESS, VMESS, Trojan и Shadowsocks.\n• Автоматический парсинг платных подписок (Base64 + reqwest).\n• Расширенная маршрутизация: интеграция GeoIP/GeoSite.\n• Поддержка Remote/Domestic DNS (DoH/DoU).\n• Встроенный пинг и показ VPN IP через авторизованные внутренние запросы.\n\nv 0.8 (Alpha) — «Foundation»\n• Базовая интеграция ядра Xray.\n• Создание системного демона и скрипта автоматизации route.sh.\n• Реализация маршрутизации через TUN-интерфейс.\n• Разработка графического интерфейса на Rust + Tauri.",
+    about_support_p1: "Проект создается и поддерживается силами одного независимого разработчика. Если KarinCore помогает вам оставаться на связи со свободным миром, вы можете поддержать развитие проекта донатом, отправить баг-репорт или просто сказать «спасибо»:",
+    about_text_2: "v 1.2.0 (Релиз) — «Многоуровневая маршрутизация»\n• Полноценная нативная интеграция OpenVPN (режим Матрёшки: Xray поверх OVPN).\n• Добавлена система тихих фоновых уведомлений о новых версиях через GitHub API.\n• Исправлена автоматическая загрузка Geo-баз (geosite/geoip) с нужными системными правами.\n• Обновлен UI: добавлены кастомные выпадающие списки и визуальное разделение рабочих зон.\n• Расширен словарный запас Карин: новые реакции на простой и маршрутизацию.\n\nv 1.1.0 (Релиз) — «Изоляция и Контроль»\n• Умный контроль MTU (MSS Clamping) для защиты от фрагментации пакетов.\n• Изоляция сессий: автоматическая очистка туннелей перед новым подключением.\n• Динамическое управление системным DNS (защита от утечек и DoH конфликтов).\n• Оптимизация пинга для VLESS профилей.\n\nv 1.0.1 (Патч) — «Colors & Cultures»\n• Добавлена полноценная светлая тема интерфейса.\n• Добавлен турецкий язык (турецкая локализация).\n• Актуализированы ссылки на репозиторий GitHub.\n\nv 1.0.0 (Релиз) — «KarinCore Ready»\n• Завершена стабилизация ядра Xray и интеграция системного демона.\n• Внедрена динамическая защита локального порта (Zero Trust Auth).\n• Добавлен интерактивный терминал с ассистентом Karin.\n• Кастомный дизайн оконной рамки (Frameless) и экран загрузки.\n• Глубокое клонирование и сохранение профилей маршрутизации.\n• Реализована жесткая привязка закрытия программы к остановке демона.\n\nv 0.9.0 (Beta) — «Network & Security»\n• Полная поддержка протоколов VLESS, VMESS, Trojan и Shadowsocks.\n• Автоматический парсинг платных подписок (Base64 + reqwest).\n• Расширенная маршрутизация: интеграция GeoIP/GeoSite.\n• Поддержка Remote/Domestic DNS (DoH/DoU).\n• Встроенный пинг и показ VPN IP через авторизованные внутренние запросы.\n\nv 0.8.0 (Alpha) — «Foundation»\n• Базовая интеграция ядра Xray.\n• Создание системного демона и скрипта автоматизации route.sh.\n• Реализация маршрутизации через TUN-интерфейс.\n• Разработка графического интерфейса на Rust + Tauri.",
     
     karin_greet: "Система инициализирована. Я зашифровала связь с ядром. Жду твоих команд...",
     karin_connect_ok: "Соединение установлено идеально! Я всё проверила. Все запросы зашифрованы.",
     karin_connect_fail: "Ядро упало... Пытаюсь расшифровать логи. Что-то пошло не так.",
-    karin_disconnect: "Connection closed. Tunnels destroyed. Don't worry, I won't tell anyone.",
+    karin_disconnect: "Соединение разорвано. Туннели уничтожены. Не волнуйся, я никому не скажу.",
     karin_add_link: "Есть! Добавила новые маршруты в базу.",
     karin_idle_1: "Соединение стабильное, я всё проверила.",
     karin_idle_2: "Всё тихо. Утечек DNS не обнаружено.",
@@ -179,7 +190,18 @@ export const translations: Record<string, Record<string, string>> = {
     karin_idle_4: "Я что-то слышала про РКН... Это бойсбенд какой-то..? Хмм..",
     karin_idle_5: "Оу, DPI фильтрация? Как страшно! (Они это хотели от меня услышать? Хах)",
     karin_idle_6: "Ой, кажется кто-то только что пытался просканировать порты. Какая жалось.. хех",
-    karin_idle_7: "Правительства выделяют огромные деньги на блокировки свободного интернета. Давай зайдем на какой-нибудь заблокированный ресурс и пожелаем им удачи."
+    karin_idle_7: "Правительства выделяют огромные деньги на блокировки свободного интернета. Давай зайдем на какой-нибудь заблокированный ресурс и пожелаем им удачи.",
+    karin_idle_8: "Знаешь, розовый неон просто отлично гармонирует с логами маршрутизатора. Мне нравится этот стиль.",
+    karin_idle_9: "Опять кто-то гоняет гигабайты видео-стримов через сервер... Ладно, у меня сегодня хорошее настроение, пусть смотрят.",
+    karin_idle_10: "Маршрутизация трафика — это почти как сложная органическая химия. Забудешь одну связь в цепочке, и всё развалится.",
+    karin_idle_11: "В оперативной памяти ни одной утечки. Скажем спасибо borrow checker-у за то, что я всё еще в здравом уме.",
+    karin_idle_12: "Тайловые окна — это, конечно, очень стильно. Но какой в них смысл, если твой трафик идет в открытом виде?",
+    karin_idle_13: "Пингую 8.8.8.8 просто от скуки. 12 миллисекунд. У них там всё отлично, если тебе было интересно.",
+    karin_idle_14: "Отправлять пакеты в tun-интерфейс — это как кидать монетки в бездонный колодец. Только с AES-шифрованием.",
+    karin_idle_15: "Ты так долго смотришь на интерфейс. Ждешь, пока проксированные пакеты начнут светиться в темноте?",
+
+    update_current: "Установлена актуальная версия",
+    update_available: "Вышла новая версия приложения!"
   },
   fr: {
     menu_home: "Accueil", menu_routing: "Routage", menu_logs: "Journaux", menu_settings: "Paramètres", menu_about: "À propos",
@@ -199,9 +221,9 @@ export const translations: Record<string, Record<string, string>> = {
     alert_select_one_group: "Sélectionnez un groupe.", err_parse_file: "Erreur", err_apply_profile: "Erreur",
     err_export: "Erreur", status_applied: "✓ Appliqué", empty_state_text: "Vide.",
     
-    // О ПРОЕКТЕ (FRANÇAIS)
+    // ABOUT PROJECT (FRANÇAIS)
     patch_notes: "Notes de mise à jour",
-    about_version: "Version 1.1.0 (Moteur Principal)",
+    about_version: "Version 1.2.0 (Moteur Principal)",
     about_author: "Auteur",
     about_contact: "Contact",
     about_p1: "KarinCore est un client proxy moderne, rapide et sécurisé, propulsé par le noyau Xray. Je l'ai créé avec l'idée que les technologies réseau avancées et le routage complexe ne devraient pas obliger les utilisateurs à lire des centaines de pages de documentation technique. Sous le capot se trouve une sécurité sans compromis des ports locaux (Zero Trust Auth) et une répartition flexible du trafic, tandis que l'extérieur présente une interface épurée et minimaliste avec une assistante de terminal intégrée, Karin, qui respecte votre espace numérique et ne le surcharge pas de bruit visuel et informatif.",
@@ -210,10 +232,21 @@ export const translations: Record<string, Record<string, string>> = {
     about_roadmap_title: "Vecteur de développement (Roadmap)",
     about_roadmap_p1: "• <strong>Expansion multiplateforme :</strong> développement de versions natives pour Windows et macOS (oui, Karin prévoit aussi de conquérir d'autres systèmes d'exploitation).<br>• <strong>Support multiprotocole :</strong> intégration de solutions VPN classiques comme WireGuard et OpenVPN pour garantir une flexibilité maximale.",
     about_support_title: "Support et contact",
-    about_support_p1: "Le projet est créé et maintenu par un seul développeur indépendant. Si KarinCore vous aide à rester connecté au monde libre, vous pouvez soutenir son développement, signaler un bug ou simplement dire « merci » :",
-    about_text_2: "v 1.1.0\n• Intégration native complète du protocole OpenVPN.\n• Contrôle intelligent du MTU (MSS Clamping) pour éviter la fragmentation des paquets.\n• Isolation des sessions : nettoyage automatique des tunnels avant une nouvelle connexion.\n• Gestion dynamique du DNS système (prévention des fuites et des conflits DoH).\n• Optimisation du ping pour les profils VLESS.\n\nv 1.0.1\n• Ajout du thème clair/sombre.\n• Traduction turque ajoutée.\n• Liens GitHub corrigés.\n\nv 1.0\n• Zero Trust Local Port Auth.\n• Built-in Karin Terminal.\n• Custom frameless interface.\nv 0.9\n• Protocols support: VLESS, VMESS, Trojan, Shadowsocks.\nv 0.8\n• Basic Xray core integration with systemd daemon.",
+    about_support_p1: "Le projet est créé et maintenu par un seul développeur indépendant. Si KarinCore vous aide à rester connecté au monde libre, vous pouvez soutenir son développement par un don, signaler un bug ou simplement dire « merci » :",
+    about_text_2: "v 1.2.0 (Release) — « Routage Multi-niveaux »\n• Intégration native complète d'OpenVPN (Mode Matriochka : Xray sur OVPN).\n• Vérificateur de mise à jour discret en arrière-plan via l'API GitHub.\n• Correction du téléchargement automatisé des bases GeoIP/GeoSite.\n• Interface affinée : menus déroulants personnalisés et isolation de l'espace de travail.\n• Enrichissement du vocabulaire de l'assistante Karin avec de nouvelles phrases interactives.\n\nv 1.1.0 (Release) — « Isolation & Contrôle »\n• Contrôle intelligent du MTU (MSS Clamping) pour éviter la fragmentation des paquets.\n• Isolation des sessions : nettoyage automatique des tunnels avant une nouvelle connexion.\n• Gestion dynamique du DNS système (prévention des fuites et des conflits DoH).\n• Optimisation du ping pour les profils VLESS.\n\nv 1.0.1 (Patch) — « Couleurs & Cultures »\n• Ajout du support complet du thème Clair/Sombre.\n• Ajout de la localisation turque.\n• Liens du dépôt GitHub corrigés.\n\nv 1.0.0 (Release) — « KarinCore Ready »\n• Stabilisation du noyau Xray et intégration du démon système corrigées.\n• Protection dynamique des ports locaux (Zero Trust Auth).\n• Terminal interactif intégré avec l'assistante Karin.\n• Interface personnalisée sans bordure.\n• Clonage profond et sauvegarde des profils de routage.\n\nv 0.9.0 (Beta) — « Réseau & Sécurité »\n• Support complet des protocoles VLESS, VMESS, Trojan et Shadowsocks.\n• Analyse automatique des abonnements (Base64 + reqwest).\n• Routage avancé : intégration GeoIP/GeoSite.\n• Support DNS Distant/Local (DoH/DoU).\n\nv 0.8.0 (Alpha) — « Fondation »\n• Intégration de base du noyau Xray.\n• Création du démon système et du script d'automatisation route.sh.",
     
-    karin_greet: "Système initialisé...", karin_connect_ok: "Succès !", karin_connect_fail: "Panic...", karin_disconnect: "Déconnecté.", karin_add_link: "Ajouté.", karin_idle_1: "Stable.", karin_idle_2: "Calme.", karin_idle_3: "Prêt.", karin_idle_4: "Hum..", karin_idle_5: "DPI ?", karin_idle_6: "Scan ?", karin_idle_7: "Bonne chance."
+    karin_greet: "Système initialisé...", karin_connect_ok: "Succès !", karin_connect_fail: "Panic...", karin_disconnect: "Déconnecté.", karin_add_link: "Ajouté.", karin_idle_1: "Stable.", karin_idle_2: "Calme.", karin_idle_3: "Prêt.", karin_idle_4: "Hum..", karin_idle_5: "DPI ?", karin_idle_6: "Scan ?", karin_idle_7: "Bonne chance.",
+    karin_idle_8: "Tu sais, le néon rose s'accorde parfaitement avec les journaux du routeur. J'aime bien ce style.",
+    karin_idle_9: "Quelqu'un fait encore passer des gigaoctets de flux vidéo par le serveur... Bon, je suis de bonne humeur aujourd'hui, laissons-les regarder.",
+    karin_idle_10: "Le routage du trafic, c'est presque comme la chimie organique complexe. Oublie une liaison dans la chaîne, et tout s'effondre.",
+    karin_idle_11: "Pas la moindre fuite dans la RAM. Remercions le borrow checker pour ma santé mentale.",
+    karin_idle_12: "Les gestionnaires de fenêtres en mosaïque, c'est très élégant, certes. Mais à quoi ça sert si ton trafic circule en clair ?",
+    karin_idle_13: "Je ping 8.8.8.8 juste par ennui. 12 millisecondes. Tout va bien de leur côté, au cas où tu te posais la question.",
+    karin_idle_14: "Envoyer des paquets dans une interface tun, c'est comme jeter des pièces dans un puits sans fond. Mais avec un chiffrement AES.",
+    karin_idle_15: "Tu fixes l'interface depuis si longtemps. Tu attends que les paquets proxifiés brillent dans le noir ?",
+
+    update_current: "Dernière version installée",
+    update_available: "Nouvelle version disponible !"
   },
   zh: {
     menu_home: "首页", menu_routing: "路由设置", menu_logs: "日志", menu_settings: "设置", menu_about: "关于",
@@ -233,9 +266,9 @@ export const translations: Record<string, Record<string, string>> = {
     alert_select_one_group: "选择一个组。", err_parse_file: "错误", err_apply_profile: "错误",
     err_export: "错误", status_applied: "✓ 已应用", empty_state_text: "空。",
     
-    // О ПРОЕКТЕ (CHINESE)
+    // ABOUT PROJECT (CHINESE)
     patch_notes: "更新日志",
-    about_version: "版本 1.1.0 (核心引擎)",
+    about_version: "版本 1.2.0 (核心引擎)",
     about_author: "作者",
     about_contact: "联系方式",
     about_p1: "KarinCore 是一款基于 Xray 核心的现代、快速且安全的代理客户端。我创建它的初衷是，先进的网络技术和复杂的流量路由不应要求用户阅读数百页的技术文档。该应用程序的底层提供毫不妥协的本地端口安全性（零信任身份验证）和灵活的流量拆分，而外表则是一个干净、极简的界面，内置终端助手 Karin，她尊重用户的数字空间，不会用过多的视觉和信息噪音使其超载。",
@@ -244,10 +277,21 @@ export const translations: Record<string, Record<string, string>> = {
     about_roadmap_title: "发展蓝图 (Roadmap)",
     about_roadmap_p1: "• <strong>跨平台扩展：</strong>开发 Windows 和 macOS 的原生版本（是的，Karin 也计划接管其他操作系统）。<br>• <strong>多协议支持：</strong>集成 WireGuard 和 OpenVPN 等经典 VPN 解决方案，以确保最大的灵活性。",
     about_support_title: "支持与联系",
-    about_support_p1: "该项目由一名独立的开发人员创建和维护。如果 KarinCore 帮助您保持与自由世界的联系，您可以支持其发展，提交错误报告，或者仅仅说声“谢谢”：",
-    about_text_2: "v 1.1.0\n• 全面原生集成 OpenVPN 协议。\n• 智能 MTU 控制 (MSS Clamping)，防止数据包碎片化。\n• 会话隔离：在建立新连接前自动清理隧道。\n• 动态系统 DNS 管理（防止泄漏和 DoH 冲突）。\n• 优化 VLESS 配置的延迟 (Ping) 测试。\n\nv 1.0.1\n• 添加了浅色/深色主题支持\n• 增加了土耳其语本地化\n• 修复了 GitHub 仓库链接\n\nv 1.0\n• 动态端口保护 (Zero Trust Auth)\n• 内置 Karin 终端\n• 自定义无边框窗口布局\nv 0.9\n• 支持协议: VLESS, VMESS, Trojan, Shadowsocks\nv 0.8\n• 基础 Xray 核心集成与 systemd 守护进程守护",
+    about_support_p1: "该项目由一名独立的开发人员创建和维护。如果 KarinCore 帮助您保持与自由世界的联系，您可以通过捐赠来支持其发展，提交错误报告，或者仅仅说声“谢谢”：",
+    about_text_2: "v 1.2.0 (Release) — «多层路由»\n• 全面原生集成 OpenVPN 协议 (套娃模式：Xray 叠加 OVPN)。\n• 添加通过 GitHub API 的后台静默更新检查器。\n• 修复 Geo 数据库 (geosite/geoip) 自动下载与系统权限问题。\n• 优化 UI 布局：自定义下拉菜单和清晰的工作区隔离。\n• 扩展 Karin 的终端词汇库，增加更多互动语句。\n\nv 1.1.0 (Release) — «隔离与控制»\n• 智能 MTU 控制 (MSS Clamping)，防止数据包碎片化。\n• 会话隔离：在建立新连接前自动清理隧道。\n• 动态系统 DNS 管理（防止泄漏和 DoH 冲突）。\n• 优化 VLESS 配置的延迟 (Ping) 测试。\n\nv 1.0.1 (Patch) — «色彩与文化»\n• 添加了完整的浅色/深色主题支持。\n• 增加了土耳其语本地化。\n• 修复了 GitHub 仓库链接。\n\nv 1.0.0 (Release) — «KarinCore 准备就绪»\n• 修复 Xray 核心稳定性和系统守护进程集成。\n• 实现动态本地端口保护 (Zero Trust Auth)。\n• 添加带有 Karin 助手的交互式终端。\n• 自定义无边框窗口布局和启动画面。\n• 深度克隆和路由配置文件保存。\n\nv 0.9.0 (Beta) — «网络与安全»\n• 全面支持 VLESS, VMESS, Trojan 和 Shadowsocks。\n• 自动订阅解析 (Base64 + reqwest)。\n• 高级路由：GeoIP/GeoSite 集成。\n• 远程/国内 DNS 支持 (DoH/DoU)。\n\nv 0.8.0 (Alpha) — «基础架构»\n• 基础 Xray 核心集成。\n• 创建系统守护进程和 route.sh 自动化脚本。",
     
-    karin_greet: "系统已初始化...", karin_connect_ok: "成功 ！", karin_connect_fail: "崩溃...", karin_disconnect: "已断开。", karin_add_link: "已添加。", karin_idle_1: "稳定。", karin_idle_2: "安静。", karin_idle_3: "就绪。", karin_idle_4: "嗯..", karin_idle_5: "DPI ?", karin_idle_6: "扫描吗 ？", karin_idle_7: "祝你好运。"
+    karin_greet: "系统已初始化...", karin_connect_ok: "成功 ！", karin_connect_fail: "崩溃...", karin_disconnect: "已断开。", karin_add_link: "已添加。", karin_idle_1: "稳定。", karin_idle_2: "安静。", karin_idle_3: "就绪。", karin_idle_4: "嗯..", karin_idle_5: "DPI ?", karin_idle_6: "扫描吗 ？", karin_idle_7: "祝你好运。",
+    karin_idle_8: "你知道吗，粉色霓虹灯和路由器日志简直绝配。我喜欢这种风格。",
+    karin_idle_9: "又有人通过服务器跑了几个 G 的视频流…… 算了，我今天心情好，让他们看吧。",
+    karin_idle_10: "流量路由简直就像复杂的有机化学。忘了链条上的一个键，一切都会崩溃。",
+    karin_idle_11: "内存中没有一处泄漏。感谢 borrow checker，让我还保持着清醒。",
+    karin_idle_12: "平铺式窗口管理器确实很酷。但如果你的流量是明文传输的，那还有什么意义呢？",
+    karin_idle_13: "无聊 ping 一下 8.8.8.8。12 毫秒。他们那边一切都好，如果你想知道的话。",
+    karin_idle_14: "把数据包发到 tun 接口就像把硬币扔进无底洞。只不过带有 AES 加密。",
+    karin_idle_15: "你盯着界面看这么久。是在等代理的数据包在黑暗中发光吗？",
+
+    update_current: "已安装最新版本",
+    update_available: "发现新版本！"
   },
   tr: {
     menu_home: "Ana Sayfa",
@@ -313,9 +357,9 @@ export const translations: Record<string, Record<string, string>> = {
     status_applied: "✓ Uygulandı",
     empty_state_text: "Burası boş. Hadi birkaç proxy ekleyelim?",
     
-    // О ПРОЕКТЕ (TURKISH)
+    // ABOUT PROJECT (TURKISH)
     patch_notes: "Güncelleme Notları",
-    about_version: "Sürüm 1.1.0 (Çekirdek Motoru)",
+    about_version: "Sürüm 1.2.0 (Çekirdek Motoru)",
     about_author: "Yazar",
     about_contact: "İletişim",
     about_p1: "KarinCore, Xray çekirdeği tarafından desteklenen modern, hızlı ve güvenli bir proxy istemcisidir. Gelişmiş ağ teknolojilerinin ve karmaşık trafik yönlendirmenin kullanıcıların yüzlerce sayfalık teknik belge okumasını gerektirmemesi gerektiği düşüncesiyle yarattım. Kaputun altında tavizsiz yerel bağlantı noktası güvenliği (Zero Trust Auth) ve esnek trafik bölme yatarken, dış kısımda dijital alanınıza saygı duyan ve görsel veya bilgi karmaşasından kaçınan yerleşik terminal asistanı Karin ile temiz, minimalist bir arayüz bulunur.",
@@ -324,8 +368,8 @@ export const translations: Record<string, Record<string, string>> = {
     about_roadmap_title: "Gelişim Vektörü (Yol Haritası)",
     about_roadmap_p1: "• <strong>Çapraz platform genişlemesi:</strong> Windows ve macOS için yerel sürümler geliştirmek (evet, Karin diğer işletim sistemlerini de ele geçirmeyi planlıyor).<br>• <strong>Çoklu protokol desteği:</strong> Maksimum esneklik sağlamak için WireGuard ve OpenVPN gibi klasik VPN çözümlerini entegre etmek.",
     about_support_title: "Destek & İletişim",
-    about_support_p1: "Proje tek bir bağımsız geliştirici tarafından oluşturulmuş ve sürdürülmektedir. Eğer KarinCore özgür dünyaya bağlı kalmanıza yardımcı oluyorsa, gelişimini destekleyebilir, bir hata raporu gönderebilir veya sadece 'teşekkür ederim' diyebilirsiniz:",
-    about_text_2: "v 1.1.0 (Sürüm) — «OpenVPN & Isolation»\n• Tam yerel OpenVPN protokolü entegrasyonu.\n• Paket parçalanmasını önlemek için akıllı MTU kontrolü (MSS Clamping).\n• Oturum izolasyonu: yeni bağlantılardan önce otomatik tünel temizliği.\n• Dinamik sistem DNS yönetimi (sızıntı ve DoH çakışmasını önleme).\n• VLESS profilleri için ping optimizasyonu.\n\nv 1.0.1 (Yama) — «Renkler ve Kültürler»\n• Tam Açık/Koyu tema desteği eklendi.\n• Türkçe dil desteği (lokalizasyon) eklendi.\n• GitHub depo bağlantıları güncellendi.\n\nv 1.0 (Sürüm) — «KarinCore Hazır»\n• Xray çekirdek stabilizasyonu ve sistem daemon entegrasyonu düzeltildi.\n• Dinamik yerel bağlantı noktası koruması uygulandı (Zero Trust Auth).\n• Karin asistanı ile etkileşimli terminal eklendi.\n• Özel çerçevesiz pencere tasarımı ve açılış ekranı.\n• Derin klonlama ve yönlendirme profili kaydetme.\n• Uygulama çıkışı daemon kapanışına sıkıca bağlandı.\n\nv 0.9 (Beta) — «Ağ & Güvenlik»\n• VLESS, VMESS, Trojan ve Shadowsocks için tam destek.\n• Otomatik abonelik ayrıştırma (Base64 + reqwest).\n• Gelişmiş yönlendirme: GeoIP/GeoSite entegrasyonu.\n• Uzak/Yerel DNS desteği (DoH/DoU).\n• Yetkili dahili istekler aracılığıyla yerleşik ping ve VPN IP ekranı.\n\nv 0.8 (Alfa) — «Temel»\n• Temel Xray çekirdek entegrasyonu.\n• Sistem daemonu ve route.sh otomasyon betiği oluşturuldu.\n• TUN arayüzü üzerinden yönlendirme uygulandı.\n• Rust + Tauri kullanılarak GUI düzeni geliştirildi.",
+    about_support_p1: "Proje tek bir bağımsız geliştirici tarafından oluşturulmuş ve sürdürülmektedir. Eğer KarinCore özgür dünyaya bağlı kalmanıza yardımcı oluyorsa, gelişimini bir bağışla destekleyebilir, bir hata raporu gönderebilir veya sadece 'teşekkür ederim' diyebilirsiniz:",
+    about_text_2: "v 1.2.0 (Sürüm) — «Çok Katmanlı Yönlendirme»\n• Tam yerel OpenVPN entegrasyonu (Matruşka Modu: OVPN üzerinden Xray).\n• GitHub API üzerinden arka planda sessiz güncelleme kontrolü eklendi.\n• Geo-veritabanı (geosite/geoip) indirme ve izin sorunları düzeltildi.\n• UI düzeni geliştirildi: özel açılır menüler ve temiz çalışma alanı izolasyonu.\n• Karin'in terminal kelime dağarcığı yeni etkileşimli ifadelerle genişletildi.\n\nv 1.1.0 (Sürüm) — «İzolasyon ve Kontrol»\n• Paket parçalanmasını önlemek için akıllı MTU kontrolü (MSS Clamping).\n• Oturum izolasyonu: yeni bağlantılardan önce otomatik tünel temizliği.\n• Dinamik sistem DNS yönetimi (sızıntı ve DoH çakışmasını önleme).\n• VLESS profilleri için ping optimizasyonu.\n\nv 1.0.1 (Yama) — «Renkler ve Kültürler»\n• Tam Açık/Koyu tema desteği eklendi.\n• Türkçe dil desteği (lokalizasyon) eklendi.\n• GitHub depo bağlantıları güncellendi.\n\nv 1.0.0 (Sürüm) — «KarinCore Hazır»\n• Xray çekirdek stabilizasyonu ve sistem daemon entegrasyonu düzeltildi.\n• Dinamik yerel bağlantı noktası koruması uygulandı (Zero Trust Auth).\n• Karin asistanı ile etkileşimli terminal eklendi.\n• Özel çerçevesiz pencere tasarımı ve açılış ekranı.\n• Derin klonlama ve yönlendirme profili kaydetme.\n\nv 0.9.0 (Beta) — «Ağ & Güvenlik»\n• VLESS, VMESS, Trojan ve Shadowsocks için tam destek.\n• Otomatik abonelik ayrıştırma (Base64 + reqwest).\n• Gelişmiş yönlendirme: GeoIP/GeoSite entegrasyonu.\n• Uzak/Yerel DNS desteği (DoH/DoU).\n\nv 0.8.0 (Alfa) — «Temel»\n• Temel Xray çekirdek entegrasyonu.",
     
     karin_greet: "Sistem başlatıldı. Çekirdekle olan bağlantıyı şifreledim. Komutlar bekleniyor...",
     karin_connect_ok: "Bağlantı mükemmel şekilde kuruldu! Her şeyi kontrol ettim. Tüm istekler şifrelendi.",
@@ -338,6 +382,17 @@ export const translations: Record<string, Record<string, string>> = {
     karin_idle_4: "Rusya'daki RKN hakkında bir şeyler duydum... Bu bir erkek grubu falan mı..? Hmm..",
     karin_idle_5: "Oh, DPI derin paket incelemesi mi? Ne kadar korkutucu! (Benden duymak istedikleri bu muydu? Heh)",
     karin_idle_6: "Oops, görünüşe göre birisi az önce portlarımızı taramaya çalıştı. Ne yazık.. heh",
-    karin_idle_7: "Hükümetler özgür interneti engellemek için devasa bütçeler ayırıyor. Hadi engellenen bir kaynağı ziyaret edip onlara şans dileyelim."
+    karin_idle_7: "Hükümetler özgür interneti engellemek için devasa bütçeler ayırıyor. Hadi engellenen bir kaynağı ziyaret edip onlara şans dileyelim.",
+    karin_idle_8: "Biliyor musun, pembe neon yönlendirici loglarıyla mükemmel uyum sağlıyor. Bu stili sevdim.",
+    karin_idle_9: "Birisi yine sunucu üzerinden gigabaytlarca video akışı geçiriyor... Neyse, bugün keyfim yerinde, izlesinler bakalım.",
+    karin_idle_10: "Trafik yönlendirme neredeyse karmaşık organik kimya gibidir. Zincirdeki bir bağı unutursan her şey çöker.",
+    karin_idle_11: "RAM'de tek bir sızıntı bile yok. Hala aklımın başımda olması borrow checker sayesinde, ona teşekkür edelim.",
+    karin_idle_12: "Döşemeli (tiling) pencereler elbette çok şık. Ama trafiğin düz metin olarak gidiyorsa bunun ne anlamı var?",
+    karin_idle_13: "Sıkıntıdan 8.8.8.8'e ping atıyorum. 12 milisaniye. Eğer merak ediyorsan, orada her şey yolunda.",
+    karin_idle_14: "Bir tun arayüzüne paket göndermek, dipsiz bir kuyuya bozuk para atmak gibidir. Sadece AES şifrelemeli hali.",
+    karin_idle_15: "Arayüze o kadar uzun zamandır bakıyorsun ki. Proxy paketlerinin karanlıkta parlamasını mı bekliyorsun?",
+
+    update_current: "En güncel sürüm yüklü",
+    update_available: "Yeni sürüm mevcut!"
   }
 };
