@@ -54,7 +54,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 1.2.1</div>
+      <div class="app-version-text">v 1.2.2</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -137,6 +137,16 @@
       </p>
       
       <div class="links-list" style="padding-bottom: 30px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; background: var(--base-crust); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+        <div style="font-size: 13px;">
+          <div style="color: var(--text-color); font-weight: 500;" data-i18n="routing_server_ip">Проксировать IP сервера</div>
+<div style="color: var(--text-dim); font-size: 11px; margin-top: 4px;" data-i18n="routing_server_ip_desc">Снимает системный bypass. Включайте для проксирования сервера, на котором расположен VPN.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-server-proxy">
+          <span class="slider"></span>
+        </label>
+      </div>
         <div class="routing-container">
           <div class="route-column" id="col-direct" data-zone="direct">
             <h3 style="color: var(--success); pointer-events: none;">Direct</h3>
