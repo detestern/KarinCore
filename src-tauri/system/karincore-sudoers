@@ -23,3 +23,4 @@ ALL ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -A POSTROUTING -o wg0 -j MASQUE
 ALL ALL=(ALL) NOPASSWD: /usr/bin/ip route add default dev wg0 table 111
 ALL ALL=(ALL) NOPASSWD: /usr/bin/sysctl -w net.ipv4.conf.wg0.rp_filter=0
 ALL ALL=(ALL) NOPASSWD: /usr/bin/wg show wg0
+ALL ALL=(ALL) NOPASSWD: /usr/bin/ip rule del *

@@ -31,6 +31,7 @@ let activeLink: string | null = sessionStorage.getItem('karin_active_link') || n
 let allAvailableTags: string[] = [];
 let currentZone: ZoneKey = 'proxy';
 let defaultOutbound: ZoneKey = 'proxy';
+let allowServerProxy = safeParse('karin_allow_server_proxy', false);
 let isEditMode = false;
 let selectedLinks = new Set<string>();
 let selectedGroups = new Set<string>();
@@ -106,6 +107,7 @@ const themeToggle = document.getElementById('theme-toggle') as HTMLInputElement 
 const themeLabel = document.getElementById('theme-label') as HTMLLabelElement | null;
 const btnImportFile = document.getElementById('btn-import-file') as HTMLButtonElement | null;
 const importFileInput = document.getElementById('import-file-input') as HTMLInputElement | null;
+const toggleServerProxy = document.getElementById('toggle-server-proxy') as HTMLInputElement | null;
 
 const domType = document.getElementById('dns-dom-type') as HTMLSelectElement | null;
 const domUrl = document.getElementById('dns-dom-url') as HTMLInputElement | null;
@@ -297,7 +299,8 @@ async function connectProxy(link: string) {
             vlessLink: link, 
             routingState: routingState, 
             defaultOutbound: defaultOutbound,
-            dnsParams: { domestic: dDns, remote: rDns }
+            dnsParams: { domestic: dDns, remote: rDns },
+            allowServerProxy: allowServerProxy
         });
         
         if (result === "OK") { 
@@ -857,6 +860,14 @@ function init() {
             checkApplicationUpdates();
         });
     });
+
+    if (toggleServerProxy) {
+        toggleServerProxy.checked = allowServerProxy;
+        toggleServerProxy.addEventListener('change', (e) => {
+            allowServerProxy = (e.target as HTMLInputElement).checked;
+            localStorage.setItem('karin_allow_server_proxy', JSON.stringify(allowServerProxy));
+        });
+    }
 
     themeToggle?.addEventListener('change', (e) => {
         const isLight = (e.target as HTMLInputElement).checked;
