@@ -960,3 +960,27 @@ dialog::backdrop {
     display: inline-block;
     box-shadow: 0 0 8px var(--danger);
 }
+
+.route-column {
+    position: relative;
+    transition: box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.route-column.drag-over-left {
+    transform: translateX(12px) !important;
+    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease !important;
+    box-shadow: -8px 0 15px -4px var(--accent) !important;
+    border-left: 2px solid var(--accent) !important;
+}
+.route-column.drag-over-right {
+    transform: translateX(-12px) !important;
+    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease !important;
+    box-shadow: 8px 0 15px -4px var(--accent) !important;
+    border-right: 2px solid var(--accent) !important;
+}
+#routing-grid {
+    overflow: visible !important;
+}
+.routing-arrow {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}

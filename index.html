@@ -54,7 +54,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 1.2.2</div>
+      <div class="app-version-text">v 1.2.3</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -133,36 +133,37 @@
       </div>
       
       <p style="font-size: 12px; color: var(--text-dim); margin-top: 10px; margin-bottom: 15px;" data-i18n="routing_hint">
-        Кликните на фон колонки, чтобы сделать её маршрутом по умолчанию.
+        Перетаскивайте колонки для изменения приоритета (слева направо). Кликните на фон, чтобы сделать маршрутом по умолчанию.
       </p>
       
       <div class="links-list" style="padding-bottom: 30px;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; background: var(--base-crust); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);">
-        <div style="font-size: 13px;">
-          <div style="color: var(--text-color); font-weight: 500;" data-i18n="routing_server_ip">Проксировать IP сервера</div>
-<div style="color: var(--text-dim); font-size: 11px; margin-top: 4px;" data-i18n="routing_server_ip_desc">Снимает системный bypass. Включайте для проксирования сервера, на котором расположен VPN.</div>
+          <div style="font-size: 13px;">
+            <div style="color: var(--text-color); font-weight: 500;" data-i18n="routing_server_ip">Проксировать IP сервера</div>
+            <div style="color: var(--text-dim); font-size: 11px; margin-top: 4px;" data-i18n="routing_server_ip_desc">Снимает системный bypass. Включайте для проксирования сервера, на котором расположен VPN.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-server-proxy">
+            <span class="slider"></span>
+          </label>
         </div>
-        <label class="switch">
-          <input type="checkbox" id="toggle-server-proxy">
-          <span class="slider"></span>
-        </label>
-      </div>
-        <div class="routing-container">
-          <div class="route-column" id="col-direct" data-zone="direct">
+        
+        <div id="routing-grid" class="routing-container" style="display: flex; gap: 10px; align-items: stretch; padding-bottom: 5px;">
+          <div class="route-column" id="col-direct" data-zone="direct" draggable="true" style="flex: 1; min-width: 0;">
             <h3 style="color: var(--success); pointer-events: none;">Direct</h3>
             <div class="drop-zone" id="zone-direct"></div>
           </div>
-          <div class="route-column active-default" id="col-proxy" data-zone="proxy">
+          <div class="route-column active-default" id="col-proxy" data-zone="proxy" draggable="true" style="flex: 1; min-width: 0;">
             <h3 style="color: var(--accent); pointer-events: none;">Proxy</h3>
             <div class="drop-zone" id="zone-proxy"></div>
           </div>
-          <div class="route-column" id="col-block" data-zone="block">
+          <div class="route-column" id="col-block" data-zone="block" draggable="true" style="flex: 1; min-width: 0;">
             <h3 style="color: var(--danger); pointer-events: none;">Block</h3>
             <div class="drop-zone" id="zone-block"></div>
           </div>
         </div>
 
-        <div class="dns-grid">
+        <div class="dns-grid" style="margin-top: 15px;">
           <div class="dns-card">
             <h4 style="margin: 0; color: var(--text-color);">Domestic DNS</h4>
             <div class="dns-row">
