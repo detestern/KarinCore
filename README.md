@@ -32,13 +32,14 @@ No bloated Electron apps, no restrictive sandboxes breaking your system routing.
 
 ## ✨ Key Features
 
-* **Multi-level Routing (Matryoshka Mode):** Full native integration of the OpenVPN and WireGuard protocols. Route your Xray traffic (VLESS/VMess/etc.) seamlessly over an encrypted OVPN or WG tunnel.
+* **Multi-level Routing:** Full native integration of the OpenVPN and WireGuard protocols. Route your Xray traffic (VLESS/VMess/etc.) seamlessly over an encrypted OVPN or WG tunnel via PBR routing.
+* **Visual Routing Priority (Drag & Drop):** Manage your Xray rule hierarchy visually. Simply drag and drop columns (Proxy, Direct, Block) from left to right to define the strict order of traffic processing.
+* **Advanced Bypass Control & DNS Management:** Remove the system bypass with a single toggle to proxy the VPN server's own IP address. Built-in support for independent Domestic and Remote DNS servers (DoH/DoU).
+* **Universal Parser & Route Profiles:** Instantly import `.ovpn` and `.conf` files, or parse `vless://`/`wg://` links directly from the clipboard. Save your perfect combinations of rules, column order, and DNS settings into local profiles for quick switching.
 * **Native Integration & Session Isolation:** The core runs as a background system daemon (`karin-proxy-daemon.service`). It intelligently handles MTU (MSS Clamping) and automatically tears down tunnels before new connections to prevent leaks.
-* **Seamless UX:** Thanks to dedicated `/etc/sudoers.d` rules, managing network interfaces, routing, and geo-databases is just a click away. No annoying root password prompts.
-* **Interactive Terminal Assistant:** Meet Karin — your built-in cyber-assistant who monitors the core, reacts to your actions, and respects your digital space without visual clutter.
-* **Smart Routing & Updates:** Built-in support for Direct, Proxy, and Block modes with automatic GeoIP/GeoSite database fetching and silent GitHub API update checks.
+* **Seamless UX:** Thanks to dedicated `/etc/sudoers.d` rules, managing network interfaces, routing, and Geo-databases is just a click away. No annoying root password prompts.
+* **Interactive Terminal Assistant:** Meet Karin — your built-in cyber-assistant. She monitors the core, asynchronously collects handshake logs, reacts to your actions, and respects your digital space without visual clutter.
 * **Zero Telemetry & Absolute Privacy:** KarinCore operates entirely locally. No hidden trackers, no data collection, and no analytics. Your encryption keys, IP addresses, and routing profiles never leave your machine. Released under the open-source MIT License.
-
 ---
 
   
@@ -77,7 +78,7 @@ yay -S karincore-git
 Check the [Releases](../../releases) page for the latest `.deb` package. It automatically configures `sudoers` and `systemd` rules during installation. Make sure you have `openvpn` and `wireguard-tools` installed on your system.
 
 ```bash
-sudo dpkg -i KarinCore_1.2.1_amd64.deb
+sudo dpkg -i KarinCore_1.2.3_amd64.deb
 sudo apt install -f # if any dependencies are missing
 ```
 

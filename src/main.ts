@@ -7,7 +7,7 @@ import { translations } from "./i18n";
 interface ProxyGroup { id: string; name: string; pinned: boolean; isOpen: boolean; }
 interface ProxyLink { id: string; url: string; pinned: boolean; groupId: string | null; }
 interface DnsConfig { type: string, url: string, ip: string }
-interface RouteProfile { id: string, name: string, defaultOutbound: string, rules: any, domDns?: DnsConfig, remDns?: DnsConfig }
+interface RouteProfile { id: string, name: string, defaultOutbound: string, rules: any, domDns?: DnsConfig, remDns?: DnsConfig, zonePriority?: ZoneKey[] }
 interface RoutingRule { type: string; value: string; }
 type ZoneKey = 'direct' | 'proxy' | 'block';
 
@@ -37,6 +37,8 @@ let selectedLinks = new Set<string>();
 let selectedGroups = new Set<string>();
 let logInterval: number | null = null; 
 
+let zonePriority: ZoneKey[] = safeParse('karin_zone_priority', ['proxy', 'direct', 'block']);
+
 const savedOutbound = localStorage.getItem('karin_default_outbound');
 if (savedOutbound === 'direct' || savedOutbound === 'proxy' || savedOutbound === 'block') {
     defaultOutbound = savedOutbound;
@@ -64,6 +66,7 @@ routeProfiles = routeProfiles.map(p => {
     if (!p.domDns) p.domDns = { type: "doh", url: "https://dns.yandex.ru/dns-query", ip: "77.88.8.8" };
     if (!p.remDns) p.remDns = { type: "doh", url: "https://1.1.1.1/dns-query", ip: "1.1.1.1" };
     if (!p.rules) p.rules = { direct: [], proxy: [], block: [] };
+    if (!p.zonePriority) p.zonePriority = ['proxy', 'direct', 'block'];
     return p;
 });
 
@@ -127,12 +130,172 @@ const langLabel = document.getElementById('lang-select-label') as HTMLSpanElemen
 const langMenu = document.getElementById('lang-menu') as HTMLDivElement | null;
 
 const langNames: Record<string, string> = {
-    en: "English",
-    ru: "Русский",
-    fr: "Français",
-    tr: "Türkçe",
-    zh: "中文"
+    en: "English", ru: "Русский", fr: "Français", tr: "Türkçe", zh: "中文"
 };
+
+// **********************************
+// DRAG AND DROP (ROUTING PRIORITY)
+// **********************************
+function applyColumnOrder() {
+    const container = document.getElementById('routing-grid');
+    if (!container) return;
+    
+    container.querySelectorAll('.routing-arrow').forEach(el => el.remove());
+    
+    zonePriority.forEach((zone, index) => {
+        const col = document.querySelector(`.route-column[data-zone="${zone}"]`) as HTMLElement;
+        if (col) {
+            col.style.flex = "1";
+            col.style.minWidth = "0";
+            container.appendChild(col); 
+            
+            if (index < zonePriority.length - 1) {
+                const arrow = document.createElement('div');
+                arrow.className = 'routing-arrow';
+                arrow.innerHTML = '➔';
+                arrow.style.cssText = 'display: flex; align-items: center; justify-content: center; color: var(--accent); font-weight: bold; font-size: 20px; opacity: 0.5; padding: 0 5px; user-select: none; pointer-events: none;';
+                container.appendChild(arrow);
+            }
+        }
+    });
+}
+
+function applyColumnOrderWithAnimation() {
+    const container = document.getElementById('routing-grid');
+    if (!container) return;
+
+    // 1. Снимаем координаты ДО изменения DOM
+    const cols = Array.from(container.querySelectorAll('.route-column')) as HTMLElement[];
+    const firstRects: Record<string, DOMRect> = {};
+    cols.forEach(col => {
+        firstRects[col.dataset.zone!] = col.getBoundingClientRect();
+    });
+
+    // 2. Меняем DOM
+    applyColumnOrder();
+
+    // 3. Снимаем координаты ПОСЛЕ изменения DOM и анимируем (FLIP)
+    const newCols = Array.from(container.querySelectorAll('.route-column')) as HTMLElement[];
+    newCols.forEach(col => {
+        const first = firstRects[col.dataset.zone!];
+        const last = col.getBoundingClientRect();
+        
+        if (first && last) {
+            const deltaX = first.left - last.left;
+            if (deltaX !== 0) {
+                // Телепортируем на старое место без анимации
+                col.style.transition = 'none';
+                col.style.transform = `translateX(${deltaX}px)`;
+                
+                // Форсируем перерисовку кадра
+                col.getBoundingClientRect();
+                
+                // Плавно едем на новое место
+                requestAnimationFrame(() => {
+                    col.style.transition = 'transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)';
+                    col.style.transform = 'translateX(0)';
+                });
+            }
+        }
+    });
+}
+
+function initDragAndDrop() {
+    const container = document.getElementById('routing-grid');
+    if (!container) return;
+    
+    let draggedZone: ZoneKey | null = null;
+    
+    document.querySelectorAll<HTMLElement>('.route-column').forEach(col => {
+        col.addEventListener('dragstart', (e: DragEvent) => {
+            const target = (e.target as HTMLElement).closest('.route-column') as HTMLElement;
+            if (!target) return;
+            
+            draggedZone = target.dataset.zone as ZoneKey;
+            target.style.opacity = '0.3';
+            
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', draggedZone);
+            }
+        });
+        
+        col.addEventListener('dragend', (e: DragEvent) => {
+            const target = (e.target as HTMLElement).closest('.route-column') as HTMLElement;
+            if (target) target.style.opacity = '1';
+            
+            document.querySelectorAll('.route-column').forEach(c => {
+                c.classList.remove('drag-over-left', 'drag-over-right');
+                (c as HTMLElement).style.transform = '';
+            });
+            draggedZone = null;
+        });
+    });
+
+    // Единый строгий математический контроллер на контейнере
+    container.addEventListener('dragover', (e: DragEvent) => {
+        e.preventDefault(); 
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        if (!draggedZone) return;
+
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const slotWidth = rect.width / 3;
+        
+        let hoverIndex = Math.floor(mouseX / slotWidth);
+        hoverIndex = Math.max(0, Math.min(2, hoverIndex)); // Ограничиваем от 0 до 2
+        
+        const fromIndex = zonePriority.indexOf(draggedZone);
+        
+        // Сбрасываем эффекты со всех
+        document.querySelectorAll('.route-column').forEach(c => {
+            c.classList.remove('drag-over-left', 'drag-over-right');
+        });
+
+        // Навешиваем эффект только на тот блок, место которого мы хотим занять
+        if (hoverIndex !== fromIndex) {
+            const targetZone = zonePriority[hoverIndex];
+            const targetCol = document.querySelector(`.route-column[data-zone="${targetZone}"]`) as HTMLElement;
+            
+            if (targetCol) {
+                if (hoverIndex < fromIndex) {
+                    // Тянем ВЛЕВО -> блок уступает вправо, подсвечивая левый край
+                    targetCol.classList.add('drag-over-left');
+                } else {
+                    // Тянем ВПРАВО -> блок уступает влево, подсвечивая правый край
+                    targetCol.classList.add('drag-over-right');
+                }
+            }
+        }
+    });
+
+    container.addEventListener('drop', (e: DragEvent) => {
+        e.preventDefault();
+        if (!draggedZone) return;
+        
+        document.querySelectorAll('.route-column').forEach(c => {
+            c.classList.remove('drag-over-left', 'drag-over-right');
+            (c as HTMLElement).style.opacity = '1';
+        });
+
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const slotWidth = rect.width / 3;
+        let hoverIndex = Math.floor(mouseX / slotWidth);
+        hoverIndex = Math.max(0, Math.min(2, hoverIndex));
+        
+        const fromIndex = zonePriority.indexOf(draggedZone);
+        
+        if (fromIndex !== hoverIndex) {
+            zonePriority.splice(fromIndex, 1);
+            zonePriority.splice(hoverIndex, 0, draggedZone);
+            
+            localStorage.setItem('karin_zone_priority', JSON.stringify(zonePriority));
+            applyColumnOrderWithAnimation(); 
+        }
+        draggedZone = null;
+    });
+}
 
 // **********************************
 // SYSTEM FIXES (WEBKITGTK / WAYLAND ZOOM PREVENTION)
@@ -300,7 +463,8 @@ async function connectProxy(link: string) {
             routingState: routingState, 
             defaultOutbound: defaultOutbound,
             dnsParams: { domestic: dDns, remote: rDns },
-            allowServerProxy: allowServerProxy
+            allowServerProxy: allowServerProxy,
+            zonePriority: zonePriority 
         });
         
         if (result === "OK") { 
@@ -762,7 +926,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.2.2"; 
+        const CURRENT_VERSION = "1.2.3"; 
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -813,6 +977,11 @@ function init() {
 
     updateUIStrings();
     if (langLabel) langLabel.textContent = langNames[currentLang] || "English";
+    
+    // Инициализация Drag and Drop для колонок маршрутизации
+    initDragAndDrop();
+    applyColumnOrder();
+
     renderLinks(); 
     updateStatusUI(); 
     updateDefaultOutboundUI(); 
@@ -1083,7 +1252,8 @@ function init() {
             routeProfiles.push({
                 id: 'rp_' + Date.now(), name, defaultOutbound, rules: routingState,
                 domDns: { type: domType.value, url: domUrl.value, ip: domIp.value },
-                remDns: { type: remType.value, url: remUrl.value, ip: remIp.value }
+                remDns: { type: remType.value, url: remUrl.value, ip: remIp.value },
+                zonePriority: [...zonePriority] 
             });
             localStorage.setItem('karin_route_profiles', JSON.stringify(routeProfiles));
             renderRoutingProfiles();
@@ -1213,6 +1383,12 @@ document.addEventListener('click', async (e) => {
             if (p && domType && domUrl && domIp && remType && remUrl && remIp) {
                 if (p.rules) routingState = JSON.parse(JSON.stringify(p.rules)); 
                 if (p.defaultOutbound) defaultOutbound = p.defaultOutbound as ZoneKey;
+                
+                if (p.zonePriority) {
+                    zonePriority = [...p.zonePriority];
+                    localStorage.setItem('karin_zone_priority', JSON.stringify(zonePriority));
+                    applyColumnOrder();
+                }
                 
                 domType.value = p.domDns?.type || 'doh'; 
                 domUrl.value = p.domDns?.url || ''; 
