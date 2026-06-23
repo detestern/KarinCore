@@ -5,6 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>KarinCore</title>
   <link rel="stylesheet" href="/src/styles.css">
+  <style>
+    .route-column {
+      position: relative;
+      transition: box-shadow 0.2s ease, opacity 0.2s ease;
+    }
+    
+    .route-column.drag-over-left {
+      transform: translateX(12px) !important;
+      transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease !important;
+      box-shadow: -8px 0 15px -4px var(--accent) !important;
+      border-left: 2px solid var(--accent) !important;
+    }
+    
+    .route-column.drag-over-right {
+      transform: translateX(-12px) !important;
+      transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease !important;
+      box-shadow: 8px 0 15px -4px var(--accent) !important;
+      border-right: 2px solid var(--accent) !important;
+    }
+
+    #routing-grid {
+      overflow: visible !important;
+    }
+    
+    .routing-arrow {
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+  </style>
 </head>
 <body>
 
@@ -54,7 +82,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 1.2.3</div>
+      <div class="app-version-text">v 1.2.4</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -144,6 +172,17 @@
           </div>
           <label class="switch">
             <input type="checkbox" id="toggle-server-proxy">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; background: var(--base-crust); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+          <div style="font-size: 13px;">
+            <div style="color: var(--text-color); font-weight: 500;" data-i18n="routing_proxy_lan">Проксировать локальную сеть (LAN)</div>
+            <div style="color: var(--text-dim); font-size: 11px; margin-top: 4px;" data-i18n="routing_proxy_lan_desc">Направляет подсети 10.x, 192.168.x и 172.x через прокси. По умолчанию отключено (прямой доступ).</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-proxy-lan">
             <span class="slider"></span>
           </label>
         </div>

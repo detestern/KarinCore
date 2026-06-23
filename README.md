@@ -78,7 +78,7 @@ yay -S karincore-git
 Check the [Releases](../../releases) page for the latest `.deb` package. It automatically configures `sudoers` and `systemd` rules during installation. Make sure you have `openvpn` and `wireguard-tools` installed on your system.
 
 ```bash
-sudo dpkg -i KarinCore_1.2.3_amd64.deb
+sudo dpkg -i KarinCore_1.2.4_amd64.deb
 sudo apt install -f # if any dependencies are missing
 ```
 

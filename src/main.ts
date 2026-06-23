@@ -32,6 +32,7 @@ let allAvailableTags: string[] = [];
 let currentZone: ZoneKey = 'proxy';
 let defaultOutbound: ZoneKey = 'proxy';
 let allowServerProxy = safeParse('karin_allow_server_proxy', false);
+let allowProxyLan = safeParse('karin_allow_proxy_lan', false);
 let isEditMode = false;
 let selectedLinks = new Set<string>();
 let selectedGroups = new Set<string>();
@@ -464,7 +465,8 @@ async function connectProxy(link: string) {
             defaultOutbound: defaultOutbound,
             dnsParams: { domestic: dDns, remote: rDns },
             allowServerProxy: allowServerProxy,
-            zonePriority: zonePriority 
+            zonePriority: zonePriority,
+            proxyLan: allowProxyLan
         });
         
         if (result === "OK") { 
@@ -926,7 +928,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.2.3"; 
+        const CURRENT_VERSION = "1.2.4"; 
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -1035,6 +1037,15 @@ function init() {
         toggleServerProxy.addEventListener('change', (e) => {
             allowServerProxy = (e.target as HTMLInputElement).checked;
             localStorage.setItem('karin_allow_server_proxy', JSON.stringify(allowServerProxy));
+        });
+    }
+
+    const toggleProxyLan = document.getElementById('toggle-proxy-lan') as HTMLInputElement | null;
+    if (toggleProxyLan) {
+        toggleProxyLan.checked = allowProxyLan;
+        toggleProxyLan.addEventListener('change', (e) => {
+            allowProxyLan = (e.target as HTMLInputElement).checked;
+            localStorage.setItem('karin_allow_proxy_lan', JSON.stringify(allowProxyLan));
         });
     }
 
