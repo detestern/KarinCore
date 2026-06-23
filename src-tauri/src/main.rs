@@ -39,8 +39,6 @@ fn get_log_paths() -> (String, String) {
     (err_log, acc_log)
 }
 
-// ЭТА ФУНКЦИЯ ТЕПЕРЬ СОБИРАЕТ ПРАВИЛА СТРОГО В ПОРЯДКЕ zone_priority,
-// ПЕРЕДАННОГО ИЗ ИНТЕРФЕЙСА (СЛЕВА НАПРАВО)
 fn build_xray_rules(state: Value, priority: Vec<String>) -> Value {
     let mut xray_rules = Vec::new();
     
@@ -260,7 +258,8 @@ async fn start_openvpn_proxy(
     default_outbound: String,
     _dns_params: serde_json::Value,
     allow_server_proxy: bool,
-    zone_priority: Vec<String>
+    zone_priority: Vec<String>,
+    proxy_lan: bool
 ) -> Result<String, String> {
     let parsed_url = Url::parse(&ovpn_link).map_err(|e| e.to_string())?;
     
@@ -361,7 +360,17 @@ async fn start_openvpn_proxy(
     let dynamic_rules = build_xray_rules(routing_state, zone_priority);
 
     let mut all_rules = vec![];
-    all_rules.push(json!({ "type": "field", "ip": ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "fe80::/10"], "outboundTag": "direct" }));
+    let mut local_ips = vec!["127.0.0.0/8".to_string()];
+    if !proxy_lan {
+        local_ips.extend(vec![
+            "10.0.0.0/8".to_string(),
+            "172.16.0.0/12".to_string(),
+            "192.168.0.0/16".to_string(),
+            "fc00::/7".to_string(),
+            "fe80::/10".to_string(),
+        ]);
+    }
+    all_rules.push(json!({ "type": "field", "ip": local_ips, "outboundTag": "direct" }));
     if let Some(rules_array) = dynamic_rules.as_array() { all_rules.extend(rules_array.clone()); }
     all_rules.push(json!({ "type": "field", "network": "tcp,udp", "outboundTag": default_outbound }));
 
@@ -411,7 +420,8 @@ async fn start_wireguard_proxy(
     default_outbound: String,
     _dns_params: serde_json::Value,
     allow_server_proxy: bool,
-    zone_priority: Vec<String>
+    zone_priority: Vec<String>,
+    proxy_lan: bool
 ) -> Result<String, String> {
     let parsed_url = Url::parse(&wg_link).map_err(|e| e.to_string())?;
     
@@ -507,7 +517,17 @@ async fn start_wireguard_proxy(
     let dynamic_rules = build_xray_rules(routing_state, zone_priority);
 
     let mut all_rules = vec![];
-    all_rules.push(json!({ "type": "field", "ip": ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "fe80::/10"], "outboundTag": "direct" }));
+    let mut local_ips = vec!["127.0.0.0/8".to_string()];
+    if !proxy_lan {
+        local_ips.extend(vec![
+            "10.0.0.0/8".to_string(),
+            "172.16.0.0/12".to_string(),
+            "192.168.0.0/16".to_string(),
+            "fc00::/7".to_string(),
+            "fe80::/10".to_string(),
+        ]);
+    }
+    all_rules.push(json!({ "type": "field", "ip": local_ips, "outboundTag": "direct" }));
     if let Some(rules_array) = dynamic_rules.as_array() { all_rules.extend(rules_array.clone()); }
     all_rules.push(json!({ "type": "field", "network": "tcp,udp", "outboundTag": default_outbound }));
 
@@ -558,17 +578,18 @@ async fn start_proxy(
     default_outbound: String,
     _dns_params: serde_json::Value,
     allow_server_proxy: bool,
-    zone_priority: Vec<String>
+    zone_priority: Vec<String>,
+    proxy_lan: bool
 ) -> Result<String, String> {
     teardown_connections();
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     if vless_link.starts_with("ovpn://") {
-        return start_openvpn_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority).await;
+        return start_openvpn_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority, proxy_lan).await;
     }
 
     if vless_link.starts_with("wg://") {
-        return start_wireguard_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority).await;
+        return start_wireguard_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority, proxy_lan).await;
     }
 
     let token = generate_token();
@@ -613,7 +634,17 @@ async fn start_proxy(
     let dynamic_rules = build_xray_rules(routing_state, zone_priority);
 
     let mut all_rules = vec![];
-    all_rules.push(json!({ "type": "field", "ip": ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "fe80::/10"], "outboundTag": "direct" }));
+    let mut local_ips = vec!["127.0.0.0/8".to_string()];
+    if !proxy_lan {
+        local_ips.extend(vec![
+            "10.0.0.0/8".to_string(),
+            "172.16.0.0/12".to_string(),
+            "192.168.0.0/16".to_string(),
+            "fc00::/7".to_string(),
+            "fe80::/10".to_string(),
+        ]);
+    }
+    all_rules.push(json!({ "type": "field", "ip": local_ips, "outboundTag": "direct" }));
     if let Some(rules_array) = dynamic_rules.as_array() { all_rules.extend(rules_array.clone()); }
     all_rules.push(json!({ "type": "field", "network": "tcp,udp", "outboundTag": default_outbound }));
         

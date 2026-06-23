@@ -74,7 +74,7 @@ yay -S karincore-git
 В разделе [Releases](../../releases) всегда доступен свежий `.deb` пакет. Он автоматически настроит правила `sudoers` и `systemd` во время распаковки. Убедитесь, что в вашей системе установлены пакеты `openvpn` и `wireguard-tools`.
 
 ```bash
-sudo dpkg -i KarinCore_1.2.3_amd64.deb
+sudo dpkg -i KarinCore_1.2.4_amd64.deb
 sudo apt install -f # если потребуются дополнительные зависимости
 ```
 
