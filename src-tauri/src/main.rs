@@ -36,6 +36,13 @@ fn get_log_paths() -> (String, String) {
     let err_log = format!("{}/error.log", log_dir);
     let acc_log = format!("{}/access.log", log_dir);
     
+    if !std::path::Path::new(&err_log).exists() {
+        let _ = std::fs::File::create(&err_log);
+    }
+    if !std::path::Path::new(&acc_log).exists() {
+        let _ = std::fs::File::create(&acc_log);
+    }
+
     (err_log, acc_log)
 }
 
@@ -98,6 +105,37 @@ async fn ensure_geo_files() -> Result<(), String> {
             std::process::Command::new("rm").args(["-f", &tmp_path]).output().ok();
         }
     }
+    
+    Ok(())
+}
+
+async fn ensure_xray() -> Result<(), String> {
+    let xray_path = "/usr/local/bin/xray";
+    
+    if Path::new(xray_path).exists() {
+        return Ok(());
+    }
+
+    let url = "https://github.com/XTLS/Xray-core/releases/download/v26.5.9/Xray-linux-64.zip";
+    let response = reqwest::get(url).await.map_err(|e| e.to_string())?;
+    let content = response.bytes().await.map_err(|e| e.to_string())?;
+    
+    let zip_path = "/tmp/xray_download.zip";
+    fs::write(zip_path, &content).await.map_err(|e| e.to_string())?;
+    
+    let unzip_status = std::process::Command::new("unzip")
+        .args(["-o", zip_path, "xray", "-d", "/tmp/"])
+        .output()
+        .map_err(|e| format!("Ошибка распаковки: {}", e))?;
+        
+    if !unzip_status.status.success() {
+        return Err("Не удалось распаковать архив Xray".into());
+    }
+    
+    std::process::Command::new("sudo").args(["cp", "/tmp/xray", xray_path]).output().ok();
+    std::process::Command::new("sudo").args(["chmod", "+x", xray_path]).output().ok();
+    
+    std::process::Command::new("rm").args(["-f", zip_path, "/tmp/xray"]).output().ok();
     
     Ok(())
 }
@@ -293,11 +331,19 @@ async fn start_openvpn_proxy(
 
     ovpn_config.push_str("\npull-filter ignore \"redirect-gateway\"\npull-filter ignore \"dhcp-option DNS\"\npull-filter ignore \"tun-mtu\"\ntun-mtu 1360\nmssfix 1320\ndev tun-ovpn\nmark 255\n");
 
+    let tmp_ovpn = "/tmp/karin_openvpn.ovpn";
+    std::fs::write(tmp_ovpn, ovpn_config).map_err(|e| format!("Ошибка записи временного файла: {}", e))?;
+    let copy_ovpn = std::process::Command::new("sudo").args(["cp", tmp_ovpn, "/etc/karin-proxy/openvpn.ovpn"]).output().map_err(|e| e.to_string())?;
+    if !copy_ovpn.status.success() { return Err("Нет прав на запись конфигурации OpenVPN".into()); }
+    std::process::Command::new("rm").args(["-f", tmp_ovpn]).output().ok();
+
     let config_path = "/etc/karin-proxy/openvpn.ovpn";
-    std::fs::write(config_path, ovpn_config).map_err(|e| format!("Ошибка записи файла на диск: {}", e))?;
 
     let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
-    let _ = std::fs::write("/etc/karin-proxy/resolv.conf.vpn", vpn_dns_content);
+    let tmp_dns = "/tmp/karin_resolv.conf.vpn";
+    let _ = std::fs::write(tmp_dns, vpn_dns_content);
+    let _ = std::process::Command::new("sudo").args(["cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
+    let _ = std::process::Command::new("rm").args(["-f", tmp_dns]).output();
 
     if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() {
         let _ = std::process::Command::new("sudo").args(["cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output();
@@ -390,12 +436,25 @@ async fn start_openvpn_proxy(
         ]
     });
 
-    std::fs::write("/etc/karin-proxy/config.json", config.to_string()).map_err(|e| e.to_string())?;
+    let tmp_conf = "/tmp/karin_config.json";
+    std::fs::write(tmp_conf, config.to_string()).map_err(|e| e.to_string())?;
+
+    let copy_status = std::process::Command::new("sudo")
+        .args(["cp", tmp_conf, "/etc/karin-proxy/config.json"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !copy_status.status.success() {
+        return Err("Нет прав на обновление конфигурации Xray".into());
+    }
+
+    std::process::Command::new("rm").args(["-f", tmp_conf]).output().ok();
 
     let output = std::process::Command::new("sudo").args(["systemctl", "restart", "karin-proxy-daemon.service"]).output().map_err(|e| e.to_string())?;
     if !output.status.success() { teardown_connections(); return Err("Ядро упало при попытке инициализации Матрёшки".into()); }
 
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = Some("openvpn_mode".to_string()); }
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
         tokio::spawn(async move {
@@ -459,11 +518,19 @@ async fn start_wireguard_proxy(
         }
     }
 
+    let tmp_wg = "/tmp/karin_wg0.conf";
+    std::fs::write(tmp_wg, modified_conf).map_err(|e| format!("Ошибка записи временного файла: {}", e))?;
+    let copy_wg = std::process::Command::new("sudo").args(["cp", tmp_wg, "/etc/karin-proxy/wg0.conf"]).output().map_err(|e| e.to_string())?;
+    if !copy_wg.status.success() { return Err("Нет прав на запись конфигурации WireGuard".into()); }
+    std::process::Command::new("rm").args(["-f", tmp_wg]).output().ok();
+
     let config_path = "/etc/karin-proxy/wg0.conf";
-    std::fs::write(config_path, modified_conf).map_err(|e| format!("Ошибка записи файла: {}", e))?;
 
     let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
-    let _ = std::fs::write("/etc/karin-proxy/resolv.conf.vpn", vpn_dns_content);
+    let tmp_dns = "/tmp/karin_resolv.conf.vpn";
+    let _ = std::fs::write(tmp_dns, vpn_dns_content);
+    let _ = std::process::Command::new("sudo").args(["cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
+    let _ = std::process::Command::new("rm").args(["-f", tmp_dns]).output();
     if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() { let _ = std::process::Command::new("sudo").args(["cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output(); }
     let _ = std::process::Command::new("sudo").args(["cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
 
@@ -547,12 +614,25 @@ async fn start_wireguard_proxy(
         ]
     });
 
-    std::fs::write("/etc/karin-proxy/config.json", config.to_string()).map_err(|e| e.to_string())?;
+    let tmp_conf = "/tmp/karin_config.json";
+    std::fs::write(tmp_conf, config.to_string()).map_err(|e| e.to_string())?;
+
+    let copy_status = std::process::Command::new("sudo")
+        .args(["cp", tmp_conf, "/etc/karin-proxy/config.json"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !copy_status.status.success() {
+        return Err("Нет прав на обновление конфигурации Xray".into());
+    }
+
+    std::process::Command::new("rm").args(["-f", tmp_conf]).output().ok();
 
     let output = std::process::Command::new("sudo").args(["systemctl", "restart", "karin-proxy-daemon.service"]).output().map_err(|e| e.to_string())?;
     if !output.status.success() { teardown_connections(); return Err("Ядро упало при попытке инициализации WireGuard".into()); }
 
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = Some("wireguard_mode".to_string()); }
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
         tokio::spawn(async move {
@@ -596,7 +676,10 @@ async fn start_proxy(
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = Some(token.clone()); }
 
     let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
-    let _ = std::fs::write("/etc/karin-proxy/resolv.conf.vpn", vpn_dns_content);
+    let tmp_dns = "/tmp/karin_resolv.conf.vpn";
+    let _ = std::fs::write(tmp_dns, vpn_dns_content);
+    let _ = std::process::Command::new("sudo").args(["cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
+    let _ = std::process::Command::new("rm").args(["-f", tmp_dns]).output();
     if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() { let _ = std::process::Command::new("sudo").args(["cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output(); }
     let _ = std::process::Command::new("sudo").args(["cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
 
@@ -685,7 +768,19 @@ async fn start_proxy(
         ]
     });
 
-    std::fs::write("/etc/karin-proxy/config.json", config.to_string()).map_err(|e| e.to_string())?;
+    let tmp_conf = "/tmp/karin_config.json";
+    std::fs::write(tmp_conf, config.to_string()).map_err(|e| e.to_string())?;
+
+    let copy_status = std::process::Command::new("sudo")
+        .args(["cp", tmp_conf, "/etc/karin-proxy/config.json"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !copy_status.status.success() {
+        return Err("Нет прав на обновление конфигурации Xray".into());
+    }
+
+    std::process::Command::new("rm").args(["-f", tmp_conf]).output().ok();
 
     let rotate_if_needed = |path: &str| { if let Ok(meta) = std::fs::metadata(path) { if meta.len() > 5 * 1024 * 1024 { let _ = std::fs::write(path, ""); } } };
     rotate_if_needed(&err_log); rotate_if_needed(&acc_log);
@@ -697,7 +792,7 @@ async fn start_proxy(
         let log_output = std::process::Command::new("sudo").args(["journalctl", "-u", "karin-proxy-daemon.service", "-n", "15", "--no-pager"]).output().map_err(|_| "Не удалось прочитать логи".to_string())?;
         return Err(format!("Ядро упало при запуске. Лог:\n{}", String::from_utf8_lossy(&log_output.stdout)));
     }
-
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     if allow_server_proxy {
         let ips_to_delete = resolved_ips.clone();
         tokio::spawn(async move {
@@ -754,14 +849,22 @@ fn open_browser(url: String) { std::process::Command::new("xdg-open").arg(url).s
 #[tauri::command]
 fn get_logs() -> Result<String, String> {
     let (log_path, _) = get_log_paths();
+    
+    // Проверяем, существует ли файл, ДО того как его читать
+    if !std::path::Path::new(&log_path).exists() {
+        return Ok("Ожидание запуска прокси (файлы логов еще не созданы)...".to_string());
+    }
+
     match std::fs::read_to_string(&log_path) {
         Ok(content) => {
-            if content.trim().is_empty() { return Ok("Ожидание логов (Прокси работает, ожидаем сетевой трафик)...".to_string()); }
+            if content.trim().is_empty() { 
+                return Ok("Ожидание логов (Прокси работает, ожидаем сетевой трафик)...".to_string()); 
+            }
             let lines: Vec<&str> = content.lines().collect();
             let last_lines = if lines.len() > 50 { &lines[lines.len() - 50..] } else { &lines[..] };
             Ok(last_lines.join("\n"))
         },
-        Err(e) => { Ok(format!("Ошибка чтения логов: {}\nУбедитесь, что прокси запущен.", e)) }
+        Err(e) => Ok(format!("Ошибка чтения логов: {}\nУбедитесь, что прокси запущен.", e))
     }
 }
 
@@ -805,7 +908,7 @@ fn close_window(_window: tauri::Window, _state: State<'_, ProxyState>) {
 // MAIN APPLICATION ENTRY POINT
 // **********************************
 fn main() {
-    tokio::runtime::Runtime::new().unwrap().block_on(async { let _ = ensure_geo_files().await; });
+    tokio::runtime::Runtime::new().unwrap().block_on(async { let _ = ensure_xray().await; let _ = ensure_geo_files().await; });
     let app = tauri::Builder::default().manage(ProxyState { auth_token: Mutex::new(None) }).invoke_handler(tauri::generate_handler![
             start_proxy, stop_proxy, fetch_subscription, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, export_profile, minimize_window, maximize_window, close_window, open_browser
         ]).build(tauri::generate_context!()).expect("error while building tauri application");

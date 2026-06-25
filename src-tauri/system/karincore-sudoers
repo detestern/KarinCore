@@ -24,3 +24,9 @@ ALL ALL=(ALL) NOPASSWD: /usr/bin/ip route add default dev wg0 table 111
 ALL ALL=(ALL) NOPASSWD: /usr/bin/sysctl -w net.ipv4.conf.wg0.rp_filter=0
 ALL ALL=(ALL) NOPASSWD: /usr/bin/wg show wg0
 ALL ALL=(ALL) NOPASSWD: /usr/bin/ip rule del *
+ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/karin_config.json /etc/karin-proxy/config.json
+ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/karin_openvpn.ovpn /etc/karin-proxy/openvpn.ovpn
+ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/karin_wg0.conf /etc/karin-proxy/wg0.conf
+ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/karin_resolv.conf.vpn /etc/karin-proxy/resolv.conf.vpn
+ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/xray /usr/local/bin/xray
+ALL ALL=(ALL) NOPASSWD: /usr/bin/chmod +x /usr/local/bin/xray
