@@ -78,7 +78,7 @@ yay -S karincore-git
 Check the [Releases](../../releases) page for the latest `.deb` package. It automatically configures `sudoers` and `systemd` rules during installation. Make sure you have `openvpn` and `wireguard-tools` installed on your system.
 
 ```bash
-sudo dpkg -i KarinCore_1.2.6_amd64.deb
+sudo dpkg -i KarinCore_1.2.7_amd64.deb
 sudo apt install -f # if any dependencies are missing
 ```
 
@@ -104,6 +104,10 @@ The application is cleanly separated into two independent binaries:
 This privilege separation keeps your system secure by avoiding running the entire graphical stack with superuser privileges.
 
 
+
+## 🩹 What's New in 1.2.7
+
+* **Fixed:** a set of privileged commands (config writes, geo-database updates, tunnel teardown) were being invoked without a fully-qualified path — this could silently fail with a permission error depending on how the shell resolved sudo commands.
 
 ## 🩹 What's New in 1.2.6
 
