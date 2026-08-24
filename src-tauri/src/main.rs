@@ -140,6 +140,53 @@ async fn ensure_xray() -> Result<(), String> {
     Ok(())
 }
 
+fn daemon_unit_installed() -> bool {
+    std::process::Command::new("systemctl")
+        .args(["list-unit-files", "--no-legend", "karin-proxy-daemon.service"])
+        .output()
+        .map(|o| o.status.success() && !o.stdout.is_empty())
+        .unwrap_or(false)
+}
+
+// Централизованный рестарт ядра: сначала проверяем, что systemd-юнит вообще
+// установлен (иначе сразу понятная ошибка вместо "ядро упало"), затем
+// перезапускаем и, если не вышло, прикладываем последние строки journalctl.
+fn restart_core_daemon() -> Result<(), String> {
+    if !daemon_unit_installed() {
+        return Err("Системный сервис karin-proxy-daemon.service не установлен. Похоже, пакет установлен некорректно — переустановите KarinCore.".into());
+    }
+
+    let output = std::process::Command::new("sudo")
+        .args(["/usr/bin/systemctl", "restart", "karin-proxy-daemon.service"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let log_text = std::process::Command::new("sudo")
+        .args(["/usr/bin/journalctl", "-u", "karin-proxy-daemon.service", "-n", "15", "--no-pager"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_else(|_| "не удалось прочитать журнал".to_string());
+
+    Err(format!("Ядро (karin-proxy-daemon.service) не запустилось. Лог:\n{}", log_text))
+}
+
+// Ждём, пока Xray реально поднимет SOCKS/HTTP inbound на 2080, вместо
+// фиксированной паузы — на "холодном" старте systemd 1.5с иногда не хватает,
+// из-за чего первое подключение выглядело неудачным и требовало второго клика.
+async fn wait_for_core_ready() -> bool {
+    for _ in 0..15 {
+        if tokio::net::TcpStream::connect("127.0.0.1:2080").await.is_ok() {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+    false
+}
+
 fn teardown_connections() {
     std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output().ok();
@@ -450,11 +497,13 @@ async fn start_openvpn_proxy(
 
     std::process::Command::new("rm").args(["-f", tmp_conf]).output().ok();
 
-    let output = std::process::Command::new("sudo").args(["systemctl", "restart", "karin-proxy-daemon.service"]).output().map_err(|e| e.to_string())?;
-    if !output.status.success() { teardown_connections(); return Err("Ядро упало при попытке инициализации Матрёшки".into()); }
+    if let Err(e) = restart_core_daemon() { teardown_connections(); return Err(e); }
 
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = Some("openvpn_mode".to_string()); }
-    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    if !wait_for_core_ready().await {
+        teardown_connections();
+        return Err("Ядро не успело подняться (порт 2080 не отвечает). Попробуйте подключиться ещё раз.".into());
+    }
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
         tokio::spawn(async move {
@@ -628,11 +677,13 @@ async fn start_wireguard_proxy(
 
     std::process::Command::new("rm").args(["-f", tmp_conf]).output().ok();
 
-    let output = std::process::Command::new("sudo").args(["systemctl", "restart", "karin-proxy-daemon.service"]).output().map_err(|e| e.to_string())?;
-    if !output.status.success() { teardown_connections(); return Err("Ядро упало при попытке инициализации WireGuard".into()); }
+    if let Err(e) = restart_core_daemon() { teardown_connections(); return Err(e); }
 
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = Some("wireguard_mode".to_string()); }
-    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    if !wait_for_core_ready().await {
+        teardown_connections();
+        return Err("Ядро не успело подняться (порт 2080 не отвечает). Попробуйте подключиться ещё раз.".into());
+    }
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
         tokio::spawn(async move {
@@ -787,12 +838,11 @@ async fn start_proxy(
     let _ = std::fs::OpenOptions::new().create(true).append(true).open(&err_log);
     let _ = std::fs::OpenOptions::new().create(true).append(true).open(&acc_log);
 
-    let output = std::process::Command::new("sudo").args(["systemctl", "restart", "karin-proxy-daemon.service"]).output().map_err(|e| e.to_string())?;
-    if !output.status.success() {
-        let log_output = std::process::Command::new("sudo").args(["journalctl", "-u", "karin-proxy-daemon.service", "-n", "15", "--no-pager"]).output().map_err(|_| "Не удалось прочитать логи".to_string())?;
-        return Err(format!("Ядро упало при запуске. Лог:\n{}", String::from_utf8_lossy(&log_output.stdout)));
+    if let Err(e) = restart_core_daemon() { teardown_connections(); return Err(e); }
+    if !wait_for_core_ready().await {
+        teardown_connections();
+        return Err("Ядро не успело подняться (порт 2080 не отвечает). Попробуйте подключиться ещё раз.".into());
     }
-    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     if allow_server_proxy {
         let ips_to_delete = resolved_ips.clone();
         tokio::spawn(async move {
