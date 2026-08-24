@@ -1,0 +1,24 @@
+[Unit]
+Description=KarinProxy Core Custom Daemon
+After=network.target network-online.target nss-lookup.target
+StartLimitIntervalSec=30
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+LimitNOFILE=51200
+ExecStart=/usr/local/bin/xray run -c /etc/karin-proxy/config.json
+
+# Магия автоматизации здесь:
+ExecStartPost=/etc/karin-proxy/route.sh up
+ExecStopPost=/etc/karin-proxy/route.sh down
+
+Restart=on-failure
+RestartSec=2
+
+# Юнит НЕ должен быть в автозагрузке (WantedBy используется только если
+# пользователь сам явно вызовет systemctl enable — по умолчанию GUI
+# управляет демоном сам через restart/stop).
+[Install]
+WantedBy=multi-user.target

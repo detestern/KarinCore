@@ -1,4 +1,27 @@
 #!/bin/sh
-cp /usr/share/karin-proxy/karincore-sudoers /etc/sudoers.d/karincore
+set -e
+
+# Файлы /etc/sudoers.d/karincore, /etc/systemd/system/karin-proxy-daemon.service
+# и /etc/karin-proxy/route.sh уже размещены dpkg на этапе распаковки пакета
+# (см. bundle.linux.deb.files в tauri.conf.json). Здесь только права/владелец
+# и регистрация юнита.
+
 chmod 0440 /etc/sudoers.d/karincore
 chown root:root /etc/sudoers.d/karincore
+
+chmod 0644 /etc/systemd/system/karin-proxy-daemon.service
+chown root:root /etc/systemd/system/karin-proxy-daemon.service
+
+chmod 0755 /etc/karin-proxy/route.sh
+chown root:root /etc/karin-proxy/route.sh
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+fi
+
+# ВАЖНО: юнит намеренно НЕ включается в автозагрузку (no systemctl enable).
+# Демоном полностью управляет GUI (см. README, раздел First Launch) —
+# это осознанное решение, чтобы демон не перехватывал трафик до того,
+# как приложение сформирует валидный конфиг.
+
+exit 0

@@ -1,5 +1,6 @@
 ALL ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart karin-proxy-daemon.service
 ALL ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop karin-proxy-daemon.service
+ALL ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u karin-proxy-daemon.service -n 15 --no-pager
 ALL ALL=(ALL) NOPASSWD: /usr/bin/openvpn --config /etc/karin-proxy/openvpn.ovpn
 ALL ALL=(ALL) NOPASSWD: /usr/bin/pkill -f /etc/karin-proxy/openvpn.ovpn
 ALL ALL=(ALL) NOPASSWD: /usr/bin/cp /etc/resolv.conf /etc/karin-proxy/resolv.conf.bak

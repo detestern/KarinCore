@@ -78,7 +78,7 @@ yay -S karincore-git
 Check the [Releases](../../releases) page for the latest `.deb` package. It automatically configures `sudoers` and `systemd` rules during installation. Make sure you have `openvpn` and `wireguard-tools` installed on your system.
 
 ```bash
-sudo dpkg -i KarinCore_1.2.4_amd64.deb
+sudo dpkg -i KarinCore_1.2.6_amd64.deb
 sudo apt install -f # if any dependencies are missing
 ```
 
@@ -104,6 +104,15 @@ The application is cleanly separated into two independent binaries:
 This privilege separation keeps your system secure by avoiding running the entire graphical stack with superuser privileges.
 
 
+
+## 🩹 What's New in 1.2.6
+
+* **Fixed:** the core's `karin-proxy-daemon.service` systemd unit and routing script are now shipped and registered by the `.deb` package itself — a clean install connects without extra manual steps.
+* **Fixed:** the in-app update checker no longer reports the current release as outdated.
+* **Fixed:** the "need to click Connect twice on first launch" issue — the app now actively waits for the core to become ready instead of a fixed delay.
+* **Improved:** clearer error messages when the core daemon fails to start, including an explicit "service not installed, please reinstall" message.
+
+See [Releases](../../releases) for the full changelog.
 
 ## 🗺️ Roadmap (What's Next?)
 
