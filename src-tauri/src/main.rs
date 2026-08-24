@@ -84,7 +84,7 @@ fn build_xray_rules(state: Value, priority: Vec<String>) -> Value {
 
 async fn ensure_geo_files() -> Result<(), String> {
     if !Path::new("/etc/karin-proxy/geo").exists() {
-        std::process::Command::new("sudo").args(["mkdir", "-p", "/etc/karin-proxy/geo"]).output().ok();
+        std::process::Command::new("sudo").args(["/usr/bin/mkdir", "-p", "/etc/karin-proxy/geo"]).output().ok();
     }
 
     let files = vec![
@@ -101,7 +101,7 @@ async fn ensure_geo_files() -> Result<(), String> {
             let tmp_path = format!("/tmp/{}", filename);
             fs::write(&tmp_path, &content).await.map_err(|e| e.to_string())?;
             
-            std::process::Command::new("sudo").args(["cp", &tmp_path, &final_path]).output().ok();
+            std::process::Command::new("sudo").args(["/usr/bin/cp", &tmp_path, &final_path]).output().ok();
             std::process::Command::new("rm").args(["-f", &tmp_path]).output().ok();
         }
     }
@@ -132,8 +132,8 @@ async fn ensure_xray() -> Result<(), String> {
         return Err("Не удалось распаковать архив Xray".into());
     }
     
-    std::process::Command::new("sudo").args(["cp", "/tmp/xray", xray_path]).output().ok();
-    std::process::Command::new("sudo").args(["chmod", "+x", xray_path]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/cp", "/tmp/xray", xray_path]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/chmod", "+x", xray_path]).output().ok();
     
     std::process::Command::new("rm").args(["-f", zip_path, "/tmp/xray"]).output().ok();
     
@@ -380,7 +380,7 @@ async fn start_openvpn_proxy(
 
     let tmp_ovpn = "/tmp/karin_openvpn.ovpn";
     std::fs::write(tmp_ovpn, ovpn_config).map_err(|e| format!("Ошибка записи временного файла: {}", e))?;
-    let copy_ovpn = std::process::Command::new("sudo").args(["cp", tmp_ovpn, "/etc/karin-proxy/openvpn.ovpn"]).output().map_err(|e| e.to_string())?;
+    let copy_ovpn = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_ovpn, "/etc/karin-proxy/openvpn.ovpn"]).output().map_err(|e| e.to_string())?;
     if !copy_ovpn.status.success() { return Err("Нет прав на запись конфигурации OpenVPN".into()); }
     std::process::Command::new("rm").args(["-f", tmp_ovpn]).output().ok();
 
@@ -389,17 +389,17 @@ async fn start_openvpn_proxy(
     let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
     let tmp_dns = "/tmp/karin_resolv.conf.vpn";
     let _ = std::fs::write(tmp_dns, vpn_dns_content);
-    let _ = std::process::Command::new("sudo").args(["cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
+    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
     let _ = std::process::Command::new("rm").args(["-f", tmp_dns]).output();
 
     if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() {
-        let _ = std::process::Command::new("sudo").args(["cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output();
+        let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output();
     }
     
-    let _ = std::process::Command::new("sudo").args(["cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
+    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
 
-    std::process::Command::new("sudo").args(["systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
-    std::process::Command::new("sudo").args(["pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output().ok();
 
     let mut child = tokio::process::Command::new("sudo").args(["/usr/bin/openvpn", "--config", config_path]).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| format!("Не удалось запустить процесс OpenVPN: {}", e))?;
 
@@ -487,7 +487,7 @@ async fn start_openvpn_proxy(
     std::fs::write(tmp_conf, config.to_string()).map_err(|e| e.to_string())?;
 
     let copy_status = std::process::Command::new("sudo")
-        .args(["cp", tmp_conf, "/etc/karin-proxy/config.json"])
+        .args(["/usr/bin/cp", tmp_conf, "/etc/karin-proxy/config.json"])
         .output()
         .map_err(|e| e.to_string())?;
 
@@ -569,7 +569,7 @@ async fn start_wireguard_proxy(
 
     let tmp_wg = "/tmp/karin_wg0.conf";
     std::fs::write(tmp_wg, modified_conf).map_err(|e| format!("Ошибка записи временного файла: {}", e))?;
-    let copy_wg = std::process::Command::new("sudo").args(["cp", tmp_wg, "/etc/karin-proxy/wg0.conf"]).output().map_err(|e| e.to_string())?;
+    let copy_wg = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_wg, "/etc/karin-proxy/wg0.conf"]).output().map_err(|e| e.to_string())?;
     if !copy_wg.status.success() { return Err("Нет прав на запись конфигурации WireGuard".into()); }
     std::process::Command::new("rm").args(["-f", tmp_wg]).output().ok();
 
@@ -578,13 +578,13 @@ async fn start_wireguard_proxy(
     let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
     let tmp_dns = "/tmp/karin_resolv.conf.vpn";
     let _ = std::fs::write(tmp_dns, vpn_dns_content);
-    let _ = std::process::Command::new("sudo").args(["cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
+    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
     let _ = std::process::Command::new("rm").args(["-f", tmp_dns]).output();
-    if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() { let _ = std::process::Command::new("sudo").args(["cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output(); }
-    let _ = std::process::Command::new("sudo").args(["cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
+    if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() { let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output(); }
+    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
 
-    std::process::Command::new("sudo").args(["systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
-    std::process::Command::new("sudo").args(["wg-quick", "down", config_path]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/wg-quick", "down", config_path]).output().ok();
 
     let output = std::process::Command::new("sudo").args(["/usr/bin/wg-quick", "up", config_path]).output().map_err(|e| format!("Не удалось запустить wg-quick: {}", e))?;
 
@@ -667,7 +667,7 @@ async fn start_wireguard_proxy(
     std::fs::write(tmp_conf, config.to_string()).map_err(|e| e.to_string())?;
 
     let copy_status = std::process::Command::new("sudo")
-        .args(["cp", tmp_conf, "/etc/karin-proxy/config.json"])
+        .args(["/usr/bin/cp", tmp_conf, "/etc/karin-proxy/config.json"])
         .output()
         .map_err(|e| e.to_string())?;
 
@@ -729,10 +729,10 @@ async fn start_proxy(
     let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
     let tmp_dns = "/tmp/karin_resolv.conf.vpn";
     let _ = std::fs::write(tmp_dns, vpn_dns_content);
-    let _ = std::process::Command::new("sudo").args(["cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
+    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
     let _ = std::process::Command::new("rm").args(["-f", tmp_dns]).output();
-    if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() { let _ = std::process::Command::new("sudo").args(["cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output(); }
-    let _ = std::process::Command::new("sudo").args(["cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
+    if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() { let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output(); }
+    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
 
     let parsed_url = Url::parse(&vless_link).map_err(|e| e.to_string())?;
     let server = parsed_url.host_str().unwrap_or("").to_string();
@@ -823,7 +823,7 @@ async fn start_proxy(
     std::fs::write(tmp_conf, config.to_string()).map_err(|e| e.to_string())?;
 
     let copy_status = std::process::Command::new("sudo")
-        .args(["cp", tmp_conf, "/etc/karin-proxy/config.json"])
+        .args(["/usr/bin/cp", tmp_conf, "/etc/karin-proxy/config.json"])
         .output()
         .map_err(|e| e.to_string())?;
 
@@ -964,9 +964,9 @@ fn main() {
         ]).build(tauri::generate_context!()).expect("error while building tauri application");
     app.run(|_app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
-            let _ = std::process::Command::new("sudo").args(["systemctl", "stop", "karin-proxy-daemon.service"]).output();
-            let _ = std::process::Command::new("sudo").args(["pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output();
-            let _ = std::process::Command::new("sudo").args(["cp", "/etc/karin-proxy/resolv.conf.bak", "/etc/resolv.conf"]).output();
+            let _ = std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output();
+            let _ = std::process::Command::new("sudo").args(["/usr/bin/pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output();
+            let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.bak", "/etc/resolv.conf"]).output();
         }
     });
 }
