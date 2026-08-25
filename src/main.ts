@@ -28,6 +28,7 @@ function safeParse(key: string, fallback: any): any {
 let currentTheme = localStorage.getItem('karin_theme') || 'dark';
 let currentLang = localStorage.getItem('karin_lang') || 'en';
 let activeLink: string | null = sessionStorage.getItem('karin_active_link') || null;
+let selectedProfileUrl: string | null = localStorage.getItem('karin_selected_profile') || null;
 let allAvailableTags: string[] = [];
 let currentZone: ZoneKey = 'proxy';
 let defaultOutbound: ZoneKey = 'proxy';
@@ -361,6 +362,7 @@ let karinIdleTimer: number | null = null;
 
 function typeKarinMessage(key: string) {
     if (!karinConsole) return;
+    if (localStorage.getItem('karin_show_assistant') === 'false') return;
     const text = t(key);
     if (karinTypingTimer) window.clearInterval(karinTypingTimer);
     
@@ -380,11 +382,86 @@ function typeKarinMessage(key: string) {
 function resetKarinIdleTimer() {
     if (karinIdleTimer) window.clearInterval(karinIdleTimer);
     karinIdleTimer = window.setInterval(() => {
-        const idleMessages = ['karin_idle_1', 'karin_idle_2', 'karin_idle_3', 'karin_idle_4', 'karin_idle_5', 'karin_idle_6', 'karin_idle_7', 'karin_idle_8', 'karin_idle_9', 'karin_idle_10', 'karin_idle_11', 'karin_idle_12', 'karin_idle_13', 'karin_idle_14', 'karin_idle_15'];
+        if (localStorage.getItem('karin_show_assistant') === 'false') return;
+        const idleMessages = ['karin_idle_1', 'karin_idle_2', 'karin_idle_3', 'karin_idle_4', 'karin_idle_5', 'karin_idle_6', 'karin_idle_7', 'karin_idle_8', 'karin_idle_9', 'karin_idle_10', 'karin_idle_11', 'karin_idle_12', 'karin_idle_13', 'karin_idle_14', 'karin_idle_15', 'karin_idle_16', 'karin_idle_17', 'karin_idle_18', 'karin_idle_19', 'karin_idle_20'];
         const randomMsg = idleMessages[Math.floor(Math.random() * idleMessages.length)];
         typeKarinMessage(randomMsg);
     }, 25000); 
 }
+
+function applyKarinAssistantVisibility() {
+    const consoleEl = document.querySelector('.karin-console') as HTMLElement | null;
+    if (!consoleEl) return;
+    const show = localStorage.getItem('karin_show_assistant') !== 'false';
+    consoleEl.style.display = show ? '' : 'none';
+}
+applyKarinAssistantVisibility();
+
+function initProfilesDrawer() {
+    const trigger = document.getElementById('btn-open-profiles');
+    const closeBtn = document.getElementById('btn-close-profiles');
+    const drawer = document.getElementById('profiles-drawer');
+    const overlay = document.getElementById('profiles-drawer-overlay');
+    if (!trigger || !drawer || !overlay) return;
+
+    const open = () => { drawer.classList.add('open'); overlay.classList.add('open'); };
+    const close = () => { drawer.classList.remove('open'); overlay.classList.remove('open'); };
+
+    trigger.addEventListener('click', open);
+    closeBtn?.addEventListener('click', close);
+    overlay.addEventListener('click', close);
+
+    return { open, close };
+}
+const profilesDrawer = initProfilesDrawer();
+
+function getLinkDisplayName(url: string): string {
+    let displayName = "Proxy";
+    try {
+        const u = new URL(url);
+        if (u.protocol === 'ovpn:') {
+            const encodedName = u.searchParams.get('name');
+            displayName = encodedName ? decodeURIComponent(encodedName).replace('.ovpn', '') : `OpenVPN (${u.hostname})`;
+        } else if (u.protocol === 'wg:') {
+            const encodedName = u.searchParams.get('name');
+            displayName = encodedName ? decodeURIComponent(encodedName).replace('.conf', '') : `WireGuard (${u.hostname})`;
+        } else {
+            displayName = `${u.hostname}:${u.port || '443'}`;
+            if (u.hash) displayName = decodeURIComponent(u.hash.substring(1)) + ` (${u.hostname})`;
+        }
+    } catch (e) {
+        displayName = url.substring(0, 30) + '...';
+    }
+    return displayName;
+}
+
+function updateHeroProfileName() {
+    const el = document.getElementById('hero-profile-name');
+    if (!el) return;
+    const target = activeLink || selectedProfileUrl;
+    if (target) {
+        el.textContent = getLinkDisplayName(target);
+        el.removeAttribute('data-i18n');
+    } else {
+        el.setAttribute('data-i18n', 'hero_no_profile');
+        el.textContent = t('hero_no_profile');
+    }
+}
+
+function initHeroCircle() {
+    const circle = document.getElementById('hero-circle');
+    circle?.addEventListener('click', () => {
+        const isConnected = document.getElementById('status-text')?.className === 'status-active';
+        if (isConnected) {
+            disconnectProxy();
+        } else if (selectedProfileUrl) {
+            connectProxy(selectedProfileUrl);
+        } else {
+            profilesDrawer?.open();
+        }
+    });
+}
+initHeroCircle();
 
 // **********************************
 // CORE PROXY & DNS LOGIC
@@ -466,11 +543,14 @@ async function connectProxy(link: string) {
             dnsParams: { domestic: dDns, remote: rDns },
             allowServerProxy: allowServerProxy,
             zonePriority: zonePriority,
-            proxyLan: allowProxyLan
+            proxyLan: allowProxyLan,
+            killSwitch: localStorage.getItem('karin_kill_switch') === 'true'
         });
         
         if (result === "OK") { 
             activeLink = link; 
+            selectedProfileUrl = link;
+            localStorage.setItem('karin_selected_profile', link);
             sessionStorage.setItem('karin_active_link', link); 
             updateStatusUI(); 
             renderLinks(); 
@@ -539,7 +619,30 @@ function switchPage(pageId: string) {
     } 
 }
 
+let heroTextTimer: number | null = null;
+function typeHeroCoreText(newText: string) {
+    const el = document.getElementById('hero-core-text');
+    if (!el) return;
+    if (heroTextTimer) window.clearInterval(heroTextTimer);
+    const prefix = '[ ~$ ';
+    const suffix = ' ]';
+    let i = 0;
+    heroTextTimer = window.setInterval(() => {
+        el.textContent = prefix + newText.slice(0, i) + suffix;
+        i++;
+        if (i > newText.length) window.clearInterval(heroTextTimer!);
+    }, 100);
+}
+
 function updateStatusUI() {
+    const heroCircle = document.getElementById('hero-circle');
+    const wasConnected = heroCircle?.classList.contains('connected');
+    const nowConnected = !!activeLink;
+    heroCircle?.classList.toggle('connected', nowConnected);
+    if (wasConnected !== nowConnected) {
+        typeHeroCoreText(nowConnected ? 'connect' : 'null');
+    }
+    updateHeroProfileName();
     if (activeLink) {
         if(statusText) { statusText.innerText = t('status_active'); statusText.className = "status-active"; }
         if(btnDisconnect) btnDisconnect.style.display = "block"; 
@@ -631,6 +734,7 @@ function showPrompt(title: string, defaultValue = ''): Promise<string | null> {
 
 function renderLinkItem(item: ProxyLink) {
     const isCurrentActive = activeLink === item.url;
+    const isSelected = !isCurrentActive && selectedProfileUrl === item.url;
     let displayName = "Proxy";
     try {
         const url = new URL(item.url); 
@@ -660,7 +764,6 @@ function renderLinkItem(item: ProxyLink) {
     const pinIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>`;
     const checkboxHtml = isEditMode ? `<input type="checkbox" class="edit-checkbox" data-id="${item.id}" ${selectedLinks.has(item.id) ? 'checked' : ''}>` : '';
     const actionsHtml = isEditMode ? '' : `
-        <button class="btn-connect ${isCurrentActive ? 'secondary' : ''}" data-url="${item.url}">${isCurrentActive ? t('status_active') || 'Активно' : t('btn_start')}</button>
         <button class="btn-menu-dots" data-index="${item.id}">⋮</button>
         <div class="dropdown-menu" id="menu-${item.id}" style="display:none;">
           <button class="btn-share" data-url="${item.url}">${t('btn_share')}</button>
@@ -670,7 +773,7 @@ function renderLinkItem(item: ProxyLink) {
     `;
 
     return `
-      <div class="link-item">
+      <div class="link-item ${isSelected ? 'link-item-selected' : ''}" data-select-url="${item.url}" style="${isEditMode ? '' : 'cursor: pointer;'}">
         ${checkboxHtml}
         <div class="link-info">
           <div class="link-name" style="font-size: 14.5px; display: flex; align-items: center; ${isCurrentActive ? 'color: var(--success); font-weight: bold;' : 'font-weight: 500;'}">
@@ -928,7 +1031,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.2.8"; 
+        const CURRENT_VERSION = "1.3.0"; 
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -1069,6 +1172,25 @@ function init() {
             }
         }
     });
+
+    const karinAssistantToggle = document.getElementById('karin-assistant-toggle') as HTMLInputElement | null;
+    if (karinAssistantToggle) {
+        karinAssistantToggle.checked = localStorage.getItem('karin_show_assistant') !== 'false';
+        karinAssistantToggle.addEventListener('change', (e) => {
+            const show = (e.target as HTMLInputElement).checked;
+            localStorage.setItem('karin_show_assistant', show ? 'true' : 'false');
+            applyKarinAssistantVisibility();
+        });
+    }
+
+    const killSwitchToggle = document.getElementById('kill-switch-toggle') as HTMLInputElement | null;
+    if (killSwitchToggle) {
+        killSwitchToggle.checked = localStorage.getItem('karin_kill_switch') === 'true';
+        killSwitchToggle.addEventListener('change', (e) => {
+            const enabled = (e.target as HTMLInputElement).checked;
+            localStorage.setItem('karin_kill_switch', enabled ? 'true' : 'false');
+        });
+    }
     
     btnSave?.addEventListener('click', saveNewLink);
     btnImportFile?.addEventListener('click', () => { importFileInput?.click(); });
@@ -1331,7 +1453,15 @@ document.addEventListener('click', async (e) => {
       routingState[zone] = routingState[zone].filter((t: any) => t.value !== tag); renderRouting();
     }
   
-    if (target.classList.contains('btn-connect')) connectProxy(target.dataset.url!);
+    const selectableItem = target.closest('.link-item[data-select-url]') as HTMLElement | null;
+    if (selectableItem && !isEditMode && !target.closest('.link-actions')) {
+        const url = selectableItem.dataset.selectUrl!;
+        selectedProfileUrl = url;
+        localStorage.setItem('karin_selected_profile', url);
+        renderLinks();
+        updateHeroProfileName();
+        profilesDrawer?.close();
+    }
   
     if (target.classList.contains('edit-checkbox') && !target.hasAttribute('data-group-id')) {
         const id = target.dataset.id!;
