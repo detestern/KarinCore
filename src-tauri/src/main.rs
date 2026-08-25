@@ -111,8 +111,12 @@ async fn ensure_geo_files() -> Result<(), String> {
 
 async fn ensure_xray() -> Result<(), String> {
     let xray_path = "/usr/local/bin/xray";
-    
-    if Path::new(xray_path).exists() {
+
+    // На системах, где xray ставится как системный пакет (например, AUR на
+    // Arch/SteamOS), бинарник лежит в /usr/bin/xray, а не /usr/local/bin/xray.
+    // Если он уже есть там — пропускаем скачивание и лишние sudo-вызовы
+    // полностью, они тут просто не нужны.
+    if Path::new(xray_path).exists() || Path::new("/usr/bin/xray").exists() {
         return Ok(());
     }
 
