@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.3.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.3.1-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -36,6 +36,14 @@ This release is a full visual and functional overhaul, not just a patch.
 * **Profiles moved out of the way.** Your saved configs now live in a slide-out side panel instead of eating vertical space on the main screen. Pick one, it lights up with a soft accent glow, and you're back on the connect screen — the big glowing core is the only thing competing for your attention.
 * **A light theme worth using.** The old light mode was a near-inversion of the dark one. It's been rebuilt from scratch with warm, low-contrast neutrals — readable without feeling like a different app.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
+
+<br/>
+
+### v1.3.1 — Handheld Mode
+
+* **Fixed:** every sudo call from the GUI silently required a password on systems where the user is in the `wheel` group (the default on Arch/SteamOS) — the app's own sudoers rules were being shadowed by the system's password-requiring wheel rule due to alphabetical file ordering. This was the real root cause behind the recurring "permission denied" errors on Steam Deck.
+* **Fixed:** the connection core and its surrounding UI now scale proportionally on smaller or unusual screen resolutions (like Steam Deck's) instead of overlapping.
+* See [KarinCore on Steam Deck](#karincore-on-steam-deck) below — full install guide for handheld users.
 
 <br/>
 
@@ -73,6 +81,48 @@ This release is a full visual and functional overhaul, not just a patch.
 
 <br/>
 
+## KarinCore on Steam Deck
+
+**KarinCore runs great on Steam Deck.** SteamOS is Arch Linux under the hood, so the same AUR package that powers the desktop Linux experience installs cleanly on Deck too — full GUI, drag-and-drop routing, the kill switch, all of it. If you've been looking for a proper VPN client for Steam Deck instead of hand-editing WireGuard configs over SSH, this is built for exactly that.
+
+### Before you start: set a password
+
+Steam Deck's default `deck` account usually has **no password set** — fine for the console experience, but `sudo` (which the installer needs) requires one to exist. Set it once, in Desktop Mode:
+
+```bash
+passwd
+```
+
+Follow the prompts, then continue below.
+
+### Switch to Desktop Mode
+
+1. Press the **STEAM** button.
+2. Select **Power**.
+3. Select **Switch to Desktop**.
+
+Open a terminal (Konsole is preinstalled) once you're on the desktop.
+
+### Install
+
+```bash
+sudo steamos-readonly disable
+sudo pacman-key --init
+sudo pacman-key --populate archlinux
+sudo pacman -S --needed base-devel git
+yay -S karincore-git
+```
+
+`steamos-readonly disable` unlocks the system partition so packages can actually install — SteamOS ships read-only by default. This survives until the next SteamOS system update, at which point you'll need to run it again before reinstalling/updating KarinCore.
+
+### Launch
+
+KarinCore appears in your application menu like any other desktop app. Paste in a `vless://` link (or import an `.ovpn`/`.conf`), select it in the side panel, and hit the core to connect.
+
+When you're done, return to Game Mode from the desktop: **Return to Gaming Mode**.
+
+<br/>
+
 ## Installation
 
 ### Arch Linux (AUR)
@@ -88,7 +138,7 @@ yay -S karincore-git
 Grab the latest `.deb` from [Releases](../../releases). It registers `sudoers` and `systemd` rules on install. Make sure `openvpn` and `wireguard-tools` are present on your system first.
 
 ```bash
-sudo dpkg -i KarinCore_1.3.0_amd64.deb
+sudo dpkg -i KarinCore_1.3.1_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 

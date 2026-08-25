@@ -847,13 +847,14 @@ button.danger {
 
 .hero-circle {
     position: relative;
-    width: 420px;
-    height: 420px;
+    width: min(420px, 40vh, 46vw);
+    height: min(420px, 40vh, 46vw);
     background: transparent;
     border: none;
     padding: 0;
     cursor: pointer;
     margin-bottom: 4px;
+    flex-shrink: 0;
 }
 
 .hero-circle::before {
@@ -861,8 +862,8 @@ button.danger {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 230px;
-    height: 230px;
+    width: 55%;
+    height: 55%;
     transform: translate(-50%, -50%);
     border-radius: 50%;
     background: var(--accent);
@@ -886,6 +887,9 @@ button.danger {
 }
 
 .hero-circle svg {
+    display: block;
+    width: 100%;
+    height: 100%;
     overflow: visible;
     position: relative;
     transition: transform 0.1s ease;
@@ -993,6 +997,25 @@ button.danger {
     align-items: center;
     gap: 10px;
     margin-top: 26px;
+}
+
+@media (max-height: 700px) {
+    .hero-connect {
+        gap: 2px;
+    }
+    .hero-circle {
+        margin-bottom: 0;
+    }
+    .hero-meta {
+        margin-top: 12px;
+        gap: 6px;
+    }
+    .hero-profile-name {
+        margin-top: 0;
+    }
+    .profiles-drawer-trigger {
+        padding: 6px 14px;
+    }
 }
 
 .hero-meta #status-ip-box {
