@@ -192,6 +192,7 @@ async fn wait_for_core_ready() -> bool {
 }
 
 fn teardown_connections() {
+    disable_kill_switch();
     std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/wg-quick", "down", "/etc/karin-proxy/wg0.conf"]).output().ok();
@@ -200,6 +201,44 @@ fn teardown_connections() {
     std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "tun-ovpn", "-j", "MASQUERADE"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.bak", "/etc/resolv.conf"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/rm", "-f", "/etc/karin-proxy/resolv.conf.bak"]).output().ok();
+}
+
+// Killswitch: разрешаем OUTPUT-трафик только через loopback, туннельный
+// интерфейс и напрямую до самого VPN-сервера (нужно для хендшейка) — всё
+// остальное блокируется правилом DROP в конце цепочки. Правила живут вне
+// цикла route.sh up/down, поэтому переживают падение/автоперезапуск демона
+// (systemd Restart=on-failure) — снимаются только явным отключением или
+// новой попыткой подключения через teardown_connections().
+const KILLSWITCH_IP_FILE: &str = "/tmp/karin_killswitch_server_ip";
+
+fn enable_kill_switch(server_ip: &str, tun_iface: &str) {
+    let _ = std::fs::write(KILLSWITCH_IP_FILE, server_ip);
+    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-o", tun_iface, "-j", "ACCEPT"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-d", server_ip, "-j", "ACCEPT"]).output().ok();
+    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-j", "DROP"]).output().ok();
+}
+
+fn disable_kill_switch() {
+    // -D удаляет только первое совпадение за раз — на случай, если правила
+    // накопились за несколько сессий (например, после аварийного завершения
+    // приложения), чистим по несколько раз подряд, игнорируя ошибки "не найдено".
+    for _ in 0..3 {
+        std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-j", "DROP"]).output().ok();
+        std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]).output().ok();
+        for iface in ["tun0", "tun-ovpn", "wg0"] {
+            std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-o", iface, "-j", "ACCEPT"]).output().ok();
+        }
+    }
+    if let Ok(saved_ip) = std::fs::read_to_string(KILLSWITCH_IP_FILE) {
+        let ip = saved_ip.trim();
+        if !ip.is_empty() {
+            for _ in 0..3 {
+                std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-d", ip, "-j", "ACCEPT"]).output().ok();
+            }
+        }
+    }
+    std::process::Command::new("sudo").args(["/usr/bin/rm", "-f", KILLSWITCH_IP_FILE]).output().ok();
 }
 
 // **********************************
@@ -348,7 +387,8 @@ async fn start_openvpn_proxy(
     _dns_params: serde_json::Value,
     allow_server_proxy: bool,
     zone_priority: Vec<String>,
-    proxy_lan: bool
+    proxy_lan: bool,
+    kill_switch: bool
 ) -> Result<String, String> {
     let parsed_url = Url::parse(&ovpn_link).map_err(|e| e.to_string())?;
     
@@ -509,6 +549,12 @@ async fn start_openvpn_proxy(
         return Err("Ядро не успело подняться (порт 2080 не отвечает). Попробуйте подключиться ещё раз.".into());
     }
 
+    if kill_switch {
+        if let Some(ip) = resolved_ips_for_route_del.first() {
+            enable_kill_switch(ip, "tun-ovpn");
+        }
+    }
+
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
@@ -533,7 +579,8 @@ async fn start_wireguard_proxy(
     _dns_params: serde_json::Value,
     allow_server_proxy: bool,
     zone_priority: Vec<String>,
-    proxy_lan: bool
+    proxy_lan: bool,
+    kill_switch: bool
 ) -> Result<String, String> {
     let parsed_url = Url::parse(&wg_link).map_err(|e| e.to_string())?;
     
@@ -689,6 +736,12 @@ async fn start_wireguard_proxy(
         return Err("Ядро не успело подняться (порт 2080 не отвечает). Попробуйте подключиться ещё раз.".into());
     }
 
+    if kill_switch {
+        if let Some(ip) = resolved_ips_for_route_del.first() {
+            enable_kill_switch(ip, "wg0");
+        }
+    }
+
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
@@ -714,17 +767,18 @@ async fn start_proxy(
     _dns_params: serde_json::Value,
     allow_server_proxy: bool,
     zone_priority: Vec<String>,
-    proxy_lan: bool
+    proxy_lan: bool,
+    kill_switch: bool
 ) -> Result<String, String> {
     teardown_connections();
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     if vless_link.starts_with("ovpn://") {
-        return start_openvpn_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority, proxy_lan).await;
+        return start_openvpn_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority, proxy_lan, kill_switch).await;
     }
 
     if vless_link.starts_with("wg://") {
-        return start_wireguard_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority, proxy_lan).await;
+        return start_wireguard_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority, proxy_lan, kill_switch).await;
     }
 
     let token = generate_token();
@@ -817,7 +871,7 @@ async fn start_proxy(
             { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1500, "gateway": ["172.19.0.1/30"], "autoRoute": true }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } }
         ],
         "outbounds": [
-            { "tag": "proxy", "protocol": "vless", "settings": { "vnext": [{ "address": out_addr, "port": port, "users": [Value::Object(user_obj)] }] }, "streamSettings": Value::Object(stream_settings) },
+            { "tag": "proxy", "protocol": "vless", "settings": { "vnext": [{ "address": out_addr.clone(), "port": port, "users": [Value::Object(user_obj)] }] }, "streamSettings": Value::Object(stream_settings) },
             { "tag": "direct", "protocol": "freedom", "streamSettings": { "sockopt": { "mark": 255 } } },
             { "tag": "block", "protocol": "blackhole" }
         ]
@@ -846,6 +900,9 @@ async fn start_proxy(
     if !wait_for_core_ready().await {
         teardown_connections();
         return Err("Ядро не успело подняться (порт 2080 не отвечает). Попробуйте подключиться ещё раз.".into());
+    }
+    if kill_switch {
+        enable_kill_switch(&out_addr, "tun0");
     }
     if allow_server_proxy {
         let ips_to_delete = resolved_ips.clone();
