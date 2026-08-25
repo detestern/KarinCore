@@ -1,13 +1,23 @@
 #!/bin/sh
 set -e
 
-# Файлы /etc/sudoers.d/karincore, /etc/systemd/system/karin-proxy-daemon.service
+# Файлы /etc/sudoers.d/zz-karincore, /etc/systemd/system/karin-proxy-daemon.service
 # и /etc/karin-proxy/route.sh уже размещены dpkg на этапе распаковки пакета
 # (см. bundle.linux.deb.files в tauri.conf.json). Здесь только права/владелец
 # и регистрация юнита.
+#
+# ВАЖНО про имя файла: "zz-karincore", а не просто "karincore" — сделано
+# намеренно. sudoers.d обрабатывает файлы по алфавиту, и на системах, где
+# пользователь состоит в группе wheel (стандартно для Arch/SteamOS), файл
+# /etc/sudoers.d/wheel обычно содержит "%wheel ALL=(ALL) ALL" БЕЗ NOPASSWD.
+# При совпадении нескольких правил побеждает последнее прочитанное — если
+# наш файл называется просто "karincore" (раньше "w" по алфавиту), общее
+# правило wheel перекрывает наши точечные NOPASSWD-разрешения, и КАЖДЫЙ
+# sudo-вызов из приложения молча требует пароль. Префикс "zz-" гарантирует,
+# что наш файл читается последним и его NOPASSWD-правила побеждают.
 
-chmod 0440 /etc/sudoers.d/karincore
-chown root:root /etc/sudoers.d/karincore
+chmod 0440 /etc/sudoers.d/zz-karincore
+chown root:root /etc/sudoers.d/zz-karincore
 
 chmod 0644 /etc/systemd/system/karin-proxy-daemon.service
 chown root:root /etc/systemd/system/karin-proxy-daemon.service

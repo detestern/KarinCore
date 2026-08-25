@@ -7,7 +7,7 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
         systemctl disable karin-proxy-daemon.service >/dev/null 2>&1 || true
     fi
 
-    rm -f /etc/sudoers.d/karincore
+    rm -f /etc/sudoers.d/zz-karincore
 
     if command -v systemctl >/dev/null 2>&1; then
         systemctl daemon-reload || true
