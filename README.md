@@ -121,6 +121,40 @@ KarinCore appears in your application menu like any other desktop app. Paste in 
 
 When you're done, return to Game Mode from the desktop: **Return to Gaming Mode**.
 
+### Troubleshooting
+
+A couple of issues have shown up on some SteamOS images that the package itself can't fix automatically — both are one-time system fixes, not KarinCore-specific.
+
+**`error: ... signature from "GitLab CI Package Builder ... is unknown trust`** (usually shows up while installing `base-devel`)
+
+Some SteamOS package rebuilds are signed with Valve's own CI key, which isn't always trusted by default on a fresh system. Fix:
+
+```bash
+grep "^SigLevel" /etc/pacman.conf   # note the current value to restore later
+sudo sed -i 's/^SigLevel.*/SigLevel = TrustAll/' /etc/pacman.conf
+sudo pacman -Syy
+sudo pacman -S holo-keyring archlinux-keyring
+sudo pacman-key --populate archlinux holo
+sudo sed -i 's/^SigLevel.*/SigLevel = Required DatabaseOptional/' /etc/pacman.conf
+sudo pacman -Scc   # clear the cache of packages that failed signature checks, then Y
+```
+
+Then retry the `base-devel`/`yay -S karincore-git` step.
+
+**`feature 'edition2024' is required` / build fails partway through Rust compilation**
+
+Means the system `rust` package on your SteamOS image is too old. Install a current toolchain via `rustup` instead:
+
+```bash
+sudo pacman -S rustup
+rustup default stable
+rustc --version   # should be recent
+```
+
+Then retry `yay -S karincore-git`.
+
+If you hit something else entirely, open an issue on GitHub — SteamOS images seem to vary more than expected in what's stripped out of them, and it helps to know.
+
 <br/>
 
 ## Installation
