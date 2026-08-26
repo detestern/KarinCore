@@ -121,6 +121,40 @@ KarinCore появится в меню приложений, как обычна
 
 Когда закончишь — вернись в игровой режим прямо с рабочего стола: **Return to Gaming Mode**.
 
+### Возможные проблемы
+
+На некоторых образах SteamOS всплывали ещё две проблемы, которые сам пакет починить не может — это разовые системные фиксы, не связанные с KarinCore напрямую.
+
+**`error: ... signature from "GitLab CI Package Builder ... is unknown trust`** (обычно на этапе установки `base-devel`)
+
+Часть пакетов SteamOS пересобирается и подписывается собственным ключом Valve, который не всегда доверенный на свежей системе. Фикс:
+
+```bash
+grep "^SigLevel" /etc/pacman.conf   # запомни текущее значение, чтобы вернуть потом
+sudo sed -i 's/^SigLevel.*/SigLevel = TrustAll/' /etc/pacman.conf
+sudo pacman -Syy
+sudo pacman -S holo-keyring archlinux-keyring
+sudo pacman-key --populate archlinux holo
+sudo sed -i 's/^SigLevel.*/SigLevel = Required DatabaseOptional/' /etc/pacman.conf
+sudo pacman -Scc   # почистить кэш пакетов, не прошедших проверку подписи, дальше Y
+```
+
+После этого повтори шаг с `base-devel`/`yay -S karincore-git`.
+
+**`feature 'edition2024' is required` / сборка падает где-то в середине компиляции Rust**
+
+Значит системный пакет `rust` на этом образе SteamOS слишком старый. Поставь актуальный набор через `rustup`:
+
+```bash
+sudo pacman -S rustup
+rustup default stable
+rustc --version   # должна быть свежая версия
+```
+
+После этого повтори `yay -S karincore-git`.
+
+Если столкнулся с чем-то ещё — заведи issue на GitHub, похоже, образы SteamOS отличаются друг от друга сильнее, чем ожидалось, и знать об этом полезно.
+
 <br/>
 
 ## Установка
