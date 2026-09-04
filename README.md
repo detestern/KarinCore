@@ -153,6 +153,16 @@ rustc --version   # should be recent
 
 Then retry `yay -S karincore-git`.
 
+**Build stops with a message about missing headers for `openssl`, `glibc`, or `linux-api-headers`**
+
+Same underlying issue as above (some SteamOS images strip header files while pacman's database still lists the package as installed) — the build will print the exact command to run, something like:
+
+```bash
+sudo pacman -S --overwrite '/usr/include/*' openssl glibc linux-api-headers
+```
+
+Run whichever the message names, then retry `yay -S karincore-git`. (The build deliberately stops and asks instead of running this itself — a PKGBUILD calling `sudo` on its own is a red flag worth being suspicious of, so it doesn't.)
+
 If you hit something else entirely, open an issue on GitHub — SteamOS images seem to vary more than expected in what's stripped out of them, and it helps to know.
 
 <br/>
