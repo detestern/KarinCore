@@ -1,7 +1,6 @@
 #!/bin/bash
 # Извлекаем данные из конфига с помощью Python
 SERVER_ADDR=$(python3 -c "import json; print(json.load(open('/etc/karin-proxy/config.json'))['outbounds'][0]['settings']['vnext'][0]['address'])" 2>/dev/null)
-DNS_IP=$(python3 -c "import json; d=json.load(open('/etc/karin-proxy/config.json')).get('dns', {}).get('servers', []); print(d[0] if d else '')" 2>/dev/null)
 
 # Если вместо IP указан домен, резолвим его в чистый IP
 if [[ ! "$SERVER_ADDR" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -38,16 +37,26 @@ case "$1" in
         ip rule add to 10.0.0.0/8 table main pref 10 2>/dev/null
         ip rule add to 192.168.0.0/16 table main pref 10 2>/dev/null
 
-        # Исключаем IP сервера и DNS из проксирования, чтобы не было петли
+        # Исключаем IP сервера из проксирования, чтобы не было петли
         if [ ! -z "$SERVER_IP" ]; then
             ip rule add to "$SERVER_IP" table main pref 10 2>/dev/null
-        fi
-        if [ ! -z "$DNS_IP" ]; then
-            ip rule add to "$DNS_IP" table main pref 10 2>/dev/null
         fi
 
         # 4. Главное правило: весь остальной трафик — в туннель
         ip rule add not fwmark 255 table 100 pref 20 2>/dev/null
+
+        # **********************************
+        # DNS
+        # **********************************
+        if command -v resolvectl >/dev/null 2>&1; then
+            resolvectl dns tun0 127.0.0.1 2>/dev/null
+            resolvectl domain tun0 "~." 2>/dev/null
+        else
+            if [ ! -f /etc/karin-proxy/resolv.conf.bak ]; then
+                cp /etc/resolv.conf /etc/karin-proxy/resolv.conf.bak 2>/dev/null
+            fi
+            printf "nameserver 127.0.0.1\n" > /etc/resolv.conf
+        fi
         ;;
     down)
         # Полная и чистая уборка за собой при остановке
@@ -55,10 +64,17 @@ case "$1" in
         if [ ! -z "$SERVER_IP" ]; then
             ip rule del to "$SERVER_IP" table main pref 10 2>/dev/null
         fi
-        if [ ! -z "$DNS_IP" ]; then
-            ip rule del to "$DNS_IP" table main pref 10 2>/dev/null
-        fi
         ip route flush table 100 2>/dev/null
+
+        # **********************************
+        # DNS
+        # **********************************
+        if command -v resolvectl >/dev/null 2>&1; then
+            resolvectl revert tun0 2>/dev/null
+        elif [ -f /etc/karin-proxy/resolv.conf.bak ]; then
+            cp /etc/karin-proxy/resolv.conf.bak /etc/resolv.conf 2>/dev/null
+            rm -f /etc/karin-proxy/resolv.conf.bak
+        fi
         ;;
 esac
 

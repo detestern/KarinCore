@@ -533,8 +533,8 @@ async function saveNewLink() {
 async function connectProxy(link: string) {
     try {
         if(statusText) statusText.innerText = t('status_connecting');
-        const dDns = safeParse('karin_dns_dom', {});
-        const rDns = safeParse('karin_dns_rem', {});
+        const dDns = safeParse('karin_dns_dom', {type:"doh", url:"https://dns.yandex.ru/dns-query", ip:"77.88.8.8"});
+        const rDns = safeParse('karin_dns_rem', {type:"doh", url:"https://1.1.1.1/dns-query", ip:"1.1.1.1"});
     
         const result = await invoke('start_proxy', { 
             vlessLink: link, 
