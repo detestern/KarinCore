@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/версия-1.3.1-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/версия-1.3.2-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/платформа-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/на_чём_написано-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/фреймворк-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,12 @@ KarinCore создана, чтобы избавить пользователей
 * **Более спокойная вкладка маршрутизации.** Та же логика drag & drop и те же настройки DNS, только тоньше рамки и сдержаннее в целом.
 
 <br/>
+
+### v1.3.2 — Усиление sudoers
+
+* **Исправлено:** ряд правил sudoers позволял приложению копировать произвольный файл в `/usr/local/bin/xray` и делать его исполняемым — теперь Xray используется исключительно из бинарника, установленного пакетным менеджером, а приложение только проверяет его версию, ничего не скачивая и не подменяя.
+* **Исправлено:** все привилегированные правила, которые устанавливает приложение, теперь ограничены отдельной группой `karincore`, а не распространяются на всех пользователей системы (новый post-install хук создаёт группу и добавляет в неё тебя).
+* **Исправлено:** импортированный профиль OpenVPN или WireGuard мог содержать директивы (`up`, `PostUp` и т.п.), выполняющие внешние команды — теперь они вырезаются перед запуском туннеля, поскольку эти конфиги работают с правами root.
 
 ### v1.3.1 — Handheld Mode
 
@@ -182,7 +188,7 @@ yay -S karincore-git
 Свежий `.deb` всегда доступен в разделе [Releases](../../releases). Он сам регистрирует правила `sudoers` и `systemd` при установке. Убедись, что в системе уже стоят `openvpn` и `wireguard-tools`.
 
 ```bash
-sudo dpkg -i KarinCore_1.3.1_amd64.deb
+sudo dpkg -i KarinCore_1.3.2_amd64.deb
 sudo apt install -f # только если не хватает зависимостей
 ```
 

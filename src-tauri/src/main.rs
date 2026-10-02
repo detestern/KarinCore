@@ -109,39 +109,77 @@ async fn ensure_geo_files() -> Result<(), String> {
     Ok(())
 }
 
+// Xray ставится и обновляется только через системный пакетный менеджер
+// (depends= в PKGBUILD), никогда этим приложением во время работы. Раньше
+// здесь при отсутствии бинарника скачивался релиз-архив в /tmp/xray, а
+// затем `sudo cp /tmp/xray /usr/local/bin/xray` + `sudo chmod +x`. Эти два
+// sudo-правила позволяли ЛЮБОМУ локальному пользователю системы (не
+// только этому приложению) подложить произвольный исполняемый файл по
+// фиксированному пути /tmp/xray, скопировать его в системный bin-каталог
+// и сделать исполняемым без пароля — а в сочетании с NOPASSWD-правилом
+// `systemctl restart karin-proxy-daemon` (демон работает от root и
+// запускает именно этот бинарник) это был полноценный локальный root
+// exploit. Подмена системного привилегированного бинарника из
+// world-writable пути никогда не бывает безопасной, поэтому эта
+// возможность убрана целиком — функция теперь только проверяет версию
+// уже установленного пакетом xray.
+const XRAY_MIN_VERSION: (u32, u32, u32) = (25, 0, 0);
+
+fn find_xray_binary() -> Option<&'static str> {
+    for candidate in ["/usr/bin/xray", "/usr/local/bin/xray"] {
+        if Path::new(candidate).exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn parse_xray_version(output: &str) -> Option<(u32, u32, u32)> {
+    // `xray version` печатает что-то вроде "Xray 26.5.9 (Xray, Penetrates Everything.) ..."
+    for token in output.split_whitespace() {
+        let cleaned = token.trim_start_matches('v');
+        let parts: Vec<&str> = cleaned.split('.').collect();
+        if parts.len() == 3 {
+            if let (Ok(a), Ok(b), Ok(c)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u32>(),
+                parts[2].parse::<u32>(),
+            ) {
+                return Some((a, b, c));
+            }
+        }
+    }
+    None
+}
+
 async fn ensure_xray() -> Result<(), String> {
-    let xray_path = "/usr/local/bin/xray";
+    let xray_path = match find_xray_binary() {
+        Some(p) => p,
+        None => {
+            return Err(
+                "Xray не установлен. Установите его через пакетный менеджер: \
+                 sudo pacman -S xray (это зависимость пакета karincore-git, \
+                 переустановка пакета тоже исправит это)."
+                    .into(),
+            );
+        }
+    };
 
-    // На системах, где xray ставится как системный пакет (например, AUR на
-    // Arch/SteamOS), бинарник лежит в /usr/bin/xray, а не /usr/local/bin/xray.
-    // Если он уже есть там — пропускаем скачивание и лишние sudo-вызовы
-    // полностью, они тут просто не нужны.
-    if Path::new(xray_path).exists() || Path::new("/usr/bin/xray").exists() {
-        return Ok(());
-    }
-
-    let url = "https://github.com/XTLS/Xray-core/releases/download/v26.5.9/Xray-linux-64.zip";
-    let response = reqwest::get(url).await.map_err(|e| e.to_string())?;
-    let content = response.bytes().await.map_err(|e| e.to_string())?;
-    
-    let zip_path = "/tmp/xray_download.zip";
-    fs::write(zip_path, &content).await.map_err(|e| e.to_string())?;
-    
-    let unzip_status = std::process::Command::new("unzip")
-        .args(["-o", zip_path, "xray", "-d", "/tmp/"])
+    let output = std::process::Command::new(xray_path)
+        .arg("version")
         .output()
-        .map_err(|e| format!("Ошибка распаковки: {}", e))?;
-        
-    if !unzip_status.status.success() {
-        return Err("Не удалось распаковать архив Xray".into());
+        .map_err(|e| format!("Не удалось запустить xray для проверки версии: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    match parse_xray_version(&stdout) {
+        Some(v) if v >= XRAY_MIN_VERSION => Ok(()),
+        Some(v) => Err(format!(
+            "Установленная версия Xray {}.{}.{} устарела. Обновите пакет: \
+             sudo pacman -Syu xray (или пересоберите karincore-git).",
+            v.0, v.1, v.2
+        )),
+        None => Ok(()),
     }
-    
-    std::process::Command::new("sudo").args(["/usr/bin/cp", "/tmp/xray", xray_path]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/chmod", "+x", xray_path]).output().ok();
-    
-    std::process::Command::new("rm").args(["-f", zip_path, "/tmp/xray"]).output().ok();
-    
-    Ok(())
 }
 
 fn daemon_unit_installed() -> bool {
@@ -239,6 +277,67 @@ fn disable_kill_switch() {
         }
     }
     std::process::Command::new("sudo").args(["/usr/bin/rm", "-f", KILLSWITCH_IP_FILE]).output().ok();
+}
+
+// Директивы OpenVPN, которые запускают внешнюю программу. karincore
+// запускает OpenVPN от root через sudo, а сам .ovpn приходит из ссылки
+// подписки, которую вставил пользователь (т.е. untrusted input) — любая
+// из этих директив, если её не вырезать, это выполнение произвольного
+// кода от root в момент импорта вредоносной подписки.
+const OVPN_EXEC_DIRECTIVES: &[&str] = &[
+    "up",
+    "down",
+    "up-restart",
+    "up-delay",
+    "down-pre",
+    "plugin",
+    "route-up",
+    "route-pre-down",
+    "ipchange",
+    "client-connect",
+    "client-disconnect",
+    "client-crresponse",
+    "tls-verify",
+    "tls-export-cert",
+    "learn-address",
+    "auth-user-pass-verify",
+    "setenv",
+    "script-security", // своё значение выставляем ниже сами; чужое — вырезаем
+];
+
+fn sanitize_ovpn_config(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+                return true;
+            }
+            let first_word = trimmed.split_whitespace().next().unwrap_or("");
+            !OVPN_EXEC_DIRECTIVES
+                .iter()
+                .any(|d| d.eq_ignore_ascii_case(first_word))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+// wg-quick выполняет строки PostUp/PreUp/PostDown/PreDown через sh -c от
+// того же пользователя, что и сам wg-quick — здесь от root. Та же логика,
+// что и с OpenVPN: .conf приходит из импортированной ссылки подписки.
+const WG_EXEC_DIRECTIVES: &[&str] = &["postup", "preup", "postdown", "predown"];
+
+fn sanitize_wg_config(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                return true;
+            }
+            let key = trimmed.split('=').next().unwrap_or("").trim().to_lowercase();
+            !WG_EXEC_DIRECTIVES.iter().any(|d| *d == key)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // **********************************
@@ -420,7 +519,11 @@ async fn start_openvpn_proxy(
         }
     }
 
-    ovpn_config.push_str("\npull-filter ignore \"redirect-gateway\"\npull-filter ignore \"dhcp-option DNS\"\npull-filter ignore \"tun-mtu\"\ntun-mtu 1360\nmssfix 1320\ndev tun-ovpn\nmark 255\n");
+    // .ovpn приходит из импортированной ссылки подписки — untrusted input,
+    // который дальше запускается от root через sudo (см. sanitize_ovpn_config).
+    ovpn_config = sanitize_ovpn_config(&ovpn_config);
+
+    ovpn_config.push_str("\npull-filter ignore \"redirect-gateway\"\npull-filter ignore \"dhcp-option DNS\"\npull-filter ignore \"tun-mtu\"\ntun-mtu 1360\nmssfix 1320\ndev tun-ovpn\nmark 255\nscript-security 0\n");
 
     let tmp_ovpn = "/tmp/karin_openvpn.ovpn";
     std::fs::write(tmp_ovpn, ovpn_config).map_err(|e| format!("Ошибка записи временного файла: {}", e))?;
@@ -589,7 +692,10 @@ async fn start_wireguard_proxy(
     if b64_payload.is_empty() { return Err("Ошибка: В полученной ссылке отсутствует payload конфигурации".into()); }
 
     let decoded_bytes = general_purpose::STANDARD.decode(&b64_payload).map_err(|e| format!("Ошибка Base64: {}", e))?;
-    let original_conf = String::from_utf8(decoded_bytes).map_err(|e| format!("Ошибка UTF-8: {}", e))?;
+    let raw_conf = String::from_utf8(decoded_bytes).map_err(|e| format!("Ошибка UTF-8: {}", e))?;
+    // Та же логика, что и для OpenVPN: .conf приходит из импортированной
+    // ссылки подписки, а wg-quick выполняет его от root через sudo.
+    let original_conf = sanitize_wg_config(&raw_conf);
 
     let mut resolved_ips_for_route_del: Vec<String> = vec![];
     let mut modified_conf = String::new();
