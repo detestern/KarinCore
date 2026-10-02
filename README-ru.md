@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/версия-1.3.2-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/версия-1.3.3-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/платформа-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/на_чём_написано-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/фреймворк-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,11 @@ KarinCore создана, чтобы избавить пользователей
 * **Более спокойная вкладка маршрутизации.** Та же логика drag & drop и те же настройки DNS, только тоньше рамки и сдержаннее в целом.
 
 <br/>
+
+### v1.3.3 — Исправление DNS / systemd-resolved
+
+* **Исправлено:** на системах с `systemd-resolved` (CachyOS, Fedora и большинство современных дистрибутивов) DNS-резолвинг внутри туннеля мог молча не работать — NSS-модуль `systemd-resolved` полностью игнорирует `/etc/resolv.conf`, поэтому прежний способ перезаписи этого файла не давал эффекта. Теперь `route.sh` управляет DNS через `resolvectl`, если он доступен, и только иначе откатывается на старый метод через `resolv.conf`.
+* **Исправлено:** резолвинг российских и зарубежных доменов теперь происходит внутри самого Xray и следует тем же правилам direct/proxy, что и остальной трафик — каждый резолвер (DoH или обычный DNS) уходит через свой outbound, так что внутренний DNS больше не заворачивается в туннель без необходимости, а внешний не светится в открытом виде.
 
 ### v1.3.2 — Усиление sudoers
 
@@ -188,7 +193,7 @@ yay -S karincore-git
 Свежий `.deb` всегда доступен в разделе [Releases](../../releases). Он сам регистрирует правила `sudoers` и `systemd` при установке. Убедись, что в системе уже стоят `openvpn` и `wireguard-tools`.
 
 ```bash
-sudo dpkg -i KarinCore_1.3.2_amd64.deb
+sudo dpkg -i KarinCore_1.3.3_amd64.deb
 sudo apt install -f # только если не хватает зависимостей
 ```
 

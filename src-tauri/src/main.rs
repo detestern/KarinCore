@@ -82,6 +82,62 @@ fn build_xray_rules(state: Value, priority: Vec<String>) -> Value {
     json!(xray_rules)
 }
 
+// **********************************
+// DNS
+// **********************************
+fn build_dns_server_entry(entry: &Value, outbound_tag: &str, hosts: &mut serde_json::Map<String, Value>) -> Value {
+    let server_type = entry.get("type").and_then(|v| v.as_str()).unwrap_or("dou");
+    let url = entry.get("url").and_then(|v| v.as_str()).unwrap_or("");
+    let ip = entry.get("ip").and_then(|v| v.as_str()).unwrap_or("");
+
+    if server_type == "doh" && !url.is_empty() {
+        if let Ok(parsed) = Url::parse(url) {
+            if let Some(host) = parsed.host_str() {
+                if !ip.is_empty() {
+                    hosts.insert(host.to_string(), json!(ip));
+                }
+            }
+        }
+        json!({ "address": url, "outboundTag": outbound_tag })
+    } else {
+        json!({ "address": ip, "port": 53, "outboundTag": outbound_tag })
+    }
+}
+
+fn build_dns_config(dns_params: &Value, routing_state: &Value) -> Value {
+    let mut domestic_domains = Vec::new();
+    if let Some(rules_list) = routing_state.get("direct").and_then(|v| v.as_array()) {
+        for rule in rules_list {
+            let r_type = rule.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let r_val = rule.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            match r_type {
+                "geosite" => domestic_domains.push(format!("geosite:{}", r_val)),
+                "domain" => domestic_domains.push(r_val.to_string()),
+                "keyword" => domestic_domains.push(format!("keyword:{}", r_val)),
+                _ => {}
+            }
+        }
+    }
+
+    let mut hosts = serde_json::Map::new();
+    let empty = json!({});
+    let domestic_entry = dns_params.get("domestic").unwrap_or(&empty);
+    let remote_entry = dns_params.get("remote").unwrap_or(&empty);
+
+    let mut domestic_server = build_dns_server_entry(domestic_entry, "direct", &mut hosts);
+    if !domestic_domains.is_empty() {
+        if let Some(obj) = domestic_server.as_object_mut() {
+            obj.insert("domains".to_string(), json!(domestic_domains));
+        }
+    }
+    let remote_server = build_dns_server_entry(remote_entry, "proxy", &mut hosts);
+
+    json!({
+        "hosts": Value::Object(hosts),
+        "servers": [domestic_server, remote_server]
+    })
+}
+
 async fn ensure_geo_files() -> Result<(), String> {
     if !Path::new("/etc/karin-proxy/geo").exists() {
         std::process::Command::new("sudo").args(["/usr/bin/mkdir", "-p", "/etc/karin-proxy/geo"]).output().ok();
@@ -109,20 +165,9 @@ async fn ensure_geo_files() -> Result<(), String> {
     Ok(())
 }
 
-// Xray ставится и обновляется только через системный пакетный менеджер
-// (depends= в PKGBUILD), никогда этим приложением во время работы. Раньше
-// здесь при отсутствии бинарника скачивался релиз-архив в /tmp/xray, а
-// затем `sudo cp /tmp/xray /usr/local/bin/xray` + `sudo chmod +x`. Эти два
-// sudo-правила позволяли ЛЮБОМУ локальному пользователю системы (не
-// только этому приложению) подложить произвольный исполняемый файл по
-// фиксированному пути /tmp/xray, скопировать его в системный bin-каталог
-// и сделать исполняемым без пароля — а в сочетании с NOPASSWD-правилом
-// `systemctl restart karin-proxy-daemon` (демон работает от root и
-// запускает именно этот бинарник) это был полноценный локальный root
-// exploit. Подмена системного привилегированного бинарника из
-// world-writable пути никогда не бывает безопасной, поэтому эта
-// возможность убрана целиком — функция теперь только проверяет версию
-// уже установленного пакетом xray.
+// **********************************
+// XRAY
+// **********************************
 const XRAY_MIN_VERSION: (u32, u32, u32) = (25, 0, 0);
 
 fn find_xray_binary() -> Option<&'static str> {
@@ -135,7 +180,6 @@ fn find_xray_binary() -> Option<&'static str> {
 }
 
 fn parse_xray_version(output: &str) -> Option<(u32, u32, u32)> {
-    // `xray version` печатает что-то вроде "Xray 26.5.9 (Xray, Penetrates Everything.) ..."
     for token in output.split_whitespace() {
         let cleaned = token.trim_start_matches('v');
         let parts: Vec<&str> = cleaned.split('.').collect();
@@ -279,11 +323,9 @@ fn disable_kill_switch() {
     std::process::Command::new("sudo").args(["/usr/bin/rm", "-f", KILLSWITCH_IP_FILE]).output().ok();
 }
 
-// Директивы OpenVPN, которые запускают внешнюю программу. karincore
-// запускает OpenVPN от root через sudo, а сам .ovpn приходит из ссылки
-// подписки, которую вставил пользователь (т.е. untrusted input) — любая
-// из этих директив, если её не вырезать, это выполнение произвольного
-// кода от root в момент импорта вредоносной подписки.
+// **********************************
+// OPENVPN CONFIG SANITIZATION
+// **********************************
 const OVPN_EXEC_DIRECTIVES: &[&str] = &[
     "up",
     "down",
@@ -302,7 +344,7 @@ const OVPN_EXEC_DIRECTIVES: &[&str] = &[
     "learn-address",
     "auth-user-pass-verify",
     "setenv",
-    "script-security", // своё значение выставляем ниже сами; чужое — вырезаем
+    "script-security",
 ];
 
 fn sanitize_ovpn_config(raw: &str) -> String {
@@ -321,9 +363,9 @@ fn sanitize_ovpn_config(raw: &str) -> String {
         .join("\n")
 }
 
-// wg-quick выполняет строки PostUp/PreUp/PostDown/PreDown через sh -c от
-// того же пользователя, что и сам wg-quick — здесь от root. Та же логика,
-// что и с OpenVPN: .conf приходит из импортированной ссылки подписки.
+// **********************************
+// WIREGUARD CONFIG SANITIZATION
+// **********************************
 const WG_EXEC_DIRECTIVES: &[&str] = &["postup", "preup", "postdown", "predown"];
 
 fn sanitize_wg_config(raw: &str) -> String {
@@ -519,8 +561,6 @@ async fn start_openvpn_proxy(
         }
     }
 
-    // .ovpn приходит из импортированной ссылки подписки — untrusted input,
-    // который дальше запускается от root через sudo (см. sanitize_ovpn_config).
     ovpn_config = sanitize_ovpn_config(&ovpn_config);
 
     ovpn_config.push_str("\npull-filter ignore \"redirect-gateway\"\npull-filter ignore \"dhcp-option DNS\"\npull-filter ignore \"tun-mtu\"\ntun-mtu 1360\nmssfix 1320\ndev tun-ovpn\nmark 255\nscript-security 0\n");
@@ -693,8 +733,6 @@ async fn start_wireguard_proxy(
 
     let decoded_bytes = general_purpose::STANDARD.decode(&b64_payload).map_err(|e| format!("Ошибка Base64: {}", e))?;
     let raw_conf = String::from_utf8(decoded_bytes).map_err(|e| format!("Ошибка UTF-8: {}", e))?;
-    // Та же логика, что и для OpenVPN: .conf приходит из импортированной
-    // ссылки подписки, а wg-quick выполняет его от root через sudo.
     let original_conf = sanitize_wg_config(&raw_conf);
 
     let mut resolved_ips_for_route_del: Vec<String> = vec![];
@@ -870,7 +908,7 @@ async fn start_proxy(
     vless_link: String, 
     routing_state: serde_json::Value, 
     default_outbound: String,
-    _dns_params: serde_json::Value,
+    dns_params: serde_json::Value,
     allow_server_proxy: bool,
     zone_priority: Vec<String>,
     proxy_lan: bool,
@@ -880,23 +918,15 @@ async fn start_proxy(
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     if vless_link.starts_with("ovpn://") {
-        return start_openvpn_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority, proxy_lan, kill_switch).await;
+        return start_openvpn_proxy(_state, vless_link, routing_state, default_outbound, dns_params, allow_server_proxy, zone_priority, proxy_lan, kill_switch).await;
     }
 
     if vless_link.starts_with("wg://") {
-        return start_wireguard_proxy(_state, vless_link, routing_state, default_outbound, _dns_params, allow_server_proxy, zone_priority, proxy_lan, kill_switch).await;
+        return start_wireguard_proxy(_state, vless_link, routing_state, default_outbound, dns_params, allow_server_proxy, zone_priority, proxy_lan, kill_switch).await;
     }
 
     let token = generate_token();
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = Some(token.clone()); }
-
-    let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
-    let tmp_dns = "/tmp/karin_resolv.conf.vpn";
-    let _ = std::fs::write(tmp_dns, vpn_dns_content);
-    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
-    let _ = std::process::Command::new("rm").args(["-f", tmp_dns]).output();
-    if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() { let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output(); }
-    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
 
     let parsed_url = Url::parse(&vless_link).map_err(|e| e.to_string())?;
     let server = parsed_url.host_str().unwrap_or("").to_string();
@@ -929,9 +959,11 @@ async fn start_proxy(
     }
     if host.is_empty() { host = sni.clone(); }
 
+    let dns_config = build_dns_config(&dns_params, &routing_state);
     let dynamic_rules = build_xray_rules(routing_state, zone_priority);
 
     let mut all_rules = vec![];
+    all_rules.push(json!({ "type": "field", "inboundTag": ["dns-in"], "outboundTag": "dns-out" }));
     let mut local_ips = vec!["127.0.0.0/8".to_string()];
     if !proxy_lan {
         local_ips.extend(vec![
@@ -971,15 +1003,18 @@ async fn start_proxy(
 
     let config = serde_json::json!({
         "log": { "loglevel": "debug", "access": acc_log, "error": err_log },
-        "routing": { "domainStrategy": "AsIs", "rules": all_rules },
+        "dns": dns_config,
+        "routing": { "domainStrategy": "IPIfNonMatch", "rules": all_rules },
         "inbounds": [
             { "port": 2080, "listen": "127.0.0.1", "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": token } ] } },
-            { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1500, "gateway": ["172.19.0.1/30"], "autoRoute": true }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } }
+            { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1500, "gateway": ["172.19.0.1/30"], "autoRoute": true }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } },
+            { "tag": "dns-in", "listen": "127.0.0.1", "port": 53, "protocol": "dokodemo-door", "settings": { "address": "1.1.1.1", "port": 53, "network": "udp" } }
         ],
         "outbounds": [
             { "tag": "proxy", "protocol": "vless", "settings": { "vnext": [{ "address": out_addr.clone(), "port": port, "users": [Value::Object(user_obj)] }] }, "streamSettings": Value::Object(stream_settings) },
             { "tag": "direct", "protocol": "freedom", "streamSettings": { "sockopt": { "mark": 255 } } },
-            { "tag": "block", "protocol": "blackhole" }
+            { "tag": "block", "protocol": "blackhole" },
+            { "tag": "dns-out", "protocol": "dns" }
         ]
     });
 

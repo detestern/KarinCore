@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.3.2-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.3.3-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,11 @@ This release is a full visual and functional overhaul, not just a patch.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
 
 <br/>
+
+### v1.3.3 — DNS / systemd-resolved Fix
+
+* **Fixed:** on systems using `systemd-resolved` (CachyOS, Fedora, and most modern distros), DNS lookups could silently fail inside the tunnel — `systemd-resolved`'s NSS module bypasses `/etc/resolv.conf` entirely, so the app's previous approach of rewriting that file had no effect. `route.sh` now drives DNS through `resolvectl` when it's available, falling back to the old `resolv.conf` method otherwise.
+* **Fixed:** domestic and remote DNS resolution now happens inside Xray itself, split by the same direct/proxy routing rules as your traffic — each resolver (DoH or plain DNS) is dispatched through its own outbound, so domestic DNS never gets needlessly tunneled and remote DNS never leaks in plaintext.
 
 ### v1.3.2 — Sudoers Hardening
 
@@ -188,7 +193,7 @@ yay -S karincore-git
 Grab the latest `.deb` from [Releases](../../releases). It registers `sudoers` and `systemd` rules on install. Make sure `openvpn` and `wireguard-tools` are present on your system first.
 
 ```bash
-sudo dpkg -i KarinCore_1.3.2_amd64.deb
+sudo dpkg -i KarinCore_1.3.3_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 
