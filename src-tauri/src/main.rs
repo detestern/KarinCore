@@ -138,6 +138,225 @@ fn build_dns_config(dns_params: &Value, routing_state: &Value) -> Value {
     })
 }
 
+// **********************************
+// MULTI-PROTOCOL LINK PARSING
+// **********************************
+fn decode_base64_flexible(input: &str) -> Option<String> {
+    let cleaned = input.replace(['\n', '\r', ' ', '\t'], "");
+    let engines = [
+        general_purpose::STANDARD,
+        general_purpose::STANDARD_NO_PAD,
+        general_purpose::URL_SAFE,
+        general_purpose::URL_SAFE_NO_PAD
+    ];
+    for engine in &engines {
+        if let Ok(bytes) = engine.decode(&cleaned) {
+            if let Ok(utf8) = String::from_utf8(bytes) { return Some(utf8); }
+        }
+    }
+    let mut padded = cleaned.clone();
+    while padded.len() % 4 != 0 { padded.push('='); }
+    for engine in &engines {
+        if let Ok(bytes) = engine.decode(&padded) {
+            if let Ok(utf8) = String::from_utf8(bytes) { return Some(utf8); }
+        }
+    }
+    None
+}
+
+async fn resolve_server_ips(server: &str, port: u16) -> (String, Vec<String>) {
+    let mut resolved_ips: Vec<String> = vec![];
+    if let Ok(ip) = server.parse::<std::net::IpAddr>() {
+        resolved_ips.push(ip.to_string());
+    } else if let Ok(mut addrs) = tokio::net::lookup_host(format!("{}:{}", server, port)).await {
+        while let Some(addr) = addrs.next() { resolved_ips.push(addr.ip().to_string()); }
+    }
+    if resolved_ips.is_empty() { resolved_ips.push(server.to_string()); }
+    let out_addr = resolved_ips.first().unwrap_or(&server.to_string()).clone();
+    (out_addr, resolved_ips)
+}
+
+async fn build_vless_or_trojan_outbound(link: &str, protocol: &str) -> Result<(Value, String, Vec<String>), String> {
+    let parsed_url = Url::parse(link).map_err(|e| e.to_string())?;
+    let server = parsed_url.host_str().unwrap_or("").to_string();
+    let port = parsed_url.port().unwrap_or(443);
+    let secret = parsed_url.username().to_string();
+
+    let (out_addr, resolved_ips) = resolve_server_ips(&server, port).await;
+
+    let mut pbk = String::new(); let mut sid = String::new(); let mut sni = String::new();
+    let mut fp = String::from("firefox"); let mut transport_type = String::from("tcp");
+    let mut path = String::from("/"); let mut host = String::new(); let mut mode = String::from("auto");
+    let mut spx = String::new(); let mut security = String::from("none"); let mut flow = String::new();
+
+    for (k, v) in parsed_url.query_pairs() {
+        match k.as_ref() {
+            "pbk" => pbk = v.to_string(), "sid" => sid = v.to_string(), "sni" => sni = v.to_string(),
+            "fp" => fp = v.to_string(), "type" => transport_type = v.to_string(), "path" => path = v.to_string(),
+            "host" => host = v.to_string(), "mode" => mode = v.to_string(), "spx" => spx = v.to_string(),
+            "security" => security = v.to_string(), "flow" => flow = v.to_string(),
+            _ => {}
+        }
+    }
+    if host.is_empty() { host = sni.clone(); }
+
+    let final_network = if transport_type == "xhttp" || transport_type == "httpupgrade" { "xhttp" } else { "tcp" };
+
+    let mut stream_settings = serde_json::Map::new();
+    stream_settings.insert("network".to_string(), json!(final_network));
+    stream_settings.insert("security".to_string(), json!(security));
+    stream_settings.insert("sockopt".to_string(), json!({ "mark": 255 }));
+
+    if security == "reality" {
+        stream_settings.insert("realitySettings".to_string(), json!({ "publicKey": pbk, "shortId": sid, "serverName": sni, "fingerprint": fp, "spiderX": spx }));
+    } else if security == "tls" {
+        stream_settings.insert("tlsSettings".to_string(), json!({ "serverName": sni, "allowInsecure": false, "fingerprint": fp }));
+    }
+
+    if final_network == "xhttp" { stream_settings.insert("xhttpSettings".to_string(), json!({ "path": path, "host": host, "mode": mode })); }
+
+    let settings = if protocol == "trojan" {
+        let mut server_obj = serde_json::Map::new();
+        server_obj.insert("address".to_string(), json!(out_addr.clone()));
+        server_obj.insert("port".to_string(), json!(port));
+        server_obj.insert("password".to_string(), json!(secret));
+        if !flow.is_empty() && (security == "reality" || security == "tls") { server_obj.insert("flow".to_string(), json!(flow)); }
+        json!({ "servers": [Value::Object(server_obj)] })
+    } else {
+        let mut user_obj = serde_json::Map::new();
+        user_obj.insert("id".to_string(), json!(secret));
+        user_obj.insert("encryption".to_string(), json!("none"));
+        if !flow.is_empty() && (security == "reality" || security == "tls") { user_obj.insert("flow".to_string(), json!(flow)); }
+        json!({ "vnext": [{ "address": out_addr.clone(), "port": port, "users": [Value::Object(user_obj)] }] })
+    };
+
+    let outbound = json!({ "tag": "proxy", "protocol": protocol, "settings": settings, "streamSettings": Value::Object(stream_settings) });
+    Ok((outbound, out_addr, resolved_ips))
+}
+
+async fn build_vmess_outbound(link: &str) -> Result<(Value, String, Vec<String>), String> {
+    let b64_payload = link.trim_start_matches("vmess://");
+    let decoded = decode_base64_flexible(b64_payload).ok_or_else(|| "Не удалось декодировать VMess-ссылку".to_string())?;
+    let v: Value = serde_json::from_str(&decoded).map_err(|e| format!("Некорректный VMess JSON: {}", e))?;
+
+    let get_str = |key: &str| -> String { v.get(key).and_then(|x| x.as_str()).map(|s| s.to_string()).unwrap_or_default() };
+    let get_str_or_num = |key: &str| -> String {
+        if let Some(x) = v.get(key) {
+            if let Some(s) = x.as_str() { return s.to_string(); }
+            if let Some(n) = x.as_u64() { return n.to_string(); }
+        }
+        String::new()
+    };
+
+    let server = get_str("add");
+    let port: u16 = get_str_or_num("port").parse().unwrap_or(443);
+    let id = get_str("id");
+    let aid: u32 = get_str_or_num("aid").parse().unwrap_or(0);
+    let scy = { let s = get_str("scy"); if s.is_empty() { "auto".to_string() } else { s } };
+    let net = { let s = get_str("net"); if s.is_empty() { "tcp".to_string() } else { s } };
+    let header_type = get_str("type");
+    let host = get_str("host");
+    let path = { let s = get_str("path"); if s.is_empty() { "/".to_string() } else { s } };
+    let tls = get_str("tls");
+    let sni = { let s = get_str("sni"); if s.is_empty() { host.clone() } else { s } };
+    let fp = { let s = get_str("fp"); if s.is_empty() { "firefox".to_string() } else { s } };
+
+    if server.is_empty() || id.is_empty() {
+        return Err("VMess-ссылка не содержит адрес сервера или id".into());
+    }
+
+    let (out_addr, resolved_ips) = resolve_server_ips(&server, port).await;
+
+    let mut stream_settings = serde_json::Map::new();
+    stream_settings.insert("network".to_string(), json!(net));
+    stream_settings.insert("sockopt".to_string(), json!({ "mark": 255 }));
+
+    match net.as_str() {
+        "ws" => { stream_settings.insert("wsSettings".to_string(), json!({ "path": path, "headers": { "Host": host } })); }
+        "grpc" => { stream_settings.insert("grpcSettings".to_string(), json!({ "serviceName": path.trim_start_matches('/') })); }
+        "h2" | "http" => { stream_settings.insert("httpSettings".to_string(), json!({ "path": path, "host": [host] })); }
+        _ => {
+            if header_type == "http" {
+                stream_settings.insert("tcpSettings".to_string(), json!({ "header": { "type": "http", "request": { "path": [path], "headers": { "Host": [host] } } } }));
+            }
+        }
+    }
+
+    if tls == "tls" {
+        stream_settings.insert("security".to_string(), json!("tls"));
+        stream_settings.insert("tlsSettings".to_string(), json!({ "serverName": sni, "allowInsecure": false, "fingerprint": fp }));
+    } else {
+        stream_settings.insert("security".to_string(), json!("none"));
+    }
+
+    let mut user_obj = serde_json::Map::new();
+    user_obj.insert("id".to_string(), json!(id));
+    user_obj.insert("alterId".to_string(), json!(aid));
+    user_obj.insert("security".to_string(), json!(scy));
+
+    let outbound = json!({
+        "tag": "proxy",
+        "protocol": "vmess",
+        "settings": { "vnext": [{ "address": out_addr.clone(), "port": port, "users": [Value::Object(user_obj)] }] },
+        "streamSettings": Value::Object(stream_settings)
+    });
+    Ok((outbound, out_addr, resolved_ips))
+}
+
+fn split_shadowsocks_userinfo(decoded: &str) -> Option<(String, String)> {
+    let mut parts = decoded.splitn(2, ':');
+    let method = parts.next()?.to_string();
+    let password = parts.next()?.to_string();
+    Some((method, password))
+}
+
+async fn build_shadowsocks_outbound(link: &str) -> Result<(Value, String, Vec<String>), String> {
+    let body = link.trim_start_matches("ss://");
+    let body = body.split('#').next().unwrap_or(body);
+
+    let (method, password, server, port) = if let Some(at_pos) = body.rfind('@') {
+        let (userinfo_b64, hostport) = body.split_at(at_pos);
+        let hostport = &hostport[1..];
+        let userinfo = decode_base64_flexible(userinfo_b64).unwrap_or_else(|| userinfo_b64.to_string());
+        let (method, password) = split_shadowsocks_userinfo(&userinfo).ok_or_else(|| "Некорректные учётные данные Shadowsocks".to_string())?;
+        let mut hp = hostport.splitn(2, ':');
+        let host = hp.next().unwrap_or("").to_string();
+        let port: u16 = hp.next().unwrap_or("443").parse().unwrap_or(443);
+        (method, password, host, port)
+    } else {
+        let decoded = decode_base64_flexible(body).ok_or_else(|| "Не удалось декодировать Shadowsocks-ссылку".to_string())?;
+        let at_pos = decoded.rfind('@').ok_or_else(|| "Некорректный формат Shadowsocks-ссылки".to_string())?;
+        let (cred, hostport) = decoded.split_at(at_pos);
+        let hostport = &hostport[1..];
+        let (method, password) = split_shadowsocks_userinfo(cred).ok_or_else(|| "Некорректные учётные данные Shadowsocks".to_string())?;
+        let mut hp = hostport.splitn(2, ':');
+        let host = hp.next().unwrap_or("").to_string();
+        let port: u16 = hp.next().unwrap_or("443").parse().unwrap_or(443);
+        (method, password, host, port)
+    };
+
+    if server.is_empty() || method.is_empty() {
+        return Err("Shadowsocks-ссылка не содержит метод шифрования или адрес сервера".into());
+    }
+
+    let (out_addr, resolved_ips) = resolve_server_ips(&server, port).await;
+
+    let outbound = json!({
+        "tag": "proxy",
+        "protocol": "shadowsocks",
+        "settings": { "servers": [{ "address": out_addr.clone(), "port": port, "method": method, "password": password }] },
+        "streamSettings": { "sockopt": { "mark": 255 } }
+    });
+    Ok((outbound, out_addr, resolved_ips))
+}
+
+async fn build_proxy_outbound(link: &str) -> Result<(Value, String, Vec<String>), String> {
+    if link.starts_with("vmess://") { return build_vmess_outbound(link).await; }
+    if link.starts_with("trojan://") { return build_vless_or_trojan_outbound(link, "trojan").await; }
+    if link.starts_with("ss://") { return build_shadowsocks_outbound(link).await; }
+    build_vless_or_trojan_outbound(link, "vless").await
+}
+
 async fn ensure_geo_files() -> Result<(), String> {
     if !Path::new("/etc/karin-proxy/geo").exists() {
         std::process::Command::new("sudo").args(["/usr/bin/mkdir", "-p", "/etc/karin-proxy/geo"]).output().ok();
@@ -640,6 +859,7 @@ async fn start_openvpn_proxy(
     let dynamic_rules = build_xray_rules(routing_state, zone_priority);
 
     let mut all_rules = vec![];
+    all_rules.push(json!({ "type": "field", "inboundTag": ["ping-in"], "outboundTag": "proxy" }));
     let mut local_ips = vec!["127.0.0.0/8".to_string()];
     if !proxy_lan {
         local_ips.extend(vec![
@@ -661,7 +881,8 @@ async fn start_openvpn_proxy(
         "routing": { "domainStrategy": "AsIs", "rules": all_rules },
         "inbounds": [
             { "port": 2080, "listen": "127.0.0.1", "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": "openvpn_mode" } ] } },
-            { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1500, "gateway": ["172.19.0.1/30"] }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } }
+            { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1500, "gateway": ["172.19.0.1/30"] }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } },
+            { "tag": "ping-in", "listen": "127.0.0.1", "port": 2082, "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": "openvpn_mode" } ] } }
         ],
         "outbounds": [
             { "tag": "proxy", "protocol": "freedom", "streamSettings": { "sockopt": { "mark": 111, "interface": "tun-ovpn" } } },
@@ -828,6 +1049,7 @@ async fn start_wireguard_proxy(
     let dynamic_rules = build_xray_rules(routing_state, zone_priority);
 
     let mut all_rules = vec![];
+    all_rules.push(json!({ "type": "field", "inboundTag": ["ping-in"], "outboundTag": "proxy" }));
     let mut local_ips = vec!["127.0.0.0/8".to_string()];
     if !proxy_lan {
         local_ips.extend(vec![
@@ -849,7 +1071,8 @@ async fn start_wireguard_proxy(
         "routing": { "domainStrategy": "AsIs", "rules": all_rules },
         "inbounds": [
             { "port": 2080, "listen": "127.0.0.1", "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": "wireguard_mode" } ] } },
-            { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1420, "gateway": ["172.19.0.1/30"] }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } }
+            { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1420, "gateway": ["172.19.0.1/30"] }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } },
+            { "tag": "ping-in", "listen": "127.0.0.1", "port": 2082, "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": "wireguard_mode" } ] } }
         ],
         "outbounds": [
             { "tag": "proxy", "protocol": "freedom", "streamSettings": { "sockopt": { "mark": 111, "interface": "wg0" } } },
@@ -928,42 +1151,14 @@ async fn start_proxy(
     let token = generate_token();
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = Some(token.clone()); }
 
-    let parsed_url = Url::parse(&vless_link).map_err(|e| e.to_string())?;
-    let server = parsed_url.host_str().unwrap_or("").to_string();
-    let port = parsed_url.port().unwrap_or(443);
-    let uuid = parsed_url.username().to_string();
-    
-    let mut resolved_ips: Vec<String> = vec![];
-    if let Ok(ip) = server.parse::<std::net::IpAddr>() {
-        resolved_ips.push(ip.to_string());
-    } else if let Ok(mut addrs) = tokio::net::lookup_host(format!("{}:{}", server, port)).await {
-        while let Some(addr) = addrs.next() { resolved_ips.push(addr.ip().to_string()); }
-    }
-    if resolved_ips.is_empty() { resolved_ips.push(server.clone()); }
-    
-    let out_addr = resolved_ips.first().unwrap_or(&server).clone();
-
-    let mut pbk = String::new(); let mut sid = String::new(); let mut sni = String::new();
-    let mut fp = String::from("firefox"); let mut transport_type = String::from("tcp");
-    let mut path = String::from("/"); let mut host = String::new(); let mut mode = String::from("auto"); 
-    let mut spx = String::new(); let mut security = String::from("none"); let mut flow = String::new();
-
-    for (k, v) in parsed_url.query_pairs() {
-        match k.as_ref() {
-            "pbk" => pbk = v.to_string(), "sid" => sid = v.to_string(), "sni" => sni = v.to_string(),
-            "fp" => fp = v.to_string(), "type" => transport_type = v.to_string(), "path" => path = v.to_string(),
-            "host" => host = v.to_string(), "mode" => mode = v.to_string(), "spx" => spx = v.to_string(),
-            "security" => security = v.to_string(), "flow" => flow = v.to_string(),
-            _ => {}
-        }
-    }
-    if host.is_empty() { host = sni.clone(); }
+    let (proxy_outbound, out_addr, resolved_ips) = build_proxy_outbound(&vless_link).await?;
 
     let dns_config = build_dns_config(&dns_params, &routing_state);
     let dynamic_rules = build_xray_rules(routing_state, zone_priority);
 
     let mut all_rules = vec![];
     all_rules.push(json!({ "type": "field", "inboundTag": ["dns-in"], "outboundTag": "dns-out" }));
+    all_rules.push(json!({ "type": "field", "inboundTag": ["ping-in"], "outboundTag": "proxy" }));
     let mut local_ips = vec!["127.0.0.0/8".to_string()];
     if !proxy_lan {
         local_ips.extend(vec![
@@ -977,27 +1172,6 @@ async fn start_proxy(
     all_rules.push(json!({ "type": "field", "ip": local_ips, "outboundTag": "direct" }));
     if let Some(rules_array) = dynamic_rules.as_array() { all_rules.extend(rules_array.clone()); }
     all_rules.push(json!({ "type": "field", "network": "tcp,udp", "outboundTag": default_outbound }));
-        
-    let final_network = if transport_type == "xhttp" || transport_type == "httpupgrade" { "xhttp" } else { "tcp" };
-
-    let mut stream_settings = serde_json::Map::new();
-    stream_settings.insert("network".to_string(), json!(final_network));
-    stream_settings.insert("security".to_string(), json!(security));
-    stream_settings.insert("sockopt".to_string(), json!({ "mark": 255 }));
-    
-    if security == "reality" {
-        stream_settings.insert("realitySettings".to_string(), json!({ "publicKey": pbk, "shortId": sid, "serverName": sni, "fingerprint": fp, "spiderX": spx }));
-    } else if security == "tls" {
-        stream_settings.insert("tlsSettings".to_string(), json!({ "serverName": sni, "allowInsecure": false, "fingerprint": fp }));
-    }
-    
-    if final_network == "xhttp" { stream_settings.insert("xhttpSettings".to_string(), json!({ "path": path, "host": host, "mode": mode })); }
-
-    let mut user_obj = serde_json::Map::new();
-    user_obj.insert("id".to_string(), json!(uuid));
-    user_obj.insert("encryption".to_string(), json!("none"));
-    
-    if !flow.is_empty() && (security == "reality" || security == "tls") { user_obj.insert("flow".to_string(), json!(flow)); }
 
     let (err_log, acc_log) = get_log_paths();
 
@@ -1008,10 +1182,11 @@ async fn start_proxy(
         "inbounds": [
             { "port": 2080, "listen": "127.0.0.1", "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": token } ] } },
             { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1500, "gateway": ["172.19.0.1/30"] }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } },
-            { "tag": "dns-in", "listen": "127.0.0.1", "port": 53, "protocol": "dokodemo-door", "settings": { "address": "1.1.1.1", "port": 53, "network": "udp" } }
+            { "tag": "dns-in", "listen": "127.0.0.1", "port": 53, "protocol": "dokodemo-door", "settings": { "address": "1.1.1.1", "port": 53, "network": "udp" } },
+            { "tag": "ping-in", "listen": "127.0.0.1", "port": 2082, "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": token } ] } }
         ],
         "outbounds": [
-            { "tag": "proxy", "protocol": "vless", "settings": { "vnext": [{ "address": out_addr.clone(), "port": port, "users": [Value::Object(user_obj)] }] }, "streamSettings": Value::Object(stream_settings) },
+            proxy_outbound,
             { "tag": "direct", "protocol": "freedom", "streamSettings": { "sockopt": { "mark": 255 } } },
             { "tag": "block", "protocol": "blackhole" },
             { "tag": "dns-out", "protocol": "dns" }
@@ -1074,7 +1249,7 @@ fn stop_proxy(_state: State<'_, ProxyState>) -> Result<String, String> {
 async fn get_vpn_ip(_state: State<'_, ProxyState>) -> Result<String, String> {
     let proxy_url = {
         let guard = _state.auth_token.lock().unwrap();
-        if let Some(token) = guard.as_ref() { format!("http://karin:{}@127.0.0.1:2080", token) } else { "http://127.0.0.1:2080".to_string() }
+        if let Some(token) = guard.as_ref() { format!("http://karin:{}@127.0.0.1:2082", token) } else { "http://127.0.0.1:2082".to_string() }
     };
     let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| e.to_string())?;
     let client = reqwest::Client::builder().proxy(proxy).timeout(std::time::Duration::from_secs(10)).build().map_err(|e| e.to_string())?;
@@ -1086,7 +1261,7 @@ async fn get_vpn_ip(_state: State<'_, ProxyState>) -> Result<String, String> {
 async fn check_ping(_state: State<'_, ProxyState>) -> Result<String, String> {
     let proxy_url = {
         let guard = _state.auth_token.lock().unwrap();
-        if let Some(token) = guard.as_ref() { format!("http://karin:{}@127.0.0.1:2080", token) } else { "http://127.0.0.1:2080".to_string() }
+        if let Some(token) = guard.as_ref() { format!("http://karin:{}@127.0.0.1:2082", token) } else { "http://127.0.0.1:2082".to_string() }
     };
     let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| e.to_string())?;
     let client = reqwest::Client::builder().proxy(proxy).timeout(std::time::Duration::from_secs(10)).build().map_err(|e| e.to_string())?;
