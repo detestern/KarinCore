@@ -10,6 +10,7 @@ interface DnsConfig { type: string, url: string, ip: string }
 interface RouteProfile { id: string, name: string, defaultOutbound: string, rules: any, domDns?: DnsConfig, remDns?: DnsConfig, zonePriority?: ZoneKey[] }
 interface RoutingRule { type: string; value: string; }
 type ZoneKey = 'direct' | 'proxy' | 'block';
+interface SubscriptionResult { links: string[]; importedRouting?: Record<ZoneKey, RoutingRule[]>; importedDns?: { domestic?: DnsConfig; remote?: DnsConfig }; }
 
 // **********************************
 // STATE MANAGEMENT & LOCAL STORAGE
@@ -482,6 +483,34 @@ function loadDnsState() {
 
 [domType, domUrl, domIp, remType, remUrl, remIp].forEach(el => el?.addEventListener('change', saveDnsState));
 
+function mergeImportedRouting(imported: Record<ZoneKey, RoutingRule[]>) {
+    (Object.keys(imported) as ZoneKey[]).forEach(zone => {
+        if (!routingState[zone] || !imported[zone]) return;
+        const existingValues = new Set(routingState[zone].map(r => r.value));
+        imported[zone].forEach(rule => {
+            if (!existingValues.has(rule.value)) {
+                routingState[zone].push(rule);
+                existingValues.add(rule.value);
+            }
+        });
+    });
+    renderRouting();
+}
+
+function mergeImportedDns(imported: { domestic?: DnsConfig; remote?: DnsConfig }) {
+    if (imported.domestic && domType && domUrl && domIp) {
+        domType.value = imported.domestic.type || domType.value;
+        domUrl.value = imported.domestic.url || domUrl.value;
+        domIp.value = imported.domestic.ip || domIp.value;
+    }
+    if (imported.remote && remType && remUrl && remIp) {
+        remType.value = imported.remote.type || remType.value;
+        remUrl.value = imported.remote.url || remUrl.value;
+        remIp.value = imported.remote.ip || remIp.value;
+    }
+    saveDnsState();
+}
+
 async function saveNewLink() {
     if(!linkInput) return;
     const input = linkInput.value.trim();
@@ -509,14 +538,17 @@ async function saveNewLink() {
         btnSave.disabled = true;
         
         try {
-            const urls = await invoke<string[]>('fetch_subscription', { url: input });
+            const result = await invoke<SubscriptionResult>('fetch_subscription', { url: input });
             const domain = new URL(input).hostname;
             const newGroupId = 'grp_' + Date.now();
             appGroups.push({ id: newGroupId, name: domain, pinned: false, isOpen: true });
-            urls.forEach(u => addLink(u, newGroupId));
-            
-            saveData(); 
-            renderLinks(); 
+            result.links.forEach(u => addLink(u, newGroupId));
+
+            if (result.importedRouting) mergeImportedRouting(result.importedRouting);
+            if (result.importedDns) mergeImportedDns(result.importedDns);
+
+            saveData();
+            renderLinks();
             linkInput.value = '';
             typeKarinMessage('karin_add_link');
         } catch (error) { 
@@ -1031,7 +1063,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.3.5";
+        const CURRENT_VERSION = "1.3.6";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;

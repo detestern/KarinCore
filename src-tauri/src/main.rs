@@ -8,6 +8,7 @@ use url::Url;
 use std::path::Path;
 use tokio::fs;
 use base64::{Engine as _, engine::general_purpose};
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -80,6 +81,115 @@ fn build_xray_rules(state: Value, priority: Vec<String>) -> Value {
         }
     }
     json!(xray_rules)
+}
+
+// **********************************
+// SUBSCRIPTION ROUTING/DNS IMPORT
+// **********************************
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SubscriptionResult {
+    links: Vec<String>,
+    imported_routing: Option<Value>,
+    imported_dns: Option<Value>,
+}
+
+fn classify_outbound_zone(outbounds: &[Value], tag: &str) -> Option<&'static str> {
+    for ob in outbounds {
+        if ob.get("tag").and_then(|v| v.as_str()) == Some(tag) {
+            let protocol = ob.get("protocol").and_then(|v| v.as_str()).unwrap_or("");
+            return match protocol {
+                "freedom" => Some("direct"),
+                "blackhole" => Some("block"),
+                "vless" | "vmess" | "trojan" | "shadowsocks" | "socks" | "http" => Some("proxy"),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+fn routing_rule_from_domain(raw: &str) -> Value {
+    if let Some(rest) = raw.strip_prefix("geosite:") {
+        json!({ "type": "geosite", "value": rest })
+    } else if let Some(rest) = raw.strip_prefix("domain:") {
+        json!({ "type": "domain", "value": rest })
+    } else if let Some(rest) = raw.strip_prefix("keyword:") {
+        json!({ "type": "keyword", "value": rest })
+    } else if let Some(rest) = raw.strip_prefix("regexp:") {
+        json!({ "type": "domain", "value": rest })
+    } else {
+        json!({ "type": "domain", "value": raw })
+    }
+}
+
+fn convert_routing_to_zones(routing: &Value, outbounds: &[Value]) -> Option<Value> {
+    let rules = routing.get("rules").and_then(|v| v.as_array())?;
+    let mut zones = serde_json::Map::new();
+    zones.insert("direct".to_string(), json!([]));
+    zones.insert("proxy".to_string(), json!([]));
+    zones.insert("block".to_string(), json!([]));
+    let mut found_any = false;
+
+    for rule in rules {
+        let tag = match rule.get("outboundTag").and_then(|v| v.as_str()) {
+            Some(t) => t,
+            None => continue,
+        };
+        let zone_key = match classify_outbound_zone(outbounds, tag) {
+            Some(z) => z,
+            None => continue,
+        };
+        let zone_arr = zones.get_mut(zone_key).unwrap().as_array_mut().unwrap();
+
+        if let Some(domains) = rule.get("domain").and_then(|v| v.as_array()) {
+            for d in domains {
+                if let Some(s) = d.as_str() { zone_arr.push(routing_rule_from_domain(s)); found_any = true; }
+            }
+        }
+        if let Some(ips) = rule.get("ip").and_then(|v| v.as_array()) {
+            for ip in ips {
+                if let Some(s) = ip.as_str() { zone_arr.push(json!({ "type": "ip", "value": s })); found_any = true; }
+            }
+        }
+    }
+
+    if found_any { Some(Value::Object(zones)) } else { None }
+}
+
+fn convert_dns_to_params(dns: &Value, outbounds: &[Value]) -> Option<Value> {
+    let servers = dns.get("servers").and_then(|v| v.as_array())?;
+    let mut domestic: Option<Value> = None;
+    let mut remote: Option<Value> = None;
+
+    for server in servers {
+        let (address, tag) = if let Some(s) = server.as_str() {
+            (s.to_string(), None)
+        } else {
+            let addr = server.get("address").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let tag = server.get("outboundTag").and_then(|v| v.as_str()).map(|s| s.to_string());
+            (addr, tag)
+        };
+        if address.is_empty() { continue; }
+
+        let entry = if address.starts_with("https://") || address.starts_with("http://") {
+            json!({ "type": "doh", "url": address, "ip": "" })
+        } else {
+            json!({ "type": "dou", "url": "", "ip": address })
+        };
+
+        let zone_key = tag.as_deref().and_then(|t| classify_outbound_zone(outbounds, t));
+        match zone_key {
+            Some("direct") => { if domestic.is_none() { domestic = Some(entry); } }
+            Some("proxy") => { if remote.is_none() { remote = Some(entry); } }
+            _ => {
+                if domestic.is_none() { domestic = Some(entry); }
+                else if remote.is_none() { remote = Some(entry); }
+            }
+        }
+    }
+
+    if domestic.is_none() && remote.is_none() { None } else { Some(json!({ "domestic": domestic, "remote": remote })) }
 }
 
 // **********************************
@@ -605,7 +715,7 @@ fn sanitize_wg_config(raw: &str) -> String {
 // TAURI COMMANDS: PROXY & NETWORK MANAGEMENT
 // **********************************
 #[tauri::command]
-async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
+async fn fetch_subscription(url: String) -> Result<SubscriptionResult, String> {
     let client = reqwest::Client::builder()
         .user_agent("v2rayNG/1.8.5")
         .build()
@@ -642,8 +752,10 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
     }
 
     let mut links = Vec::new();
-    
-    let parse_json = |json_str: &str, out_links: &mut Vec<String>| {
+    let mut imported_routing: Option<Value> = None;
+    let mut imported_dns: Option<Value> = None;
+
+    let parse_json = |json_str: &str, out_links: &mut Vec<String>, out_routing: &mut Option<Value>, out_dns: &mut Option<Value>| {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
             let arr = if let Some(a) = json.as_array() {
                 a.clone()
@@ -653,6 +765,8 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
 
             for item in arr {
                 let remarks = item.get("remarks").and_then(|v| v.as_str()).unwrap_or("Proxy");
+                let outbounds_arr = item.get("outbounds").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
                 if let Some(outbounds) = item.get("outbounds").and_then(|v| v.as_array()) {
                     for out in outbounds {
                         if out.get("protocol").and_then(|v| v.as_str()) == Some("vless") {
@@ -660,7 +774,7 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
                             let port = out.pointer("/settings/vnext/0/port").and_then(|v| v.as_u64()).unwrap_or(443);
                             let id = out.pointer("/settings/vnext/0/users/0/id").and_then(|v| v.as_str()).unwrap_or("");
                             let flow = out.pointer("/settings/vnext/0/users/0/flow").and_then(|v| v.as_str()).unwrap_or("");
-                            
+
                             let stream = out.get("streamSettings");
                             let network = stream.and_then(|v| v.pointer("/network")).and_then(|v| v.as_str()).unwrap_or("tcp");
                             let security = stream.and_then(|v| v.pointer("/security")).and_then(|v| v.as_str()).unwrap_or("none");
@@ -678,6 +792,21 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
                         }
                     }
                 }
+
+                if out_routing.is_none() {
+                    if let Some(routing) = item.get("routing") {
+                        if let Some(converted) = convert_routing_to_zones(routing, &outbounds_arr) {
+                            *out_routing = Some(converted);
+                        }
+                    }
+                }
+                if out_dns.is_none() {
+                    if let Some(dns) = item.get("dns") {
+                        if let Some(converted) = convert_dns_to_params(dns, &outbounds_arr) {
+                            *out_dns = Some(converted);
+                        }
+                    }
+                }
             }
         }
     };
@@ -691,7 +820,7 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
         }
     };
 
-    parse_json(&text, &mut links);
+    parse_json(&text, &mut links, &mut imported_routing, &mut imported_dns);
     if links.is_empty() { parse_plain(&text, &mut links); }
 
     if links.is_empty() {
@@ -727,16 +856,16 @@ async fn fetch_subscription(url: String) -> Result<Vec<String>, String> {
         }
         
         if decoded {
-            parse_json(&decoded_str, &mut links);
+            parse_json(&decoded_str, &mut links, &mut imported_routing, &mut imported_dns);
             if links.is_empty() { parse_plain(&decoded_str, &mut links); }
         }
     }
 
-    if links.is_empty() { 
-        return Err("Не удалось найти профили.\nВозможно формат не поддерживается.".into()); 
+    if links.is_empty() {
+        return Err("Не удалось найти профили.\nВозможно формат не поддерживается.".into());
     }
-    
-    Ok(links)
+
+    Ok(SubscriptionResult { links, imported_routing, imported_dns })
 }
 
 async fn start_openvpn_proxy(
