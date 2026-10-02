@@ -1,4 +1,7 @@
 #!/bin/bash
+RP_FILTER_BAK="/etc/karin-proxy/rp_filter.bak"
+LOCAL_BYPASS_NETS="127.0.0.0/8 10.0.0.0/8 192.168.0.0/16"
+
 # Извлекаем данные из конфига с помощью Python
 SERVER_ADDR=$(python3 -c "import json; print(json.load(open('/etc/karin-proxy/config.json'))['outbounds'][0]['settings']['vnext'][0]['address'])" 2>/dev/null)
 
@@ -22,7 +25,13 @@ case "$1" in
             sleep 0.25
         done
 
-        # 1. Отключаем rp_filter (защита от асимметричного роутинга)
+        # 1. Отключаем rp_filter (защита от асимметричного роутинга), сохранив исходные значения
+        if [ ! -f "$RP_FILTER_BAK" ]; then
+            {
+                echo "ALL_RP=$(cat /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null)"
+                echo "DEFAULT_RP=$(cat /proc/sys/net/ipv4/conf/default/rp_filter 2>/dev/null)"
+            } > "$RP_FILTER_BAK"
+        fi
         sysctl -w net.ipv4.conf.all.rp_filter=0
         sysctl -w net.ipv4.conf.default.rp_filter=0
         sysctl -w net.ipv4.conf.tun0.rp_filter=0 2>/dev/null
@@ -33,9 +42,9 @@ case "$1" in
         ip route add default dev tun0 table 100 2>/dev/null
 
         # 3. Базовые правила-исключения локальной сети
-        ip rule add to 127.0.0.0/8 table main pref 10 2>/dev/null
-        ip rule add to 10.0.0.0/8 table main pref 10 2>/dev/null
-        ip rule add to 192.168.0.0/16 table main pref 10 2>/dev/null
+        for net in $LOCAL_BYPASS_NETS; do
+            ip rule add to "$net" table main pref 10 2>/dev/null
+        done
 
         # Исключаем IP сервера из проксирования, чтобы не было петли
         if [ ! -z "$SERVER_IP" ]; then
@@ -64,7 +73,18 @@ case "$1" in
         if [ ! -z "$SERVER_IP" ]; then
             ip rule del to "$SERVER_IP" table main pref 10 2>/dev/null
         fi
+        for net in $LOCAL_BYPASS_NETS; do
+            ip rule del to "$net" table main pref 10 2>/dev/null
+        done
         ip route flush table 100 2>/dev/null
+
+        # Восстанавливаем исходные значения rp_filter
+        if [ -f "$RP_FILTER_BAK" ]; then
+            . "$RP_FILTER_BAK"
+            sysctl -w net.ipv4.conf.all.rp_filter="${ALL_RP:-1}" 2>/dev/null
+            sysctl -w net.ipv4.conf.default.rp_filter="${DEFAULT_RP:-1}" 2>/dev/null
+            rm -f "$RP_FILTER_BAK"
+        fi
 
         # **********************************
         # DNS

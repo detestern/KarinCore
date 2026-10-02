@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.3.5-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.3.6-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,11 @@ This release is a full visual and functional overhaul, not just a patch.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
 
 <br/>
+
+### v1.3.6 — Routing Cleanup & Subscription Import
+
+* **Fixed:** `route.sh` left stale `ip rule` entries for local-subnet bypasses (loopback, private ranges) behind after disconnecting, and zeroed out the `rp_filter` sysctl on connect without ever restoring it. Both are now cleaned up on disconnect, mirroring the existing `resolv.conf` backup/restore pattern.
+* **Fixed:** importing a full JSON subscription (one with its own `routing`/`dns` blocks, rather than plain proxy links) silently discarded that routing and DNS configuration. It's now translated into KarinCore's own routing zones and DNS settings and merged additively into your existing configuration. The subscription's `policy` block (buffer sizes, timeouts) has no equivalent in KarinCore's UI and is intentionally not imported.
 
 ### v1.3.5 — Protocol & Ping Fixes
 

@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/версия-1.3.5-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/версия-1.3.6-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/платформа-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/на_чём_написано-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/фреймворк-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,11 @@ KarinCore создана, чтобы избавить пользователей
 * **Более спокойная вкладка маршрутизации.** Та же логика drag & drop и те же настройки DNS, только тоньше рамки и сдержаннее в целом.
 
 <br/>
+
+### v1.3.6 — Чистка маршрутизации и импорт подписок
+
+* **Исправлено:** `route.sh` оставлял после отключения мёртвые записи `ip rule` для bypass'а локальных подсетей (loopback, приватные диапазоны) и обнулял sysctl `rp_filter` при подключении, никогда не восстанавливая его. Теперь всё это убирается / восстанавливается при отключении — по той же схеме бэкапа/восстановления, что уже используется для `resolv.conf`.
+* **Исправлено:** импорт полной JSON-подписки (со своими блоками `routing`/`dns`, а не просто списком прокси-ссылок) молча отбрасывал эту маршрутизацию и настройки DNS. Теперь они переводятся в собственные зоны маршрутизации и настройки DNS KarinCore и дополнительно объединяются с вашей текущей конфигурацией. Блок `policy` из подписки (размеры буферов, таймауты) не имеет аналога в интерфейсе KarinCore и намеренно не импортируется.
 
 ### v1.3.5 — Исправления протоколов и пинга
 
