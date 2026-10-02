@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.3.3-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.3.4-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,10 @@ This release is a full visual and functional overhaul, not just a patch.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
 
 <br/>
+
+### v1.3.4 — TUN Config Schema Fix
+
+* **Fixed:** the TUN inbound config shipped an `autoRoute: true` field that doesn't exist in Xray-core's actual schema (the real field is `autoSystemRoutingTable`, an array, not a boolean) — Xray silently ignored it, so it never did anything. Removed it; routing was always correctly handled by KarinCore's own `route.sh`, not by Xray.
 
 ### v1.3.3 — DNS / systemd-resolved Fix
 
@@ -193,7 +197,7 @@ yay -S karincore-git
 Grab the latest `.deb` from [Releases](../../releases). It registers `sudoers` and `systemd` rules on install. Make sure `openvpn` and `wireguard-tools` are present on your system first.
 
 ```bash
-sudo dpkg -i KarinCore_1.3.3_amd64.deb
+sudo dpkg -i KarinCore_1.3.4_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 
