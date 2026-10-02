@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.3.6-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.3.7-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,11 @@ This release is a full visual and functional overhaul, not just a patch.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
 
 <br/>
+
+### v1.3.7 — Dead Code & Window Dragging Fix
+
+* **Fixed:** dragging the window by its custom titlebar silently did nothing on some systems — Tauri v2 requires the `core:window:allow-start-dragging` permission for a frameless window's `data-tauri-drag-region` to actually work, and it was missing from the app's capabilities file.
+* **Removed:** the dead `karin-proxy-daemon` Cargo binary target — a leftover HTTP server (port 9090) from an earlier architecture that applied config over HTTP and restarted the service. Nothing calls it: the actual `karin-proxy-daemon.service` systemd unit runs Xray directly. It, and its unused `axum` dependency, were only adding unnecessary build time.
 
 ### v1.3.6 — Routing Cleanup & Subscription Import
 
