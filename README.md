@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.3.4-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.3.5-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,11 @@ This release is a full visual and functional overhaul, not just a patch.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
 
 <br/>
+
+### v1.3.5 — Protocol & Ping Fixes
+
+* **Fixed:** importing a VMess, Trojan, or Shadowsocks link silently built a broken VLESS outbound instead — every protocol other than VLESS/OpenVPN/WireGuard was treated as VLESS without any error. All four protocols (VLESS, VMess, Trojan, Shadowsocks) are now parsed and proxied correctly.
+* **Fixed:** the Ping button and the IP display measured latency through the app's general-purpose local proxy port, which obeys the same routing rules as the rest of your traffic — if your test target happened to match a "direct" rule, the result silently reflected your direct connection instead of the tunnel. Ping and IP checks now go through a dedicated path that's always forced through the proxy.
 
 ### v1.3.4 — TUN Config Schema Fix
 
@@ -197,7 +202,7 @@ yay -S karincore-git
 Grab the latest `.deb` from [Releases](../../releases). It registers `sudoers` and `systemd` rules on install. Make sure `openvpn` and `wireguard-tools` are present on your system first.
 
 ```bash
-sudo dpkg -i KarinCore_1.3.4_amd64.deb
+sudo dpkg -i KarinCore_1.3.5_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 
