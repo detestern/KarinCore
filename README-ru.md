@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/версия-1.3.6-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/версия-1.3.7-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/платформа-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/на_чём_написано-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/фреймворк-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,11 @@ KarinCore создана, чтобы избавить пользователей
 * **Более спокойная вкладка маршрутизации.** Та же логика drag & drop и те же настройки DNS, только тоньше рамки и сдержаннее в целом.
 
 <br/>
+
+### v1.3.7 — Мёртвый код и перетаскивание окна
+
+* **Исправлено:** перетаскивание окна за собственный титлбар на некоторых системах молча не работало — для фреймлесс-окна в Tauri v2 `data-tauri-drag-region` реально работает только при наличии разрешения `core:window:allow-start-dragging`, которого не было в файле capabilities приложения.
+* **Удалено:** мёртвый бинарный таргет Cargo `karin-proxy-daemon` — наследие прежней архитектуры, HTTP-сервер на порту 9090, применявший конфиг по HTTP и перезапускавший сервис. Его никто не вызывает: реальный systemd-юнит `karin-proxy-daemon.service` запускает Xray напрямую. Он сам и его неиспользуемая зависимость `axum` только зря увеличивали время сборки.
 
 ### v1.3.6 — Чистка маршрутизации и импорт подписок
 
