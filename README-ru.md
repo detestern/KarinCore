@@ -8,6 +8,8 @@
 
 ## Состояние проекта
 
+> Это ветка `android` репозитория [detestern/KarinCore](https://github.com/detestern/KarinCore). Десктопный клиент для Linux находится в `main`; Android-сборки публикуются как пре-релизы с тегами `android-v<версия>`.
+
 Это экспериментальный Android-порт [detestern/KarinCore](https://github.com/detestern/KarinCore). За основу взят KarinCore 1.3.7, commit `b7fea2e2ff5e1492fd863381985fdebb4da7a57e`.
 
 В Android-порте сохранены интерфейс на TypeScript/Vite и общая Rust-логика KarinCore: парсинг ссылок, подписки, маршрутизация, DNS и профили. Linux-часть с `sudo`, systemd, `route.sh`, iptables и системным Xray на Android заменена нативным `VpnService`.
@@ -103,8 +105,8 @@ rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-andro
 Последовательность первого запуска:
 
 ```bash
-git clone https://github.com/VivaGushter/KarinCore-android.git
-cd KarinCore-android
+git clone -b android https://github.com/detestern/KarinCore.git
+cd KarinCore
 
 npm install
 npm run android:core

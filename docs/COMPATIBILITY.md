@@ -6,7 +6,7 @@
 | --- | --- |
 | Android | Minimum API 24 (Android 7.0); target API 37 |
 | Distributed ABI | Separate `arm64-v8a`, `armeabi-v7a`, `x86` and `x86_64` APKs |
-| Package ID | `com.vivagushter.karincore` |
+| Package ID | `com.nikitahya.karincore` |
 | VPN engine | Android `VpnService` with embedded Xray |
 | Distribution | GitHub prerelease APK |
 | Signing | Current prereleases are debug-signed test builds |

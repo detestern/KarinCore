@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vivagushter.karincore.vpn"
+    namespace = "com.nikitahya.karincore.vpn"
     compileSdk = 36
 
     defaultConfig {

@@ -18,7 +18,7 @@
         android:allowBackup="false"
         android:fullBackupContent="false">
         <service
-            android:name="com.vivagushter.karincore.vpn.KarinVpnService"
+            android:name="com.nikitahya.karincore.vpn.KarinVpnService"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse"
@@ -34,7 +34,7 @@
                 android:value="User initiated VPN tunnel powered by Xray-core" />
         </service>
         <receiver
-            android:name="com.vivagushter.karincore.vpn.KarinVpnWidgetProvider"
+            android:name="com.nikitahya.karincore.vpn.KarinVpnWidgetProvider"
             android:exported="false"
             android:label="@string/widget_name">
             <intent-filter>

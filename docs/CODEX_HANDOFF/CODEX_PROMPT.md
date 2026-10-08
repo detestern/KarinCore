@@ -4,7 +4,7 @@
 
 ---
 
-Ты продолжаешь разработку репозитория `VivaGushter/KarinCore-android`.
+Ты продолжаешь разработку репозитория `detestern/KarinCore` (ветка `android`).
 
 Это не новый проект. Не создавай порт заново и не повторяй уже реализованные функции.
 
@@ -209,7 +209,7 @@ README, CHANGELOG и docs писать обезличенно, как докум
 - ссылки на разговор с ChatGPT
 - упоминания assistant/Codex как автора изменений
 
-Upstream attribution `detestern/KarinCore` сохранять честно, но update/release channel принадлежит `VivaGushter/KarinCore-android`.
+Upstream attribution `detestern/KarinCore` сохранять честно, но update/release channel — ветка `android` и теги `android-v<version>` в `detestern/KarinCore`.
 
 ## 10. Работа с задачами
 

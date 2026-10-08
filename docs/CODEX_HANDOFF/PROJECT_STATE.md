@@ -6,14 +6,14 @@ KarinCore Android является Android-портом проекта `detester
 
 Текущий репозиторий:
 
-- GitHub: `VivaGushter/KarinCore-android`
+- GitHub: `detestern/KarinCore` (ветка `android`)
 - Основная ветка: `main`
 - Текущая версия: `0.1.0-alpha.31`
 - Android `versionCode`: `31`
 - Release code baseline: tag `v0.1.0-alpha.31`
 - База upstream: KarinCore 1.3.7
 - Upstream commit: `b7fea2e2ff5e1492fd863381985fdebb4da7a57e`
-- Package ID: `com.vivagushter.karincore`
+- Package ID: `com.nikitahya.karincore`
 - Android minSdk: 24
 - Выпускаемые ABI: `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`
 
@@ -374,7 +374,7 @@ Data models:
 
 Android fork обновляется только из:
 
-`VivaGushter/KarinCore-android`
+`detestern/KarinCore` (ветка `android`)
 
 Updater читает `VERSION` из main и сравнивает SemVer с установленной версией, включая alpha/beta.
 

@@ -1,4 +1,4 @@
-package com.vivagushter.karincore.vpn
+package com.nikitahya.karincore.vpn
 
 import android.app.Activity
 import android.app.ActivityManager

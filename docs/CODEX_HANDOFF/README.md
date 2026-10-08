@@ -4,7 +4,7 @@
 
 Точка отсчёта:
 
-- Repository: `VivaGushter/KarinCore-android`
+- Repository: `detestern/KarinCore` (branch `android`)
 - Branch: `main`
 - Version: `0.1.0-alpha.31`
 - Android versionCode: `31`

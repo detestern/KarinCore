@@ -1,4 +1,4 @@
-package com.vivagushter.karincore.vpn
+package com.nikitahya.karincore.vpn
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
@@ -70,7 +70,7 @@ class KarinVpnWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        private const val ACTION_TOGGLE = "com.vivagushter.karincore.widget.TOGGLE"
+        private const val ACTION_TOGGLE = "com.nikitahya.karincore.widget.TOGGLE"
 
         fun updateAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)

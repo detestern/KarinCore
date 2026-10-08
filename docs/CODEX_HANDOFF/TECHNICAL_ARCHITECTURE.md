@@ -340,13 +340,13 @@ Updater не использует upstream.
 
 Source:
 
-`VivaGushter/KarinCore-android/main/VERSION`
+`detestern/KarinCore/android/VERSION`
 
 Version comparator поддерживает prerelease.
 
 Release URL:
 
-`VivaGushter/KarinCore-android/releases/tag/v<version>`
+`detestern/KarinCore/releases/tag/android-v<version>`
 
 CI публикует release только для commit message, начинающегося с `release:`.
 

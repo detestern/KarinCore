@@ -15,7 +15,7 @@ use tauri::{plugin::TauriPlugin, Manager, Runtime};
 use tauri::plugin::PluginHandle;
 
 #[cfg(target_os = "android")]
-const PLUGIN_IDENTIFIER: &str = "com.vivagushter.karincore.vpn";
+const PLUGIN_IDENTIFIER: &str = "com.nikitahya.karincore.vpn";
 
 pub struct KarinVpn<R: Runtime> {
     #[cfg(target_os = "android")]

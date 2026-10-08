@@ -54,7 +54,7 @@ KarinCore uses Internet and network-state permissions to provide VPN connectivit
 
 Material policy changes are recorded in the repository history and release notes. Privacy and security reports can be submitted through the repository issue tracker. Sensitive information, credentials and unredacted diagnostic reports must not be posted in a public issue.
 
-Repository: <https://github.com/VivaGushter/KarinCore-android>
+Repository: <https://github.com/detestern/KarinCore/tree/android>
 
 ---
 
@@ -114,4 +114,4 @@ KarinCore хранит данные, необходимые для работы 
 
 Существенные изменения политики фиксируются в истории репозитория и примечаниях к релизам. Сообщения о конфиденциальности и безопасности принимаются через Issues репозитория. Секреты, данные доступа и неочищенные диагностические отчёты нельзя публиковать в открытом Issue.
 
-Репозиторий: <https://github.com/VivaGushter/KarinCore-android>
+Репозиторий: <https://github.com/detestern/KarinCore/tree/android>

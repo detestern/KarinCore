@@ -3,7 +3,7 @@ name: Android build
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
+    branches: ["android"]
     paths:
       - "src/**"
       - "src-tauri/**"
@@ -129,7 +129,7 @@ jobs:
             unzip -Z1 "$APK" | grep -Fx 'res/layout/karin_vpn_widget.xml'
             unzip -Z1 "$APK" | grep -Fx 'res/xml/karin_vpn_widget_info.xml'
             MANIFEST="$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print "$APK")"
-            grep -F 'com.vivagushter.karincore.vpn.KarinVpnWidgetProvider' <<< "$MANIFEST"
+            grep -F 'com.nikitahya.karincore.vpn.KarinVpnWidgetProvider' <<< "$MANIFEST"
             grep -F 'android.permission.POST_NOTIFICATIONS' <<< "$MANIFEST"
           done
 
@@ -176,7 +176,7 @@ jobs:
           set -euo pipefail
 
           VERSION="$(tr -d '[:space:]' < VERSION)"
-          TAG="v${VERSION}"
+          TAG="android-v${VERSION}"
           find_apk_for_abi() {
             local root="$1" abi="$2" candidate
             while IFS= read -r candidate; do
@@ -221,6 +221,7 @@ jobs:
             gh release create "$TAG" "${RELEASE_APKS[@]}" \
               --target "$GITHUB_SHA" \
               --title "KarinCore Android v${VERSION}" \
+              --latest=false \
               --notes-file release-notes.md \
               "${EXTRA_ARGS[@]}"
           fi

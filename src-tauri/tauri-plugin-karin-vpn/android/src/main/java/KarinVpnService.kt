@@ -1,4 +1,4 @@
-package com.vivagushter.karincore.vpn
+package com.nikitahya.karincore.vpn
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -736,8 +736,8 @@ class KarinVpnService : VpnService() {
             }
         }
 
-        const val ACTION_START = "com.vivagushter.karincore.vpn.START"
-        const val ACTION_STOP = "com.vivagushter.karincore.vpn.STOP"
+        const val ACTION_START = "com.nikitahya.karincore.vpn.START"
+        const val ACTION_STOP = "com.nikitahya.karincore.vpn.STOP"
         const val EXTRA_CONFIG_JSON = "config_json"
         const val EXTRA_MTU = "mtu"
         const val EXTRA_APP_ROUTING_MODE = "app_routing_mode"

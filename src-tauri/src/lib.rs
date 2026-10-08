@@ -388,11 +388,20 @@ fn build_xray_rules(state: &Value, priority: Vec<String>) -> Value {
                     }
                 }
 
-                if !domains.is_empty() || !ips.is_empty() {
+                // Fields inside one Xray rule are AND-ed, so domains and IPs must be
+                // separate rules (OR). Otherwise "domain:.pro" + "geoip:ru" in the same
+                // zone would only match domains that ALSO resolve to a Russian IP.
+                if !domains.is_empty() {
                     xray_rules.push(json!({
                         "type": "field",
                         "outboundTag": tag,
-                        "domain": domains,
+                        "domain": domains
+                    }));
+                }
+                if !ips.is_empty() {
+                    xray_rules.push(json!({
+                        "type": "field",
+                        "outboundTag": tag,
                         "ip": ips
                     }));
                 }
@@ -3438,7 +3447,7 @@ fn get_runtime_info() -> serde_json::Value {
     serde_json::json!({
         "platform": if cfg!(target_os = "android") { "android" } else { "desktop" },
         "version": env!("CARGO_PKG_VERSION"),
-        "updateRepo": "VivaGushter/KarinCore-android"
+        "updateRepo": "detestern/KarinCore"
     })
 }
 
@@ -3532,13 +3541,16 @@ mod tests {
                 {
                     "type": "field",
                     "outboundTag": "proxy",
-                    "domain": ["example.com", "keyword:example"],
-                    "ip": []
+                    "domain": ["example.com", "keyword:example"]
                 },
                 {
                     "type": "field",
                     "outboundTag": "direct",
-                    "domain": ["geosite:private"],
+                    "domain": ["geosite:private"]
+                },
+                {
+                    "type": "field",
+                    "outboundTag": "direct",
                     "ip": ["10.0.0.0/8"]
                 }
             ])
@@ -3758,11 +3770,18 @@ mod tests {
             json!({
                 "type": "field",
                 "outboundTag": "direct",
-                "domain": ["regexp:.*\\.ru$", "geosite:category-ru"],
+                "domain": ["regexp:.*\\.ru$", "geosite:category-ru"]
+            })
+        );
+        assert_eq!(
+            xray_rules[1],
+            json!({
+                "type": "field",
+                "outboundTag": "direct",
                 "ip": ["geoip:ru"]
             })
         );
-        assert_eq!(xray_rules[1]["outboundTag"], "block");
+        assert_eq!(xray_rules[2]["outboundTag"], "block");
 
         let runtime = build_runtime_routing(
             &imported,

@@ -34,7 +34,11 @@ interface ProviderRoutingContext {
 type AppRoutingMode = 'all' | 'allowlist' | 'denylist';
 interface InstalledApp { label: string; packageName: string; system: boolean; }
 interface RuntimeInfo { platform: 'android' | 'desktop'; version: string; updateRepo: string; }
-const PROJECT_REPO = 'VivaGushter/KarinCore-android';
+const PROJECT_REPO = 'detestern/KarinCore';
+// The Android port lives on the `android` branch of the same repository and is
+// released under `android-v<version>` tags, so desktop releases stay untouched.
+const ANDROID_BRANCH = 'android';
+const ANDROID_TAG_PREFIX = 'android-v';
 const UPSTREAM_REPO = 'detestern/KarinCore';
 const KARIN_ICON_URL = new URL('../src-tauri/icons/icon.png', import.meta.url).href;
 interface VpnRuntimeStatus {
@@ -1646,8 +1650,8 @@ function renderAboutPage() {
                 </div>
                 
                 <div style="background: var(--base-crust); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; font-family: monospace; font-size: 13px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
-                    <div><span style="color: var(--accent);">• ${t('about_author')}:</span> VivaGushter</div>
-                    <div><span style="color: var(--accent);">• GitHub:</span> <span class="copyable-item" data-copy="https://github.com/${PROJECT_REPO}" style="color: var(--text-color);">https://github.com/${PROJECT_REPO}</span></div>
+                    <div><span style="color: var(--accent);">• ${t('about_author')}:</span> detestern, VivaGushter</div>
+                    <div><span style="color: var(--accent);">• GitHub:</span> <span class="copyable-item" data-copy="https://github.com/${PROJECT_REPO}/tree/${ANDROID_BRANCH}" style="color: var(--text-color);">https://github.com/${PROJECT_REPO}/tree/${ANDROID_BRANCH}</span></div>
                     <div><span style="color: var(--accent);">• Upstream:</span> <span class="copyable-item" data-copy="https://github.com/${UPSTREAM_REPO}" style="color: var(--text-dim);">https://github.com/${UPSTREAM_REPO}</span></div>
                 </div>
                 
@@ -1796,7 +1800,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     const repo = PROJECT_REPO;
-    const versionUrl = `https://raw.githubusercontent.com/${repo}/main/VERSION?_=${Date.now()}`;
+    const versionUrl = `https://raw.githubusercontent.com/${repo}/${ANDROID_BRANCH}/VERSION?_=${Date.now()}`;
 
     try {
         const response = await fetch(versionUrl, { cache: 'no-store' });
@@ -1813,7 +1817,7 @@ async function checkApplicationUpdates() {
             return;
         }
 
-        const releaseUrl = `https://github.com/${repo}/releases/tag/v${encodeURIComponent(latestVersion)}`;
+        const releaseUrl = `https://github.com/${repo}/releases/tag/${ANDROID_TAG_PREFIX}${encodeURIComponent(latestVersion)}`;
         statusEl.innerHTML = `
             <a class="update-link" href="${releaseUrl}" target="_blank">
                 v${runtimeInfo.version} → v${latestVersion} · ${t('update_available')}

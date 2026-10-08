@@ -8,6 +8,8 @@
 
 ## Status
 
+> This is the `android` branch of [detestern/KarinCore](https://github.com/detestern/KarinCore). The Linux desktop client lives on `main`; Android builds are published as pre-releases tagged `android-v<version>`.
+
 This repository is an experimental Android port of [detestern/KarinCore](https://github.com/detestern/KarinCore), based on upstream KarinCore 1.3.7 at commit `b7fea2e2ff5e1492fd863381985fdebb4da7a57e`.
 
 The shared KarinCore TypeScript UI and Rust parsing/routing logic are retained. Linux-specific tunnel setup is replaced on Android by a native `VpnService` bridge and Xray TUN integration.
@@ -103,8 +105,8 @@ Set `JAVA_HOME`, `ANDROID_HOME` and `NDK_HOME` in the build environment.
 ## First build
 
 ```bash
-git clone https://github.com/VivaGushter/KarinCore-android.git
-cd KarinCore-android
+git clone -b android https://github.com/detestern/KarinCore.git
+cd KarinCore
 
 npm install
 npm run android:core

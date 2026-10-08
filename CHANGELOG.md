@@ -4,6 +4,16 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+Repository move: the Android port now lives on the `android` branch of `detestern/KarinCore`.
+
+### Changed
+- Application identifier and plugin namespace changed from `com.vivagushter.karincore` to `com.nikitahya.karincore`. Android treats this as a different app: earlier alpha builds must be uninstalled, they cannot be updated in place.
+- Update check reads `VERSION` from the `android` branch of `detestern/KarinCore`; release links point to `android-v<version>` tags.
+- CI workflows run on the `android` branch; Android GitHub releases use `android-v<version>` tags and are never marked as "Latest", so desktop releases stay the default.
+
+### Fixed
+- Routing: domain rules and IP rules of one zone are emitted as separate Xray rules. Fields inside a single rule are AND-ed, so a zone with `domain:.pro` and `geoip:ru` previously matched only domains that also resolved to a Russian IP.
+
 ## [0.1.0-alpha.31] - 2026-10-08
 
 Android runtime metadata and mobile layout recovery.
