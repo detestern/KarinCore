@@ -10,7 +10,7 @@ interface DnsConfig { type: string, url: string, ip: string }
 interface RouteProfile { id: string, name: string, defaultOutbound: string, rules: any, domDns?: DnsConfig, remDns?: DnsConfig, zonePriority?: ZoneKey[] }
 interface RoutingRule { type: string; value: string; }
 type ZoneKey = 'direct' | 'proxy' | 'block';
-interface SubscriptionResult { links: string[]; importedRouting?: Record<ZoneKey, RoutingRule[]>; importedDns?: { domestic?: DnsConfig; remote?: DnsConfig }; }
+interface SubscriptionResult { links: string[]; importedRouting?: Record<ZoneKey, RoutingRule[]>; importedDns?: { domestic?: DnsConfig; remote?: DnsConfig }; importedDefaultOutbound?: string; importedProfileName?: string; }
 
 // **********************************
 // STATE MANAGEMENT & LOCAL STORAGE
@@ -483,32 +483,69 @@ function loadDnsState() {
 
 [domType, domUrl, domIp, remType, remUrl, remIp].forEach(el => el?.addEventListener('change', saveDnsState));
 
-function mergeImportedRouting(imported: Record<ZoneKey, RoutingRule[]>) {
-    (Object.keys(imported) as ZoneKey[]).forEach(zone => {
-        if (!routingState[zone] || !imported[zone]) return;
-        const existingValues = new Set(routingState[zone].map(r => r.value));
-        imported[zone].forEach(rule => {
-            if (!existingValues.has(rule.value)) {
-                routingState[zone].push(rule);
-                existingValues.add(rule.value);
-            }
-        });
-    });
+// Applies a saved routing profile to the live routing/DNS state and persists it
+function applyRouteProfile(p: RouteProfile) {
+    if (!(domType && domUrl && domIp && remType && remUrl && remIp)) return;
+    if (p.rules) routingState = JSON.parse(JSON.stringify(p.rules));
+    if (p.defaultOutbound) defaultOutbound = p.defaultOutbound as ZoneKey;
+
+    if (p.zonePriority) {
+        zonePriority = [...p.zonePriority];
+        localStorage.setItem('karin_zone_priority', JSON.stringify(zonePriority));
+        applyColumnOrder();
+    }
+
+    domType.value = p.domDns?.type || 'doh';
+    domUrl.value = p.domDns?.url || '';
+    domIp.value = p.domDns?.ip || '';
+
+    remType.value = p.remDns?.type || 'doh';
+    remUrl.value = p.remDns?.url || '';
+    remIp.value = p.remDns?.ip || '';
+
+    saveDnsState();
+    localStorage.setItem('karin_default_outbound', defaultOutbound);
+    localStorage.setItem('karin_routing', JSON.stringify(routingState));
+    updateDefaultOutboundUI();
     renderRouting();
 }
 
-function mergeImportedDns(imported: { domestic?: DnsConfig; remote?: DnsConfig }) {
-    if (imported.domestic && domType && domUrl && domIp) {
-        domType.value = imported.domestic.type || domType.value;
-        domUrl.value = imported.domestic.url || domUrl.value;
-        domIp.value = imported.domestic.ip || domIp.value;
+// Turns routing delivered with a subscription into a dedicated profile (rules + default route).
+// DNS is deliberately NOT taken from the subscription: those endpoints are tuned for mobile clients
+// and break direct resolution here, so the profile keeps the DNS currently set in the UI.
+// The profile is only saved, never applied automatically, so existing routing is not replaced.
+function createProfileFromSubscription(result: SubscriptionResult, fallbackName: string) {
+    if (!result.importedRouting) return;
+
+    const rules: Record<ZoneKey, RoutingRule[]> = { direct: [], proxy: [], block: [] };
+    if (result.importedRouting) {
+        (Object.keys(rules) as ZoneKey[]).forEach(zone => {
+            rules[zone] = result.importedRouting?.[zone] || [];
+        });
     }
-    if (imported.remote && remType && remUrl && remIp) {
-        remType.value = imported.remote.type || remType.value;
-        remUrl.value = imported.remote.url || remUrl.value;
-        remIp.value = imported.remote.ip || remIp.value;
-    }
-    saveDnsState();
+
+    const outbound: ZoneKey = (['direct', 'proxy', 'block'] as ZoneKey[]).includes(result.importedDefaultOutbound as ZoneKey)
+        ? (result.importedDefaultOutbound as ZoneKey)
+        : 'proxy';
+
+    const name = (result.importedProfileName || fallbackName).trim();
+    const profile: RouteProfile = {
+        id: 'rp_' + Date.now(),
+        name,
+        defaultOutbound: outbound,
+        rules,
+        domDns: { type: domType?.value || 'doh', url: domUrl?.value ?? '', ip: domIp?.value ?? '' },
+        remDns: { type: remType?.value || 'doh', url: remUrl?.value ?? '', ip: remIp?.value ?? '' },
+        zonePriority: [...zonePriority]
+    };
+
+    // Re-importing the same subscription refreshes its profile instead of duplicating it
+    const existing = routeProfiles.findIndex(x => x.name === name);
+    if (existing >= 0) profile.id = routeProfiles[existing].id;
+    if (existing >= 0) routeProfiles[existing] = profile; else routeProfiles.push(profile);
+
+    localStorage.setItem('karin_route_profiles', JSON.stringify(routeProfiles));
+    renderRoutingProfiles();
 }
 
 async function saveNewLink() {
@@ -544,8 +581,7 @@ async function saveNewLink() {
             appGroups.push({ id: newGroupId, name: domain, pinned: false, isOpen: true });
             result.links.forEach(u => addLink(u, newGroupId));
 
-            if (result.importedRouting) mergeImportedRouting(result.importedRouting);
-            if (result.importedDns) mergeImportedDns(result.importedDns);
+            createProfileFromSubscription(result, domain);
 
             saveData();
             renderLinks();
@@ -1063,7 +1099,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.3.7";
+        const CURRENT_VERSION = "1.3.8";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -1553,29 +1589,8 @@ document.addEventListener('click', async (e) => {
     if (loadBtn) {
         try {
             const p = routeProfiles.find(x => x.id === loadBtn.dataset.id);
-            if (p && domType && domUrl && domIp && remType && remUrl && remIp) {
-                if (p.rules) routingState = JSON.parse(JSON.stringify(p.rules)); 
-                if (p.defaultOutbound) defaultOutbound = p.defaultOutbound as ZoneKey;
-                
-                if (p.zonePriority) {
-                    zonePriority = [...p.zonePriority];
-                    localStorage.setItem('karin_zone_priority', JSON.stringify(zonePriority));
-                    applyColumnOrder();
-                }
-                
-                domType.value = p.domDns?.type || 'doh'; 
-                domUrl.value = p.domDns?.url || ''; 
-                domIp.value = p.domDns?.ip || '';
-                
-                remType.value = p.remDns?.type || 'doh'; 
-                remUrl.value = p.remDns?.url || ''; 
-                remIp.value = p.remDns?.ip || '';
-                
-                saveDnsState(); 
-                localStorage.setItem('karin_default_outbound', defaultOutbound); 
-                localStorage.setItem('karin_routing', JSON.stringify(routingState));
-                updateDefaultOutboundUI(); 
-                renderRouting();
+            if (p) {
+                applyRouteProfile(p);
                 
                 const orig = loadBtn.innerText;
                 loadBtn.innerText = t('status_applied');

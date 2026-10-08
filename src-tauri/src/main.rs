@@ -69,12 +69,21 @@ fn build_xray_rules(state: Value, priority: Vec<String>) -> Value {
                     }
                 }
                 
-                if !domains.is_empty() || !ips.is_empty() {
-                    xray_rules.push(json!({ 
-                        "type": "field", 
-                        "outboundTag": tag, 
-                        "domain": domains, 
-                        "ip": ips 
+                // Fields inside a single Xray rule are AND-ed, so domains and IPs must be
+                // separate rules (OR): otherwise "domain:.pro" + "geoip:ru" in one zone
+                // would only match domains that ALSO resolve to a Russian IP.
+                if !domains.is_empty() {
+                    xray_rules.push(json!({
+                        "type": "field",
+                        "outboundTag": tag,
+                        "domain": domains
+                    }));
+                }
+                if !ips.is_empty() {
+                    xray_rules.push(json!({
+                        "type": "field",
+                        "outboundTag": tag,
+                        "ip": ips
                     }));
                 }
             }
@@ -92,6 +101,8 @@ struct SubscriptionResult {
     links: Vec<String>,
     imported_routing: Option<Value>,
     imported_dns: Option<Value>,
+    imported_default_outbound: Option<String>,
+    imported_profile_name: Option<String>,
 }
 
 fn classify_outbound_zone(outbounds: &[Value], tag: &str) -> Option<&'static str> {
@@ -111,13 +122,13 @@ fn classify_outbound_zone(outbounds: &[Value], tag: &str) -> Option<&'static str
 
 fn routing_rule_from_domain(raw: &str) -> Value {
     if let Some(rest) = raw.strip_prefix("geosite:") {
-        json!({ "type": "geosite", "value": rest })
-    } else if let Some(rest) = raw.strip_prefix("domain:") {
-        json!({ "type": "domain", "value": rest })
+        json!({ "type": "geosite", "value": rest.to_lowercase() })
+    } else if raw.starts_with("domain:") || raw.starts_with("full:") || raw.starts_with("regexp:") {
+        // The value goes to Xray's domain list as-is, so the matcher prefix MUST stay:
+        // stripping "domain:" would turn a suffix match into a plain substring match.
+        json!({ "type": "domain", "value": raw })
     } else if let Some(rest) = raw.strip_prefix("keyword:") {
         json!({ "type": "keyword", "value": rest })
-    } else if let Some(rest) = raw.strip_prefix("regexp:") {
-        json!({ "type": "domain", "value": rest })
     } else {
         json!({ "type": "domain", "value": raw })
     }
@@ -190,6 +201,76 @@ fn convert_dns_to_params(dns: &Value, outbounds: &[Value]) -> Option<Value> {
     }
 
     if domestic.is_none() && remote.is_none() { None } else { Some(json!({ "domestic": domestic, "remote": remote })) }
+}
+
+fn str_field<'a>(data: &'a Value, key: &str) -> &'a str {
+    data.get(key).and_then(|v| v.as_str()).unwrap_or("")
+}
+
+fn happ_dns_entry(dns_type: &str, domain: &str, ip: &str) -> Option<Value> {
+    if domain.is_empty() && ip.is_empty() { return None; }
+    if dns_type.eq_ignore_ascii_case("doh") && (domain.starts_with("https://") || domain.starts_with("http://")) {
+        Some(json!({ "type": "doh", "url": domain, "ip": ip }))
+    } else {
+        let plain = if !ip.is_empty() { ip } else { domain };
+        Some(json!({ "type": "dou", "url": "", "ip": plain }))
+    }
+}
+
+fn happ_rules_into_zone(zone: &mut Vec<Value>, sites: Option<&Value>, ips: Option<&Value>) {
+    if let Some(arr) = sites.and_then(|v| v.as_array()) {
+        for s in arr.iter().filter_map(|v| v.as_str()) {
+            zone.push(routing_rule_from_domain(s));
+        }
+    }
+    if let Some(arr) = ips.and_then(|v| v.as_array()) {
+        for s in arr.iter().filter_map(|v| v.as_str()) {
+            let value = if s.to_lowercase().starts_with("geoip:") { s.to_lowercase() } else { s.to_string() };
+            zone.push(json!({ "type": "ip", "value": value }));
+        }
+    }
+}
+
+fn convert_happ_routing(header: &str) -> (Option<Value>, Option<Value>, Option<String>, Option<String>) {
+    let mut payload = header.trim();
+    for prefix in ["happ://routing/onadd/", "happ://routing/add/"] {
+        if let Some(rest) = payload.strip_prefix(prefix) { payload = rest; break; }
+    }
+    let payload = payload.replace("%3D", "=").replace("%3d", "=");
+    let json_str = match decode_base64_flexible(&payload) { Some(s) => s, None => return (None, None, None, None) };
+    let data: Value = match serde_json::from_str(&json_str) { Ok(v) => v, Err(_) => return (None, None, None, None) };
+
+    let mut direct: Vec<Value> = Vec::new();
+    let mut proxy: Vec<Value> = Vec::new();
+    let mut block: Vec<Value> = Vec::new();
+    happ_rules_into_zone(&mut direct, data.get("DirectSites"), data.get("DirectIp"));
+    happ_rules_into_zone(&mut proxy, data.get("ProxySites"), data.get("ProxyIp"));
+    happ_rules_into_zone(&mut block, data.get("BlockSites"), data.get("BlockIp"));
+
+    let routing = if direct.is_empty() && proxy.is_empty() && block.is_empty() {
+        None
+    } else {
+        Some(json!({ "direct": direct, "proxy": proxy, "block": block }))
+    };
+
+    let domestic = happ_dns_entry(str_field(&data, "DomesticDNSType"), str_field(&data, "DomesticDNSDomain"), str_field(&data, "DomesticDNSIp"));
+    let remote = happ_dns_entry(str_field(&data, "RemoteDNSType"), str_field(&data, "RemoteDNSDomain"), str_field(&data, "RemoteDNSIp"));
+    let dns = if domestic.is_none() && remote.is_none() { None } else { Some(json!({ "domestic": domestic, "remote": remote })) };
+
+    // GlobalProxy=true means everything not matched by a rule goes through the proxy
+    let default_outbound = match data.get("GlobalProxy") {
+        Some(Value::Bool(b)) => Some(if *b { "proxy" } else { "direct" }.to_string()),
+        Some(Value::String(s)) => match s.trim().to_lowercase().as_str() {
+            "true" => Some("proxy".to_string()),
+            "false" => Some("direct".to_string()),
+            _ => None,
+        },
+        _ => None,
+    };
+    let name = str_field(&data, "Name").trim();
+    let profile_name = if name.is_empty() { None } else { Some(name.to_string()) };
+
+    (routing, dns, default_outbound, profile_name)
 }
 
 // **********************************
@@ -627,6 +708,10 @@ fn enable_kill_switch(server_ip: &str, tun_iface: &str) {
     std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-o", tun_iface, "-j", "ACCEPT"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-d", server_ip, "-j", "ACCEPT"]).output().ok();
+    // Трафик, который сам Xray отправляет в outbound "direct" (сокеты с меткой 255), —
+    // это зона Direct из пользовательских правил, её нельзя резать killswitch'ем.
+    // Форма "-d <...> -j ACCEPT" покрыта существующим sudoers-правилом с wildcard.
+    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-d", "0.0.0.0/0", "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"]).output().ok();
     std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-j", "DROP"]).output().ok();
 }
 
@@ -640,6 +725,7 @@ fn disable_kill_switch() {
         for iface in ["tun0", "tun-ovpn", "wg0"] {
             std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-o", iface, "-j", "ACCEPT"]).output().ok();
         }
+        std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-d", "0.0.0.0/0", "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"]).output().ok();
     }
     if let Ok(saved_ip) = std::fs::read_to_string(KILLSWITCH_IP_FILE) {
         let ip = saved_ip.trim();
@@ -724,10 +810,18 @@ async fn fetch_subscription(url: String) -> Result<SubscriptionResult, String> {
     let mut current_url = url.clone();
     let mut text = String::new();
     let mut attempts = 0;
+    let mut routing_header: Option<String> = None;
+    let mut routing_enabled = true;
 
     while attempts < 2 {
         let response = client.get(&current_url).send().await.map_err(|e| format!("Ошибка сети: {}", e))?;
         let status = response.status();
+        if let Some(v) = response.headers().get("routing").and_then(|v| v.to_str().ok()) {
+            routing_header = Some(v.to_string());
+        }
+        if let Some(v) = response.headers().get("routing-enable").and_then(|v| v.to_str().ok()) {
+            routing_enabled = !v.trim().eq_ignore_ascii_case("false");
+        }
         text = response.text().await.map_err(|e| format!("Ошибка чтения ответа: {}", e))?;
 
         if !status.is_success() { 
@@ -754,6 +848,8 @@ async fn fetch_subscription(url: String) -> Result<SubscriptionResult, String> {
     let mut links = Vec::new();
     let mut imported_routing: Option<Value> = None;
     let mut imported_dns: Option<Value> = None;
+    let mut imported_default_outbound: Option<String> = None;
+    let mut imported_profile_name: Option<String> = None;
 
     let parse_json = |json_str: &str, out_links: &mut Vec<String>, out_routing: &mut Option<Value>, out_dns: &mut Option<Value>| {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
@@ -865,7 +961,17 @@ async fn fetch_subscription(url: String) -> Result<SubscriptionResult, String> {
         return Err("Не удалось найти профили.\nВозможно формат не поддерживается.".into());
     }
 
-    Ok(SubscriptionResult { links, imported_routing, imported_dns })
+    if routing_enabled {
+        if let Some(header) = routing_header.as_deref() {
+            let (header_routing, header_dns, header_outbound, header_name) = convert_happ_routing(header);
+            imported_default_outbound = header_outbound;
+            imported_profile_name = header_name;
+            if imported_routing.is_none() { imported_routing = header_routing; }
+            if imported_dns.is_none() { imported_dns = header_dns; }
+        }
+    }
+
+    Ok(SubscriptionResult { links, imported_routing, imported_dns, imported_default_outbound, imported_profile_name })
 }
 
 async fn start_openvpn_proxy(

@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.3.7-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.3.8-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,12 @@ This release is a full visual and functional overhaul, not just a patch.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
 
 <br/>
+
+### v1.3.8 — Subscription Routing Import
+
+* **Fixed:** routing and DNS delivered by a subscription in the `routing` HTTP response header (Happ format — how mobile clients receive it) were ignored, because only the response body was read. They are now saved as a dedicated routing profile named after the subscription — rules for direct / proxy / block and the default-route mode (`GlobalProxy`). Pick it with the Select button when you want to use it: your current routing and DNS are never replaced automatically, and DNS from the subscription is not imported (those endpoints are tuned for mobile clients). Re-adding the same subscription refreshes its profile. Rule order and domain strategy have no equivalent in KarinCore's UI and are intentionally not imported.
+* **Fixed:** with Kill Switch enabled, traffic routed to the Direct zone was dropped by the firewall together with everything else, so Direct rules silently stopped working. Traffic Xray sends to its direct outbound (marked `255`) is now allowed through the Kill Switch; everything else is still blocked if the tunnel drops.
+* **Fixed:** a zone with both domain and IP rules (e.g. `domain:.pro` plus `geoip:ru` in Direct) was compiled into one Xray rule whose conditions are AND-ed, so a domain only matched if its IP matched too and such Direct rules silently did nothing. Domains and IPs now become separate rules.
 
 ### v1.3.7 — Dead Code & Window Dragging Fix
 
@@ -209,10 +215,10 @@ yay -S karincore-git
 
 ### Ubuntu / Debian / Linux Mint
 
-Grab the latest `.deb` from [Releases](../../releases). It registers `sudoers` and `systemd` rules on install. Make sure `openvpn` and `wireguard-tools` are present on your system first.
+Grab the latest `.deb` from [Releases](../../releases). It registers `sudoers` and `systemd` rules on install. Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately so that the binary is available at `/usr/local/bin/xray` (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)).
 
 ```bash
-sudo dpkg -i KarinCore_1.3.5_amd64.deb
+sudo dpkg -i KarinCore_1.3.8_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 
@@ -226,11 +232,11 @@ Don't run `systemctl enable` on it. Just launch KarinCore from your application 
 
 ## Architecture
 
-Two independent binaries, separated by privilege:
+Privileges are split between a single unprivileged app and a small set of root-side helpers:
 
-**Backend (`karin-proxy-daemon`)** — a systemd service running as root. Owns the TUN interface, routing rules, and the Xray/OpenVPN/WireGuard process itself.
+**Frontend (`karincore`)** — a Tauri GUI running entirely in user-space. It never runs as root itself. Privileged actions go through a fixed set of pre-approved `sudo` commands, allowed only for members of the `karincore` group.
 
-**Frontend (`karincore`)** — a Tauri GUI running entirely in user-space. Talks to the daemon over IPC and drives it through a fixed set of pre-approved `sudo` commands. It never runs as root itself.
+**Root side** — the `karin-proxy-daemon` systemd service runs Xray (or OpenVPN/WireGuard) with the generated config, and `route.sh` sets up the TUN interface, policy routing and DNS (`resolvectl`), then restores everything on disconnect.
 
 This split means the entire graphical stack — webview, rendering, everything — runs unprivileged. Only the narrow slice that actually needs root does.
 
