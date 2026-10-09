@@ -3770,18 +3770,11 @@ mod tests {
             json!({
                 "type": "field",
                 "outboundTag": "direct",
-                "domain": ["regexp:.*\\.ru$", "geosite:category-ru"]
-            })
-        );
-        assert_eq!(
-            xray_rules[1],
-            json!({
-                "type": "field",
-                "outboundTag": "direct",
+                "domain": ["regexp:.*\\.ru$", "geosite:category-ru"],
                 "ip": ["geoip:ru"]
             })
         );
-        assert_eq!(xray_rules[2]["outboundTag"], "block");
+        assert_eq!(xray_rules[1]["outboundTag"], "block");
 
         let runtime = build_runtime_routing(
             &imported,
