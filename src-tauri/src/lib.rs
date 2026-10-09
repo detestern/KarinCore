@@ -437,6 +437,8 @@ struct SubscriptionResult {
     links: Vec<String>,
     imported_routing: Option<Value>,
     imported_dns: Option<Value>,
+    imported_default_outbound: Option<String>,
+    imported_profile_name: Option<String>,
     routing_override: bool,
 }
 
@@ -464,7 +466,7 @@ fn classify_outbound_zone(outbounds: &[Value], tag: &str) -> Option<&'static str
 
 fn routing_rule_from_domain(raw: &str) -> Value {
     if let Some(rest) = raw.strip_prefix("geosite:") {
-        json!({ "type": "geosite", "value": rest })
+        json!({ "type": "geosite", "value": rest.to_lowercase() })
     } else if let Some(rest) = raw.strip_prefix("keyword:") {
         json!({ "type": "keyword", "value": rest })
     } else {
@@ -510,6 +512,85 @@ fn parse_v2raytun_routing_header(header: &str) -> Result<Value, String> {
     convert_routing_to_zones(&routing, &[], true).ok_or_else(|| {
         "SUBSCRIPTION_ROUTING_UNSUPPORTED: routing profile has no supported Direct, Proxy or Block rules".to_string()
     })
+}
+
+fn str_field<'a>(data: &'a Value, key: &str) -> &'a str {
+    data.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+fn is_happ_routing_link(header: &str) -> bool {
+    header
+        .trim()
+        .trim_matches('"')
+        .to_ascii_lowercase()
+        .starts_with("happ://")
+}
+
+fn happ_rules_into_zone(zone: &mut Vec<Value>, sites: Option<&Value>, ips: Option<&Value>) {
+    if let Some(items) = sites.and_then(Value::as_array) {
+        for site in items.iter().filter_map(Value::as_str) {
+            zone.push(routing_rule_from_domain(site));
+        }
+    }
+    if let Some(items) = ips.and_then(Value::as_array) {
+        for ip in items.iter().filter_map(Value::as_str) {
+            let value = if ip.to_ascii_lowercase().starts_with("geoip:") {
+                ip.to_ascii_lowercase()
+            } else {
+                ip.to_string()
+            };
+            zone.push(json!({ "type": "ip", "value": value }));
+        }
+    }
+}
+
+/// Converts a Happ routing profile (`happ://routing/add/<base64>` or bare base64 JSON with
+/// `DirectSites`/`ProxyIp`/... keys) into KarinCore zones, the default route and a profile name.
+/// Returns `None` when the header is not a Happ profile or carries no rules.
+fn convert_happ_routing(header: &str) -> Option<(Value, Option<String>, Option<String>)> {
+    const MAX_ROUTING_BYTES: usize = 1024 * 1024;
+    let mut payload = header.trim().trim_matches('"').trim();
+    for prefix in ["happ://routing/onadd/", "happ://routing/add/"] {
+        if let Some(rest) = payload.strip_prefix(prefix) {
+            payload = rest;
+            break;
+        }
+    }
+    let payload = payload.replace("%3D", "=").replace("%3d", "=");
+    let json_text = decode_base64_flexible(&payload)?;
+    if json_text.len() > MAX_ROUTING_BYTES {
+        return None;
+    }
+    let data: Value = serde_json::from_str(&json_text).ok()?;
+
+    let mut direct = Vec::new();
+    let mut proxy = Vec::new();
+    let mut block = Vec::new();
+    happ_rules_into_zone(&mut direct, data.get("DirectSites"), data.get("DirectIp"));
+    happ_rules_into_zone(&mut proxy, data.get("ProxySites"), data.get("ProxyIp"));
+    happ_rules_into_zone(&mut block, data.get("BlockSites"), data.get("BlockIp"));
+    if direct.is_empty() && proxy.is_empty() && block.is_empty() {
+        return None;
+    }
+
+    // GlobalProxy=true: everything not matched by a rule goes through the proxy.
+    let default_outbound = match data.get("GlobalProxy") {
+        Some(Value::Bool(value)) => Some(if *value { "proxy" } else { "direct" }.to_string()),
+        Some(Value::String(value)) => match value.trim().to_lowercase().as_str() {
+            "true" => Some("proxy".to_string()),
+            "false" => Some("direct".to_string()),
+            _ => None,
+        },
+        _ => None,
+    };
+    let name = str_field(&data, "Name").trim();
+    let profile_name = (!name.is_empty()).then(|| name.to_string());
+
+    Some((
+        json!({ "direct": direct, "proxy": proxy, "block": block }),
+        default_outbound,
+        profile_name,
+    ))
 }
 
 fn convert_routing_to_zones(
@@ -1827,15 +1908,30 @@ fn parse_subscription_content_with_routing(
     if subscription_routing.is_none() {
         subscription_routing = body_routing_header(text).map(str::to_string);
     }
-    let routing_override = subscription_routing.is_some();
+    let mut routing_override = false;
+    let mut imported_default_outbound = None;
+    let mut imported_profile_name = None;
     if let Some(header) = subscription_routing {
-        imported_routing = Some(parse_v2raytun_routing_header(&header)?);
+        if let Some((routing, outbound, name)) = convert_happ_routing(&header) {
+            // Happ profiles become a saved route profile in the UI; they never replace
+            // the user's own rules and are not applied automatically.
+            imported_routing = Some(routing);
+            imported_default_outbound = outbound;
+            imported_profile_name = name;
+        } else if !is_happ_routing_link(&header) {
+            // v2raytun / Xray-style routing stays attached to the subscription itself.
+            imported_routing = Some(parse_v2raytun_routing_header(&header)?);
+            routing_override = true;
+        }
+        // A Happ link without usable rules must not block adding the subscription.
     }
 
     Ok(SubscriptionResult {
         links,
         imported_routing,
         imported_dns,
+        imported_default_outbound,
+        imported_profile_name,
         routing_override,
     })
 }
@@ -3783,6 +3879,60 @@ mod tests {
         );
         assert_eq!(runtime["domainStrategy"], "AsIs");
         assert_eq!(runtime["domainMatcher"], "hybrid");
+    }
+
+    #[test]
+    fn subscription_parser_turns_happ_routing_into_profile_data() {
+        let profile = json!({
+            "Name": "Russia",
+            "GlobalProxy": "true",
+            "DirectSites": ["domain:.pro", "geosite:RU"],
+            "DirectIp": ["GEOIP:ru"],
+            "ProxySites": ["domain:example.org"],
+            "BlockSites": ["geosite:category-ads-all"]
+        });
+        let header = format!(
+            "happ://routing/add/{}",
+            general_purpose::STANDARD.encode(profile.to_string())
+        );
+        let body = "vless://id@192.0.2.1:443?security=tls#one";
+
+        let parsed = parse_subscription_content_with_routing(body, Some(&header)).unwrap();
+        assert!(!parsed.routing_override);
+        assert_eq!(parsed.imported_default_outbound.as_deref(), Some("proxy"));
+        assert_eq!(parsed.imported_profile_name.as_deref(), Some("Russia"));
+        let imported = parsed.imported_routing.unwrap();
+        assert_eq!(
+            imported["direct"],
+            json!([
+                { "type": "domain", "value": "domain:.pro" },
+                { "type": "geosite", "value": "ru" },
+                { "type": "ip", "value": "geoip:ru" }
+            ])
+        );
+        assert_eq!(
+            imported["proxy"],
+            json!([{ "type": "domain", "value": "domain:example.org" }])
+        );
+        assert_eq!(
+            imported["block"],
+            json!([{ "type": "geosite", "value": "category-ads-all" }])
+        );
+        assert!(imported.get("_providerRules").is_none());
+    }
+
+    #[test]
+    fn happ_routing_link_without_rules_does_not_block_the_subscription() {
+        let header = format!(
+            "happ://routing/add/{}",
+            general_purpose::STANDARD.encode(json!({ "Name": "Empty" }).to_string())
+        );
+        let body = "vless://id@192.0.2.1:443?security=tls#one";
+
+        let parsed = parse_subscription_content_with_routing(body, Some(&header)).unwrap();
+        assert_eq!(parsed.links.len(), 1);
+        assert!(!parsed.routing_override);
+        assert!(parsed.imported_routing.is_none());
     }
 
     #[test]

@@ -67,7 +67,7 @@ interface AndroidStabilityDiagnostics {
     sdkInt: number;
     manufacturer: string;
 }
-interface SubscriptionResult { links: string[]; importedRouting?: RoutingMap; importedDns?: { domestic?: DnsConfig; remote?: DnsConfig }; routingOverride?: boolean; }
+interface SubscriptionResult { links: string[]; importedRouting?: RoutingMap; importedDns?: { domestic?: DnsConfig; remote?: DnsConfig }; importedDefaultOutbound?: string; importedProfileName?: string; routingOverride?: boolean; }
 interface SensitiveState { groups: ProxyGroup[]; links: ProxyLink[]; selectedProfileUrl: string | null; }
 
 // **********************************
@@ -664,32 +664,44 @@ function loadDnsState() {
 
 [domType, domUrl, domIp, remType, remUrl, remIp].forEach(el => el?.addEventListener('change', saveDnsState));
 
-function mergeImportedRouting(imported: Record<ZoneKey, RoutingRule[]>) {
-    (Object.keys(imported) as ZoneKey[]).forEach(zone => {
-        if (!routingState[zone] || !imported[zone]) return;
-        const existingValues = new Set(routingState[zone].map(r => r.value));
-        imported[zone].forEach(rule => {
-            if (!existingValues.has(rule.value)) {
-                routingState[zone].push(rule);
-                existingValues.add(rule.value);
-            }
-        });
-    });
-    renderRouting();
-}
+// Turns routing delivered with a subscription into a dedicated profile (rules + default route).
+// DNS is deliberately NOT taken from the subscription: those endpoints are tuned for other clients
+// and can break direct resolution, so the profile keeps the DNS currently set in the UI.
+// The profile is only saved, never applied automatically, so the user's own routing is never replaced.
+function createProfileFromSubscription(result: SubscriptionResult, fallbackName: string) {
+    if (!result.importedRouting || result.routingOverride) return;
 
-function mergeImportedDns(imported: { domestic?: DnsConfig; remote?: DnsConfig }) {
-    if (imported.domestic && domType && domUrl && domIp) {
-        domType.value = imported.domestic.type || domType.value;
-        domUrl.value = imported.domestic.url || domUrl.value;
-        domIp.value = imported.domestic.ip || domIp.value;
+    const rules: Record<ZoneKey, RoutingRule[]> = { direct: [], proxy: [], block: [] };
+    (Object.keys(rules) as ZoneKey[]).forEach(zone => {
+        rules[zone] = result.importedRouting?.[zone] || [];
+    });
+
+    const outbound: ZoneKey = (['direct', 'proxy', 'block'] as ZoneKey[]).includes(result.importedDefaultOutbound as ZoneKey)
+        ? (result.importedDefaultOutbound as ZoneKey)
+        : 'proxy';
+
+    const name = (result.importedProfileName || fallbackName).trim();
+    const profile: RouteProfile = {
+        id: 'rp_' + Date.now(),
+        name,
+        defaultOutbound: outbound,
+        rules,
+        domDns: { type: domType?.value || 'doh', url: domUrl?.value ?? '', ip: domIp?.value ?? '' },
+        remDns: { type: remType?.value || 'doh', url: remUrl?.value ?? '', ip: remIp?.value ?? '' },
+        zonePriority: [...zonePriority]
+    };
+
+    // Re-importing the same subscription refreshes its profile instead of duplicating it
+    const existing = routeProfiles.findIndex(x => x.name === name);
+    if (existing >= 0) {
+        profile.id = routeProfiles[existing].id;
+        routeProfiles[existing] = profile;
+    } else {
+        routeProfiles.push(profile);
     }
-    if (imported.remote && remType && remUrl && remIp) {
-        remType.value = imported.remote.type || remType.value;
-        remUrl.value = imported.remote.url || remUrl.value;
-        remIp.value = imported.remote.ip || remIp.value;
-    }
-    saveDnsState();
+
+    localStorage.setItem('karin_route_profiles', JSON.stringify(routeProfiles));
+    renderRoutingProfiles();
 }
 
 async function saveNewLink() {
@@ -745,8 +757,7 @@ async function saveNewLink() {
             });
             result.links.forEach(u => addLink(u, newGroupId));
 
-            if (result.importedRouting && !result.routingOverride) mergeImportedRouting(result.importedRouting);
-            if (result.importedDns) mergeImportedDns(result.importedDns);
+            createProfileFromSubscription(result, domain);
 
             saveData();
             renderLinks();
@@ -828,8 +839,7 @@ async function refreshSubscriptionGroup(groupId: string) {
         } else {
             delete group.providerRouting;
         }
-        if (result.importedRouting && !result.routingOverride) mergeImportedRouting(result.importedRouting);
-        if (result.importedDns) mergeImportedDns(result.importedDns);
+        createProfileFromSubscription(result, group.name);
 
         saveData();
         renderLinks();

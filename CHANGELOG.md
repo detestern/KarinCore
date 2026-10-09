@@ -11,7 +11,12 @@ Repository move: the Android port now lives on the `android` branch of `detester
 - Update check reads `VERSION` from the `android` branch of `detestern/KarinCore`; release links point to `android-v<version>` tags.
 - CI workflows run on the `android` branch; Android GitHub releases use `android-v<version>` tags and are never marked as "Latest", so desktop releases stay the default.
 
+### Added
+- Subscription routing profiles: routing delivered with a subscription (Happ `happ://routing/add/…` links with `DirectSites`/`ProxySites`/`BlockSites`/`…Ip`, `GlobalProxy`, `Name`, and routing from full-JSON subscriptions) is saved as a separate route profile named after the provider. It is never applied automatically; pick it with "Select" in Routing. Re-adding the same subscription refreshes its profile instead of duplicating it.
+
 ### Fixed
+- A Happ routing link no longer fails with `SUBSCRIPTION_ROUTING_INVALID` and no longer blocks adding the subscription.
+- Subscriptions no longer merge their rules into the user's own Direct / Proxy / Block lists and no longer overwrite the DNS fields. Provider DNS is ignored on purpose: those endpoints are tuned for other clients and can break direct resolution.
 - Routing: domain rules and IP rules of one zone are emitted as separate Xray rules. Fields inside a single rule are AND-ed, so a zone with `domain:.pro` and `geoip:ru` previously matched only domains that also resolved to a Russian IP.
 
 ## [0.1.0-alpha.31] - 2026-10-08
