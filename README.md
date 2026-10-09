@@ -2,7 +2,7 @@
   <img src="src-tauri/icons/icon.png" alt="KarinCore" width="160"/>
   <h1>KarinCore Android</h1>
   <p>Android port of KarinCore powered by Tauri 2, Rust, Android VpnService and Xray-core.</p>
-  <p><strong>Current version: 0.1.0-alpha.31</strong></p>
+  <p><strong>Current version: 0.1.0-alpha.32</strong></p>
   <p><a href="README-ru.md">Русская версия</a></p>
 </div>
 
@@ -14,9 +14,9 @@ This repository is an experimental Android port of [detestern/KarinCore](https:/
 
 The shared KarinCore TypeScript UI and Rust parsing/routing logic are retained. Linux-specific tunnel setup is replaced on Android by a native `VpnService` bridge and Xray TUN integration.
 
-Version `0.1.0-alpha.31` is distributed as separate debug APKs for `arm64-v8a`, `armeabi-v7a`, `x86` and `x86_64` through GitHub prereleases. Real-device runtime validation is the next verification step.
+Version `0.1.0-alpha.32` is distributed as separate debug APKs for `arm64-v8a`, `armeabi-v7a`, `x86` and `x86_64` through GitHub prereleases. Real-device runtime validation is the next verification step.
 
-## Implemented through 0.1.0-alpha.31
+## Implemented through 0.1.0-alpha.32
 
 - Tauri 2 mobile entry point.
 - Native Android `VpnService`.
@@ -55,6 +55,7 @@ Version `0.1.0-alpha.31` is distributed as separate debug APKs for `arm64-v8a`, 
 - Settings includes live Android permission and stability diagnostics for VPN permission, foreground-service notifications, battery optimization, background restrictions, Data Saver, network availability/validation and Always-on/lockdown state. Every actionable warning opens the matching system screen, while OEM-specific background controls are identified separately because Android does not expose their state through a standard API.
 - Subscription loading on Android uses a native Kotlin HTTP path instead of Rust reqwest, with bounded connect/read timeouts, redirect limits and explicit TLS/network errors.
 - V2RayTun subscription routing is supported: a Base64 profile from the HTTP or body `routing` header may contain either a `{"rules":[...]}` object or a top-level `[...]` array; it is validated, stored with its subscription group and automatically applied to that group's servers with its original rule order, `port`, `domainStrategy` and `domainMatcher` fields. The Routing page displays the effective provider route, source, server, application state and full ordered rule list, while Direct / Proxy / Block switch to the subscription data in read-only mode.
+- Happ routing links (`happ://routing/add/…`) and routing from full-JSON subscriptions are saved as a separate route profile named after the provider. The profile is never applied automatically and never touches your own rules or DNS; pick it with "Select" on the Routing page.
 - Rust CI installs system dependencies without restarting GitHub runner services, preventing the checks from being interrupted after `apt` completes.
 - The frontend has an independent 25 second subscription watchdog, so the UI cannot remain stuck in Loading even if the native bridge fails to return.
 - Android uses Rustls for `reqwest`; the desktop path keeps the upstream native TLS setup.

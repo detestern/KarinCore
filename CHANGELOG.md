@@ -4,6 +4,8 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.32] - 2026-10-09
+
 Repository move: the Android port now lives on the `android` branch of `detestern/KarinCore`.
 
 ### Changed
