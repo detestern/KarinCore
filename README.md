@@ -203,6 +203,21 @@ If you hit something else entirely, open an issue on GitHub — SteamOS images s
 
 <br/>
 
+## KarinCore on Android (alpha)
+
+KarinCore also has an **experimental Android version** — the same interface and routing model on top of Android's `VpnService` and Xray-core. It lives on the [`android` branch](https://github.com/detestern/KarinCore/tree/android) of this repository and is developed independently from the Linux client, with its own version stream (`0.x.y-alpha.n`).
+
+**What works:** VLESS/Reality, VMess, Trojan and Shadowsocks links, subscriptions with routing import, Direct / Proxy / Block zones, per-app split tunneling, DNS settings, and a home-screen widget.
+
+**Install:**
+1. Open [Releases](https://github.com/detestern/KarinCore/releases) and pick the newest entry tagged `android-v…` (they are marked *Pre-release*; the Linux releases stay the "Latest").
+2. Download the APK that matches your phone — `arm64-v8a` for almost every modern device, `armeabi-v7a` for older 32-bit ones.
+3. Allow installing from your browser/file manager when Android asks, then open the APK.
+
+**Heads-up:** these are alpha builds signed with a debug key, so Android may warn about them and updates are manual (the About page tells you when a newer version exists). Treat it as a test build, and please report problems in [Issues](https://github.com/detestern/KarinCore/issues). Build instructions are in the [`android` branch README](https://github.com/detestern/KarinCore/blob/android/README.md).
+
+<br/>
+
 ## Installation
 
 ### Arch Linux (AUR)
@@ -262,6 +277,12 @@ Full history on the [Releases](../../releases) page.
 ## Roadmap
 
 KarinCore was built for Linux first, but the free internet doesn't stop at the OS boundary. Native **Windows** and **macOS** ports are the next major milestone — Karin isn't staying put.
+
+<br/>
+
+## Acknowledgments
+
+Special thanks to **Maxim Gushter** ([VivaGushter](https://github.com/VivaGushter)) for his help with testing and developing the Android version.
 
 <br/>
 

@@ -203,6 +203,21 @@ sudo pacman -S --overwrite '/usr/include/*' openssl glibc linux-api-headers
 
 <br/>
 
+## KarinCore на Android (альфа)
+
+У KarinCore есть и **экспериментальная версия для Android** — тот же интерфейс и модель маршрутизации поверх `VpnService` и Xray-core. Она живёт в [ветке `android`](https://github.com/detestern/KarinCore/tree/android) этого репозитория и развивается независимо от Linux-клиента, со своей нумерацией версий (`0.x.y-alpha.n`).
+
+**Что работает:** ссылки VLESS/Reality, VMess, Trojan и Shadowsocks, подписки с импортом маршрутизации, зоны Direct / Proxy / Block, раздельное туннелирование по приложениям, настройки DNS и виджет на рабочем столе.
+
+**Установка:**
+1. Открой [Releases](https://github.com/detestern/KarinCore/releases) и выбери свежий релиз с тегом `android-v…` (они помечены *Pre-release*, а «Latest» остаётся за релизами Linux-версии).
+2. Скачай APK под свой телефон: `arm64-v8a` подходит почти для всех современных устройств, `armeabi-v7a` — для старых 32-битных.
+3. Разреши установку из браузера или файлового менеджера, когда Android спросит, и открой APK.
+
+**Важно:** это альфа-сборки, подписанные debug-ключом, поэтому Android может ругаться, а обновления ставятся вручную (на странице «О программе» видно, что вышла новая версия). Считай это тестовой сборкой и сообщай о проблемах в [Issues](https://github.com/detestern/KarinCore/issues). Инструкция по сборке — в [README ветки `android`](https://github.com/detestern/KarinCore/blob/android/README-ru.md).
+
+<br/>
+
 ## Установка
 
 ### Arch Linux (AUR)
@@ -262,6 +277,12 @@ sudo apt install -f # только если не хватает зависимо
 ## Вектор развития
 
 KarinCore создавалась в первую очередь для Linux, но у свободного интернета нет границ ОС. Нативные порты на **Windows** и **macOS** — следующая крупная веха. Карин не собирается останавливаться на одной системе.
+
+<br/>
+
+## Благодарности
+
+Отдельное спасибо **Максиму Гуштеру** ([VivaGushter](https://github.com/VivaGushter)) за помощь с тестированием и разработкой Android-версии.
 
 <br/>
 
