@@ -83,8 +83,8 @@ npm run android:dev     # или: npm run tauri -- android build --apk --debug
 - [Заметки разработчика](docs/DEVELOPMENT-ru.md)
 - [История изменений](CHANGELOG.md)
 
-## Авторы и лицензия
+## Лицензия и сторонний код
 
-Android-порт создан [VivaGushter](https://github.com/VivaGushter) на основе KarinCore от [detestern](https://github.com/detestern). Интеграция Xray использует [`2dust/AndroidLibXrayLite`](https://github.com/2dust/AndroidLibXrayLite) (см. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+Интеграция Xray использует [`2dust/AndroidLibXrayLite`](https://github.com/2dust/AndroidLibXrayLite) (см. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
 MIT — см. [LICENSE](LICENSE).

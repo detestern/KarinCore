@@ -83,8 +83,8 @@ More details — architecture, signing, versioning, release process — are in t
 - [Development notes](docs/DEVELOPMENT.md)
 - [Changelog](CHANGELOG.md)
 
-## Credits and license
+## License and third-party code
 
-The Android port was created by [VivaGushter](https://github.com/VivaGushter) on top of KarinCore by [detestern](https://github.com/detestern). The Xray integration uses [`2dust/AndroidLibXrayLite`](https://github.com/2dust/AndroidLibXrayLite) (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+The Xray integration uses [`2dust/AndroidLibXrayLite`](https://github.com/2dust/AndroidLibXrayLite) (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
 MIT — see [LICENSE](LICENSE).
