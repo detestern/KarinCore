@@ -17,4 +17,8 @@
     <string name="widget_profile_required">Connect once in KarinCore to select a profile for the widget</string>
     <string name="widget_start_failed">Android could not start VPN in the background. Open KarinCore to connect.</string>
     <string name="widget_always_on">Always-on VPN can only be changed in Android VPN settings</string>
+    <string name="tile_label">KarinCore</string>
+    <string name="tile_connected">Connected</string>
+    <string name="tile_connecting">Connecting…</string>
+    <string name="tile_disconnected">Off</string>
 </resources>

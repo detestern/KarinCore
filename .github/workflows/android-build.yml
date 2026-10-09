@@ -28,6 +28,8 @@ jobs:
     name: Android multi-ABI debug APKs
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      signed: ${{ steps.sign.outputs.signed }}
 
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
@@ -100,6 +102,61 @@ jobs:
       - name: Build split debug APKs for every ABI
         run: npm run tauri -- android build --apk --target aarch64 armv7 i686 x86_64 --split-per-abi --debug --ci
 
+      # ***************************************
+      # PERMANENT SIGNING KEY
+      # Android only updates an installed app in place when the new APK is signed
+      # with the same key. The key lives in repository secrets (see
+      # docs/ANDROID_SIGNING.md). Without it the APKs stay debug-signed.
+      # ***************************************
+      - name: Sign APKs with the KarinCore release key
+        id: sign
+        shell: bash
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KS_B64:-}" ] || [ -z "${KS_PASS:-}" ] || [ -z "${KEY_ALIAS:-}" ]; then
+            echo "::warning::No release signing key configured. APKs stay debug-signed and cannot update an installed build."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          KEY_PASS="${KEY_PASS:-$KS_PASS}"
+          export KS_PASS KEY_PASS
+          KEYSTORE="$RUNNER_TEMP/karincore-release.p12"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          printf '%s' "$KS_B64" | base64 -d > "$KEYSTORE"
+
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          OUTPUTS="src-tauri/gen/android/app/build/outputs"
+          COUNT=0
+          while IFS= read -r APK; do
+            "$APKSIGNER" sign \
+              --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" \
+              --ks-pass env:KS_PASS --key-pass env:KEY_PASS \
+              --v4-signing-enabled false "$APK"
+            "$APKSIGNER" verify "$APK"
+            COUNT=$((COUNT + 1))
+          done < <(find "$OUTPUTS" -type f -name '*.apk')
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No APKs found to sign"
+            exit 1
+          fi
+
+          # Every APK must carry the very same certificate.
+          FINGERPRINTS="$(find "$OUTPUTS" -type f -name '*.apk' -exec "$APKSIGNER" verify --print-certs {} \; \
+            | grep -i 'certificate SHA-256 digest' | sort -u)"
+          echo "$FINGERPRINTS"
+          if [ "$(printf '%s\n' "$FINGERPRINTS" | wc -l)" -ne 1 ]; then
+            echo "APKs are signed with different certificates"
+            exit 1
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
       - name: Verify ABI, Xray geodata, permissions and widget resources
         shell: bash
         run: |
@@ -152,9 +209,10 @@ jobs:
   publish-release:
     name: Publish GitHub prerelease
     needs: android-debug
-    # Debug-signed APKs are test artifacts. Publishing requires either the
-    # repository opt-in or an explicit marker in the release commit itself.
-    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release:') && (vars.ALLOW_DEBUG_PRERELEASE == 'true' || contains(github.event.head_commit.message, '[publish-debug]'))
+    # APKs signed with the permanent release key can be published as is.
+    # Debug-signed APKs are test artifacts and need either the repository
+    # opt-in or an explicit marker in the release commit itself.
+    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release:') && (needs.android-debug.outputs.signed == 'true' || vars.ALLOW_DEBUG_PRERELEASE == 'true' || contains(github.event.head_commit.message, '[publish-debug]'))
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -3406,7 +3406,9 @@ async fn export_profile(
 fn open_browser(app: tauri::AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let parsed = Url::parse(&url).map_err(|_| "BROWSER_URL_INVALID".to_string())?;
-    if parsed.scheme() != "https" || parsed.host_str() != Some("github.com") {
+    // Only the project's own pages may be opened from the app.
+    let allowed_host = matches!(parsed.host_str(), Some("github.com") | Some("karincore.ru"));
+    if parsed.scheme() != "https" || !allowed_host {
         return Err("BROWSER_URL_FORBIDDEN".into());
     }
     app.opener()
@@ -3477,6 +3479,21 @@ fn open_android_vpn_settings(app: tauri::AppHandle) -> Result<bool, String> {
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn open_android_vpn_settings() -> Result<bool, String> {
+    Ok(false)
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn request_android_tile(app: tauri::AppHandle) -> Result<bool, String> {
+    app.karin_vpn()
+        .request_add_tile()
+        .map(|result| result.opened)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn request_android_tile() -> Result<bool, String> {
     Ok(false)
 }
 
@@ -3587,6 +3604,7 @@ pub fn run() {
             get_runtime_info,
             get_vpn_runtime_status,
             open_android_vpn_settings,
+            request_android_tile,
             get_android_stability_diagnostics,
             open_android_stability_settings,
             request_android_vpn_permission

@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-0.1.0--alpha.32-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-0.1.0--alpha.33-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-android-dc8add?style=flat-square&labelColor=11111b&logo=android&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -31,7 +31,7 @@ KarinCore Android brings the same interface and the same Direct / Proxy / Block 
 - **Routing profiles from subscriptions:** routing delivered with a subscription (Happ / V2RayTun headers, full-JSON subscriptions) is saved as a separate profile named after the provider. Pick it with **Select** — your own rules and DNS are never replaced automatically.
 - **Direct / Proxy / Block zones** with domain, `geosite` and `geoip` rules, zone priority and custom DNS (DoH or plain). `geoip.dat` and `geosite.dat` are bundled, no extra download.
 - **Per-app split tunneling:** all apps, only selected, or bypass selected.
-- **Home-screen widget** that connects and disconnects the last working profile in one tap.
+- **Quick settings tile** and a **home-screen widget**: connect and disconnect the last working profile in one tap, without opening the app.
 - **Always-on VPN** support, a built-in VPN self-test and live diagnostics for permissions and battery restrictions.
 - **Private by design:** no developer telemetry; profiles and subscription URLs are encrypted with a key held by the Android Keystore.
 
@@ -49,13 +49,14 @@ KarinCore Android brings the same interface and the same Direct / Proxy / Block 
 3. Open the file and allow installing from your browser or file manager when Android asks.
 4. Launch KarinCore, add a link or subscription, tap the core and allow the VPN request.
 
-These alpha builds are signed with a debug key, so Android or Play Protect may show a warning, and updates are manual: **About** tells you when a newer version exists. If you tested earlier builds of the Android port, uninstall them first — this is a separate app and cannot be updated in place.
+Starting with alpha.33 every build is signed with the same permanent key, so a new APK installs **over** the old one and keeps your profiles. The sidebar shows whether you are up to date; when a newer version is out it turns into a link to the [download page](https://karincore.ru/#download). Builds are not distributed through Google Play, so Android or Play Protect may still show a warning on first install. If you installed alpha.32 or earlier, uninstall it once — those builds were signed with a temporary key and cannot be updated in place.
 
 ## Tips for a stable connection
 
 - Allow notifications — Android needs the foreground-service notification to keep the VPN alive.
 - Exclude KarinCore from battery optimization (Settings → *Permissions and stability*; the app checks and links you to the right screens).
-- To add the widget, connect once normally first, then pick **KarinCore VPN switch** in the launcher's widget list.
+- To add the tile, open **Settings → Quick settings tile → Add tile** (on older Android: pull down the shade, tap the pencil and drag KarinCore into the panel).
+- To add the widget, connect once normally first, then pick **KarinCore VPN switch** in the launcher's widget list. The tile and the widget both reuse the last working profile.
 
 ## Build from source
 

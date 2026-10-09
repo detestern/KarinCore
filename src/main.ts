@@ -38,7 +38,7 @@ const PROJECT_REPO = 'detestern/KarinCore';
 // The Android port lives on the `android` branch of the same repository and is
 // released under `android-v<version>` tags, so desktop releases stay untouched.
 const ANDROID_BRANCH = 'android';
-const ANDROID_TAG_PREFIX = 'android-v';
+const SITE_DOWNLOAD_URL = 'https://karincore.ru/#download';
 const UPSTREAM_REPO = 'detestern/KarinCore';
 const KARIN_ICON_URL = new URL('../src-tauri/icons/icon.png', import.meta.url).href;
 interface VpnRuntimeStatus {
@@ -1827,7 +1827,7 @@ async function checkApplicationUpdates() {
             return;
         }
 
-        const releaseUrl = `https://github.com/${repo}/releases/tag/${ANDROID_TAG_PREFIX}${encodeURIComponent(latestVersion)}`;
+        const releaseUrl = SITE_DOWNLOAD_URL;
         statusEl.innerHTML = `
             <a class="update-link" href="${releaseUrl}" target="_blank">
                 v${runtimeInfo.version} → v${latestVersion} · ${t('update_available')}
@@ -1909,6 +1909,8 @@ function renderAndroidSystemVpnStatus() {
 
     if (section) section.style.display = 'block';
     if (desktopSection) desktopSection.style.display = 'none';
+    const tileSection = document.getElementById('android-tile-section');
+    if (tileSection) tileSection.style.display = 'block';
 
     if (status) {
         status.textContent = nativeVpnLockdown
@@ -2365,6 +2367,16 @@ async function init() {
 
     document.getElementById('android-app-modal-close')?.addEventListener('click', () => {
         appRoutingModal?.close();
+    });
+
+    document.getElementById('android-tile-btn')?.addEventListener('click', async () => {
+        const note = document.getElementById('android-tile-note');
+        try {
+            const added = await invoke<boolean>('request_android_tile');
+            if (note) note.textContent = added ? t('settings_tile_added') : t('settings_tile_manual');
+        } catch (error) {
+            if (note) note.textContent = `${t('settings_tile_error')}: ${error}`;
+        }
     });
 
     document.getElementById('android-vpn-settings-btn')?.addEventListener('click', async () => {

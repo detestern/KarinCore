@@ -17,4 +17,8 @@
     <string name="widget_profile_required">Сначала подключитесь в KarinCore, чтобы выбрать профиль для виджета</string>
     <string name="widget_start_failed">Android не разрешил запустить VPN в фоне. Откройте KarinCore для подключения.</string>
     <string name="widget_always_on">Постоянная VPN изменяется только в системных настройках Android</string>
+    <string name="tile_label">KarinCore</string>
+    <string name="tile_connected">Подключено</string>
+    <string name="tile_connecting">Подключение…</string>
+    <string name="tile_disconnected">Выкл</string>
 </resources>

@@ -155,6 +155,13 @@ impl<R: Runtime> KarinVpn<R> {
     }
 
     #[cfg(target_os = "android")]
+    pub fn request_add_tile(&self) -> Result<OpenSettingsResult> {
+        self.mobile_plugin_handle
+            .run_mobile_plugin("requestAddTile", ())
+            .map_err(Error::from)
+    }
+
+    #[cfg(target_os = "android")]
     pub fn stability_diagnostics(&self) -> Result<StabilityDiagnosticsResult> {
         self.mobile_plugin_handle
             .run_mobile_plugin("stabilityDiagnostics", ())
@@ -186,6 +193,11 @@ impl<R: Runtime> KarinVpn<R> {
 
     #[cfg(not(target_os = "android"))]
     pub fn open_vpn_settings(&self) -> Result<OpenSettingsResult> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn request_add_tile(&self) -> Result<OpenSettingsResult> {
         Err(Error::UnsupportedPlatform)
     }
 

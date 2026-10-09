@@ -44,5 +44,15 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/karin_vpn_widget_info" />
         </receiver>
+        <service
+            android:name="com.nikitahya.karincore.vpn.KarinVpnTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_core_off"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

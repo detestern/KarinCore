@@ -569,6 +569,7 @@ class KarinVpnService : VpnService() {
 
     private fun updateHomeScreenWidget() {
         KarinVpnWidgetProvider.updateAll(this)
+        KarinVpnTileService.refresh()
     }
 
     private fun startInForeground(text: String) {

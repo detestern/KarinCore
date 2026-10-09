@@ -2,7 +2,10 @@ package com.nikitahya.karincore.vpn
 
 import android.app.Activity
 import android.app.ActivityManager
+import android.app.StatusBarManager
+import android.content.ComponentName
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
@@ -475,6 +478,29 @@ class KarinVpnPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve(JSObject().apply { put("opened", true) })
         } catch (ex: Exception) {
             invoke.reject(ex.message ?: "Unable to open Android VPN settings")
+        }
+    }
+
+    @Command
+    fun requestAddTile(invoke: Invoke) {
+        // The system "add tile" prompt exists only on Android 13+. Older versions add the tile by hand.
+        if (Build.VERSION.SDK_INT < 33) {
+            invoke.resolve(JSObject().apply { put("opened", false) })
+            return
+        }
+        try {
+            val manager = activity.getSystemService(StatusBarManager::class.java)
+            manager.requestAddTileService(
+                ComponentName(activity, KarinVpnTileService::class.java),
+                activity.getString(R.string.tile_label),
+                Icon.createWithResource(activity, R.drawable.ic_tile_core_on),
+                activity.mainExecutor
+            ) { result ->
+                // 0 = not added, 1 = already added, 2 = added.
+                invoke.resolve(JSObject().apply { put("opened", result == 1 || result == 2) })
+            }
+        } catch (ex: Exception) {
+            invoke.reject(ex.message ?: "Unable to request the quick settings tile")
         }
     }
 

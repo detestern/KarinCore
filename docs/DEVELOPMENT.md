@@ -2,7 +2,7 @@
   <img src="../src-tauri/icons/icon.png" alt="KarinCore" width="160"/>
   <h1>KarinCore Android · development notes</h1>
   <p>Android port of KarinCore powered by Tauri 2, Rust, Android VpnService and Xray-core.</p>
-  <p><strong>Current version: 0.1.0-alpha.32</strong></p>
+  <p><strong>Current version: 0.1.0-alpha.33</strong></p>
   <p><a href="README-ru.md">Русская версия</a></p>
 </div>
 
@@ -14,11 +14,12 @@ This repository is an experimental Android port of [detestern/KarinCore](https:/
 
 The shared KarinCore TypeScript UI and Rust parsing/routing logic are retained. Linux-specific tunnel setup is replaced on Android by a native `VpnService` bridge and Xray TUN integration.
 
-Version `0.1.0-alpha.32` is distributed as separate debug APKs for `arm64-v8a`, `armeabi-v7a`, `x86` and `x86_64` through GitHub prereleases. Real-device runtime validation is the next verification step.
+Version `0.1.0-alpha.33` is distributed as separate debug APKs for `arm64-v8a`, `armeabi-v7a`, `x86` and `x86_64` through GitHub prereleases. Real-device runtime validation is the next verification step.
 
-## Implemented through 0.1.0-alpha.32
+## Implemented through 0.1.0-alpha.33
 
 - Tauri 2 mobile entry point.
+- Quick settings tile (`KarinVpnTileService`) sharing the widget's connect/disconnect logic.
 - Native Android `VpnService`.
 - Foreground VPN service for modern Android.
 - Android TUN interface with IPv4 and IPv6 routes.
@@ -129,7 +130,7 @@ npm run version:check
 
 before committing a release. The same version must exist in `VERSION`, `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`. Android `versionCode` increases monotonically for distributable builds.
 
-Debug prerelease publication requires an explicit repository opt-in or the `[publish-debug]` marker in a `release:` commit. This prevents an ordinary version commit from publishing a test-signed APK accidentally.
+APKs are signed in CI with the permanent release key stored in repository secrets, which is what lets a new APK install over the old one (see [ANDROID_SIGNING.md](ANDROID_SIGNING.md)). If the key is not configured, the APKs stay debug-signed and publication requires an explicit repository opt-in or the `[publish-debug]` marker in a `release:` commit. This prevents an ordinary version commit from publishing a test-signed APK accidentally.
 
 See [CHANGELOG.md](../CHANGELOG.md).
 

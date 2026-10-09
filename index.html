@@ -82,7 +82,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.32</div>
+      <div class="app-version-text">v 0.1.0-alpha.33</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -393,6 +393,12 @@
         <div class="setting-card-description" data-i18n="settings_android_kill_switch_note">Use Android Always-on VPN and Block connections without VPN for system-level protection.</div>
         <div id="android-system-vpn-status" style="margin-top:8px; font-size:11px; color:var(--text-dim);"></div>
         <button id="android-vpn-settings-btn" class="small-btn" type="button" style="margin-top:10px;" data-i18n="settings_android_open_vpn">Open VPN settings</button>
+      </div>
+      <div id="android-tile-section" class="setting-card settings-detail-card" style="display:none;">
+        <div class="setting-card-title" data-i18n="settings_tile_title">Quick settings tile</div>
+        <div class="setting-card-description" data-i18n="settings_tile_desc">Connect and disconnect from the notification shade without opening the app.</div>
+        <button id="android-tile-btn" class="small-btn" type="button" style="margin-top:10px;" data-i18n="settings_tile_add">Add tile</button>
+        <div id="android-tile-note" style="margin-top:8px; font-size:11px; color:var(--text-dim);"></div>
       </div>
       <div id="android-stability-section" class="setting-card settings-detail-card android-stability-card" style="display:none;">
         <div class="setting-card-title" data-i18n="settings_stability_title">Permissions and stability</div>

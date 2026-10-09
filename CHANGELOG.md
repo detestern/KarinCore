@@ -4,6 +4,21 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.33] - 2026-10-09
+
+Updates now install over the previous version, plus a quick-settings tile.
+
+### Added
+- Quick settings tile: connect and disconnect from the notification shade. It uses the same last working profile as the home-screen widget and shows the state with its own core icon. **Settings → Quick settings tile** asks Android to add it (Android 13+); on older versions it is added by hand from the shade editor.
+- Permanent release signing key in CI (`scripts/android-keystore.sh`, `docs/ANDROID_SIGNING.md`): every APK is signed with the same key, so a new build installs over the old one and keeps your data.
+
+### Changed
+- The version note at the bottom of the sidebar links to https://karincore.ru/#download when a newer version exists.
+- The in-app browser opener also accepts `karincore.ru` (still HTTPS only, project domains only).
+
+### Upgrade note
+- Builds up to alpha.32 were signed with a temporary key. Uninstall them once before installing alpha.33; every later release updates in place.
+
 ## [0.1.0-alpha.32] - 2026-10-09
 
 Repository move: the Android port now lives on the `android` branch of `detestern/KarinCore`.

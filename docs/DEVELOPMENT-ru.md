@@ -2,7 +2,7 @@
   <img src="../src-tauri/icons/icon.png" alt="KarinCore" width="160"/>
   <h1>KarinCore Android · заметки разработчика</h1>
   <p>Android-порт KarinCore на Tauri 2, Rust, Android VpnService и Xray-core.</p>
-  <p><strong>Текущая версия: 0.1.0-alpha.32</strong></p>
+  <p><strong>Текущая версия: 0.1.0-alpha.33</strong></p>
   <p><a href="README.md">English</a></p>
 </div>
 
@@ -14,11 +14,12 @@
 
 В Android-порте сохранены интерфейс на TypeScript/Vite и общая Rust-логика KarinCore: парсинг ссылок, подписки, маршрутизация, DNS и профили. Linux-часть с `sudo`, systemd, `route.sh`, iptables и системным Xray на Android заменена нативным `VpnService`.
 
-Версия `0.1.0-alpha.32` распространяется через GitHub prereleases отдельными debug APK для `arm64-v8a`, `armeabi-v7a`, `x86` и `x86_64`. Следующий контрольный этап: запуск и проверка на реальных Android-устройствах.
+Версия `0.1.0-alpha.33` распространяется через GitHub prereleases отдельными debug APK для `arm64-v8a`, `armeabi-v7a`, `x86` и `x86_64`. Следующий контрольный этап: запуск и проверка на реальных Android-устройствах.
 
-## Реализовано к 0.1.0-alpha.32
+## Реализовано к 0.1.0-alpha.33
 
 - мобильная точка входа Tauri 2;
+- плитка быстрых настроек (`KarinVpnTileService`) с той же логикой подключения, что у виджета;
 - Android `VpnService`;
 - foreground service;
 - настоящий TUN с IPv4 и IPv6;
@@ -131,7 +132,7 @@ npm run version:check
 
 Скрипт проверяет совпадение версии в `VERSION`, `package.json`, `src-tauri/Cargo.toml` и `src-tauri/tauri.conf.json`. Android `versionCode` должен только увеличиваться.
 
-Для публикации debug prerelease требуется явное разрешение в настройках репозитория или маркер `[publish-debug]` в коммите `release:`. Обычный коммит с новой версией не публикует APK с тестовой подписью автоматически.
+В CI APK подписываются постоянным ключом из секретов репозитория: именно это позволяет ставить новый APK поверх старого (см. [ANDROID_SIGNING.md](ANDROID_SIGNING.md)). Если ключ не настроен, APK остаются с debug-подписью, и для публикации нужно явное разрешение в настройках репозитория или маркер `[publish-debug]` в коммите `release:`. Обычный коммит с новой версией не публикует APK с тестовой подписью автоматически.
 
 История изменений: [CHANGELOG.md](../CHANGELOG.md).
 
