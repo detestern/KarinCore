@@ -4,6 +4,23 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.34] - 2026-10-10
+
+Visual pass for phones, plus a real app icon.
+
+### Added
+- App icon: the KarinCore core (ring, centre dot and six spokes) on a dark background. Adaptive icon with a themed (monochrome) variant for Android 13+.
+
+### Fixed
+- Long server names are now cut with an ellipsis instead of mid-letter; the selected card glow is no longer clipped.
+- Configurations panel, DNS fields and group headers fit narrow screens (down to 280 px wide) and large system font sizes.
+- Settings and routing pages no longer draw a card inside a card.
+- The sidebar shows the version once instead of twice.
+- The configurations panel no longer slides sideways: horizontal scrolling is locked for the page and the panel, and long server or subscription names are cut with an ellipsis.
+
+### Changed
+- One button style across the app: 40 px icon buttons with the same shape and colours (menu, import, edit, close, refresh, share, item menu), 44 px main buttons, and a Lucide-style chevron on subscription groups.
+
 ## [0.1.0-alpha.33] - 2026-10-09
 
 Updates now install over the previous version, plus a quick-settings tile.

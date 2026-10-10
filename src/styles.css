@@ -2132,3 +2132,377 @@ dialog::backdrop {
         min-height: 34px;
     }
 }
+
+/* **********************************
+   16. ANDROID POLISH (alpha.34)
+   Единообразное масштабирование: узкие экраны (280-360px),
+   крупный шрифт системы, длинные названия, вложенные рамки.
+   ********************************** */
+
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
+/* Имя сервера: inline display:flex в разметке ломал text-overflow */
+.link-name {
+    display: block !important;
+    min-width: 0;
+}
+
+.link-info {
+    min-width: 0;
+}
+
+.link-item {
+    min-width: 0;
+}
+
+.platform-android .link-item {
+    gap: 8px;
+    padding: 12px 10px 12px 12px;
+}
+
+.platform-android .link-actions {
+    flex-shrink: 0;
+}
+
+.platform-android .links-list {
+    padding: 4px 4px 30px 4px;
+    margin-top: 10px;
+}
+
+.platform-android .group-content {
+    padding: 8px 0 8px 8px;
+    margin-left: 6px;
+}
+
+.platform-android .group-header {
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+.platform-android .profiles-drawer {
+    width: min(420px, 92vw);
+    padding: 16px 14px;
+    padding-top: max(48px, calc(env(safe-area-inset-top) + 36px));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+.platform-android .profiles-drawer-header {
+    flex-wrap: nowrap;
+    gap: 8px;
+}
+
+.platform-android .profiles-drawer-header h3 {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.platform-android .profiles-drawer-header > div {
+    flex-shrink: 0;
+}
+
+.platform-android .input-group input {
+    min-width: 0;
+    width: 100%;
+    font-size: 14px;
+    text-overflow: ellipsis;
+}
+
+.platform-android .dns-row input,
+.platform-android .dns-row select {
+    width: auto;
+    flex: 1 1 0;
+    min-width: 0;
+    text-overflow: ellipsis;
+}
+
+.platform-android .dns-row {
+    gap: 8px;
+}
+
+/* Меньше «рамки в рамке»: страницы настроек и маршрутизации
+   без внешней карточки, внутренние блоки лежат прямо на фоне */
+.platform-android .settings-panel,
+.platform-android .routing-panel {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    padding: 4px 0 0;
+}
+
+.platform-android .setting-card,
+.platform-android .dns-card {
+    min-width: 0;
+    padding: 14px;
+}
+
+.platform-android .setting-card-title,
+.platform-android .setting-card-description {
+    overflow-wrap: anywhere;
+}
+
+.platform-android .settings-title {
+    font-size: 22px;
+    margin-bottom: 4px;
+}
+
+/* Главный экран: ядро крупнее и стабильно по центру */
+.platform-android .hero-circle {
+    width: min(76vw, 40dvh, 320px);
+    height: min(76vw, 40dvh, 320px);
+}
+
+.platform-android .hero-profile-name,
+.platform-android .hero-meta {
+    max-width: 100%;
+    padding: 0 8px;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+
+/* Версия в боковом меню: одна строка вместо двух */
+.app-version-text:has(+ .update-status:not(:empty)) {
+    display: none;
+}
+
+.platform-android .sidebar-footer {
+    padding-bottom: 4px;
+}
+
+@media (max-width: 340px) {
+    .platform-android body {
+        padding-left: 8px;
+        padding-right: 8px;
+        gap: 8px;
+    }
+
+    .platform-android .panel {
+        padding: 12px;
+    }
+
+    .platform-android .hero-circle {
+        width: min(72vw, 36dvh, 260px);
+        height: min(72vw, 36dvh, 260px);
+    }
+
+    .platform-android .about-identity {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+/* **********************************
+   17. ANDROID: НЕПОДВИЖНЫЕ ПАНЕЛИ И ЕДИНЫЕ КНОПКИ
+   ********************************** */
+
+/* Горизонтально ничего не ездит: ни страница, ни панель подписок */
+html.platform-android {
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+}
+
+.platform-android .profiles-drawer {
+    overflow: hidden;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+.platform-android .profiles-drawer .links-wrapper {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.platform-android .links-list {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+.platform-android .links-list > * {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.platform-android .group-header > div:first-child {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.platform-android .group-header > div:first-child > span:not([style]) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.platform-android .group-header > div:first-child > span[style],
+.platform-android .group-header > div:first-child > svg,
+.platform-android .group-header > div:last-child {
+    flex-shrink: 0;
+}
+
+.group-chevron {
+    display: inline-flex;
+    color: var(--text-dim);
+    transition: transform 0.2s ease;
+}
+
+/* Иконочные кнопки: один размер, одна форма, один цвет */
+.platform-android .icon-btn,
+.platform-android .btn-menu-dots {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.platform-android .icon-btn svg,
+.platform-android .icon-btn:hover svg {
+    width: 20px;
+    height: 20px;
+    color: inherit;
+}
+
+.platform-android .icon-btn:active,
+.platform-android .btn-menu-dots:active {
+    background: var(--border-color);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.platform-android .icon-btn.danger {
+    background: var(--input-bg);
+    color: var(--danger);
+}
+
+.platform-android .profiles-drawer-header > div {
+    display: flex;
+    gap: 8px !important;
+    align-items: center;
+}
+
+.platform-android .edit-bar-actions {
+    gap: 6px;
+}
+
+.platform-android .edit-bar .icon-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 10px;
+}
+
+.platform-android .btn-refresh-subscription {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border-radius: 10px;
+    color: var(--accent);
+    font-size: 17px;
+}
+
+.platform-android .btn-menu-dots {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    font-size: 18px;
+}
+
+/* Основные кнопки: акцентная заливка, радиус 12, высота 44 */
+.platform-android #btn-save,
+.platform-android #btn-disconnect,
+.platform-android #btn-manual-add,
+.platform-android #prompt-ok,
+.platform-android .small-btn,
+.platform-android button.secondary,
+.platform-android .edit-select-all {
+    min-height: 44px;
+    padding: 10px 18px;
+    border-radius: 12px;
+    font-size: 14.5px;
+    font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.platform-android button.secondary {
+    background: var(--input-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+}
+
+.platform-android button.secondary:active {
+    border-color: var(--accent);
+}
+
+.platform-android .profiles-drawer-trigger {
+    min-height: 44px;
+    padding: 10px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.platform-android .btn-add {
+    min-height: 44px;
+    border-radius: 12px;
+}
+
+.platform-android .lang-option,
+.platform-android .dropdown-menu button {
+    min-height: 44px;
+    font-size: 14px;
+}
+
+.platform-android .dropdown-menu {
+    border-radius: 12px;
+    border-color: var(--border-color);
+}
+
+.platform-android input[type="text"],
+.platform-android input:not([type]),
+.platform-android select {
+    min-height: 44px;
+    border-radius: 12px;
+}
+
+.platform-android .edit-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.platform-android .edit-select-all {
+    flex: 1 1 100%;
+    min-height: 36px;
+    padding: 0 4px;
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    text-align: left;
+}
+
+.platform-android #page-logs .small-btn {
+    width: 100%;
+}

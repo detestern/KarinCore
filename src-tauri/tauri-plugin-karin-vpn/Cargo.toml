@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-karin-vpn"
-version = "0.1.0-alpha.33"
+version = "0.1.0-alpha.34"
 description = "Android VpnService bridge for KarinCore"
 edition = "2021"
 links = "tauri-plugin-karin-vpn"

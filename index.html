@@ -82,13 +82,13 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.33</div>
+      <div class="app-version-text">v 0.1.0-alpha.34</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
 
   <div class="app-header">
-    <button id="btn-menu" class="icon-btn">☰</button>
+    <button id="btn-menu" class="icon-btn" type="button" aria-label="Menu"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg></button>
     <h2 style="margin: 0; font-weight: 600;">KarinCore</h2>
   </div>
 
@@ -159,13 +159,13 @@
         <div class="profiles-drawer-header" style="display: flex; justify-content: space-between; align-items: center;">
           <h3 data-i18n="config_title" style="margin: 0;">Конфигурации</h3>
           <div style="display: flex; gap: 15px; align-items: center;">
-            <button id="btn-import-file" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);" title="Импорт конфигурации (.ovpn, .conf)">
+            <button id="btn-import-file" class="icon-btn" title="Импорт конфигурации (.ovpn, .conf)">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download-icon lucide-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
             </button>
-            <button id="btn-edit-mode" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);">
+            <button id="btn-edit-mode" class="icon-btn">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
             </button>
-            <button id="btn-close-profiles" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);">
+            <button id="btn-close-profiles" class="icon-btn">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </div>
@@ -213,7 +213,7 @@
           <span data-i18n="routing_title">Маршрутизация</span> 
           (<span data-i18n="routing_default">По умолчанию:</span> <span id="default-outbound-label" style="color:var(--accent);">Proxy</span>)
         </h3>
-        <button id="btn-route-action" style="background: transparent; border: none; cursor: pointer; padding: 0;">
+        <button id="btn-route-action" class="icon-btn" type="button">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share-icon lucide-share"><path d="M12 2v13"/><path d="m16 6-4-4-4 4"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
         </button>
       </div>

@@ -1418,13 +1418,12 @@ function renderLinks() {
                   ${g.sourceUrl && !isEditMode ? `
                     <button
                       type="button"
-                      class="btn-refresh-subscription"
+                      class="btn-refresh-subscription icon-btn"
                       data-group-id="${safeGroupId}"
                       title="${escapeHtml(t('subscription_refresh'))}"
-                      style="border:none;background:transparent;color:var(--accent);cursor:pointer;font-size:17px;line-height:1;padding:2px 4px;"
                     >↻</button>
                   ` : ''}
-                  <span style="color:var(--text-dim); transition: transform 0.2s; transform: ${g.isOpen ? 'rotate(180deg)' : 'rotate(0deg)'};">▼</span>
+                  <span class="group-chevron" style="transform: ${g.isOpen ? 'rotate(180deg)' : 'rotate(0deg)'};"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
               </div>
           </div>
         `;

@@ -1,6 +1,6 @@
 [package]
 name = "karin-proxy"
-version = "0.1.0-alpha.33"
+version = "0.1.0-alpha.34"
 description = "KarinCore Android - Android port of the KarinCore proxy client"
 authors = ["detestern <detestern@proton.me>", "VivaGushter"]
 edition = "2021"
