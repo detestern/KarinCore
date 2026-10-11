@@ -18,9 +18,12 @@ if ! command -v dpkg-deb >/dev/null 2>&1; then
     exit 1
 fi
 
-DEB_FILE="$(ls "$DEB_DIR"/*.deb 2>/dev/null | head -n1 || true)"
-if [ -z "$DEB_FILE" ]; then
-    echo "Не найден .deb в $DEB_DIR — сначала выполни: npm run tauri build -- --bundles deb" >&2
+# Берём .deb именно текущей версии из tauri.conf.json, а не первый попавшийся:
+# в каталоге могут лежать сборки прошлых версий.
+VERSION="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$REPO_ROOT/src-tauri/tauri.conf.json" | head -n1)"
+DEB_FILE="$DEB_DIR/KarinCore_${VERSION}_amd64.deb"
+if [ -z "$VERSION" ] || [ ! -f "$DEB_FILE" ]; then
+    echo "Не найден $DEB_FILE — сначала выполни: npm run tauri build -- --bundles deb" >&2
     exit 1
 fi
 
