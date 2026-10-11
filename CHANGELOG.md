@@ -4,6 +4,16 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.35] - 2026-10-12
+
+The home screen core comes alive.
+
+### Changed
+- Home screen core, connecting: the network of lines and nodes spins up fast, lights up in pink, the ring pulses and a soft glow appears behind it.
+- Home screen core, connected: the rotation eases down to a slow turn, the nodes turn green and the ring breathes. On disconnect the rotation slows to a stop and the ring sends out one last wave.
+- The drawing is a little smaller inside its block so the turning nodes never touch the status text.
+- No more highlight frame around the core after a tap.
+
 ## [0.1.0-alpha.34] - 2026-10-10
 
 Visual pass for phones, plus a real app icon.
