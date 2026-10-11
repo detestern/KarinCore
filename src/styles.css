@@ -1297,3 +1297,40 @@ dialog::backdrop {
 .routing-arrow {
     transition: opacity 0.3s ease, transform 0.3s ease;
 }
+
+/* **********************************
+   HERO CORE: ROTATING NETWORK
+   Лучи и узлы медленно вращаются, пока ядро подключено.
+   При отключении вращение ставится на паузу, а не сбрасывается,
+   поэтому сеть не «прыгает» назад.
+   ********************************** */
+
+.hero-net {
+    transform-origin: 160px 160px;
+    animation: heroNetSpin 46s linear infinite;
+    animation-play-state: paused;
+}
+
+.hero-circle.connected .hero-net {
+    animation-play-state: running;
+}
+
+@keyframes heroNetSpin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-net {
+        animation: none;
+    }
+}
+
+/* Рисунок чуть меньше своего блока: вращающиеся дальние узлы
+   остаются внутри и не заходят на подпись статуса и консоль. */
+.hero-circle svg {
+    transform: scale(0.9);
+}
+
+.hero-circle:active svg {
+    transform: scale(0.88);
+}

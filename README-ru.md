@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/версия-1.3.8-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/версия-1.3.9-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/платформа-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/на_чём_написано-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/фреймворк-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,11 @@ KarinCore создана, чтобы избавить пользователей
 * **Более спокойная вкладка маршрутизации.** Та же логика drag & drop и те же настройки DNS, только тоньше рамки и сдержаннее в целом.
 
 <br/>
+
+### v1.3.9 — Вращающееся ядро
+
+* **Изменено:** ядро на главном экране теперь не стоит на месте, пока идёт подключение. Сеть линий и узлов медленно вращается вокруг кольца, а само кольцо остаётся на месте и дышит, как раньше; при отключении вращение встаёт на паузу там, где остановилось, а не сбрасывается.
+* **Изменено:** рисунок ядра стал чуть меньше внутри своего блока, чтобы вращающиеся узлы не заходили на подпись статуса.
 
 ### v1.3.8 — Импорт маршрутизации из подписки
 
@@ -233,7 +238,7 @@ yay -S karincore-git
 Свежий `.deb` всегда доступен в разделе [Releases](../../releases). Он сам регистрирует правила `sudoers` и `systemd` при установке. Убедись, что в системе уже стоят `openvpn` и `wireguard-tools`. Xray в `.deb` не входит: установи его отдельно так, чтобы бинарник лежал в `/usr/local/bin/xray` (например, через [XTLS/Xray-install](https://github.com/XTLS/Xray-install)).
 
 ```bash
-sudo dpkg -i KarinCore_1.3.8_amd64.deb
+sudo dpkg -i KarinCore_1.3.9_amd64.deb
 sudo apt install -f # только если не хватает зависимостей
 ```
 

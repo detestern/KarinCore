@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.3.8-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.3.9-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,11 @@ This release is a full visual and functional overhaul, not just a patch.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
 
 <br/>
+
+### v1.3.9 — Rotating Core
+
+* **Changed:** the core on the main screen now keeps turning while connected. The network of lines and nodes rotates slowly around the ring, which stays in place and breathes as before; when you disconnect, the rotation pauses where it is instead of snapping back.
+* **Changed:** the core drawing is slightly smaller inside its block, so the turning nodes never touch the status text.
 
 ### v1.3.8 — Subscription Routing Import
 
@@ -233,7 +238,7 @@ yay -S karincore-git
 Grab the latest `.deb` from [Releases](../../releases). It registers `sudoers` and `systemd` rules on install. Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately so that the binary is available at `/usr/local/bin/xray` (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)).
 
 ```bash
-sudo dpkg -i KarinCore_1.3.8_amd64.deb
+sudo dpkg -i KarinCore_1.3.9_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 

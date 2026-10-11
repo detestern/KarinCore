@@ -1099,7 +1099,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.3.8";
+        const CURRENT_VERSION = "1.3.9";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
