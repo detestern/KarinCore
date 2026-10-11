@@ -601,6 +601,7 @@ async function saveNewLink() {
 async function connectProxy(link: string) {
     try {
         if(statusText) statusText.innerText = t('status_connecting');
+        setHeroPhase('connecting');
         const dDns = safeParse('karin_dns_dom', {type:"doh", url:"https://dns.yandex.ru/dns-query", ip:"77.88.8.8"});
         const rDns = safeParse('karin_dns_rem', {type:"doh", url:"https://1.1.1.1/dns-query", ip:"1.1.1.1"});
     
@@ -623,8 +624,11 @@ async function connectProxy(link: string) {
             updateStatusUI(); 
             renderLinks(); 
             typeKarinMessage('karin_connect_ok');
+        } else {
+            setHeroPhase(activeLink ? 'on' : 'idle');
         }
     } catch (error) { 
+        setHeroPhase(activeLink ? 'on' : 'idle');
         alert(`Core Error: ${error}`); 
         if(statusText) statusText.innerText = t('status_inactive'); 
         typeKarinMessage('karin_connect_fail');
@@ -702,11 +706,63 @@ function typeHeroCoreText(newText: string) {
     }, 100);
 }
 
+// Состояние ядра на главном экране: покой / подключение / подключено.
+// Сеть вращается всегда одной CSS-анимацией, а скорость плавно меняется
+// через playbackRate: быстро при подключении, спокойно при подключении
+// завершённом, до остановки при отключении. Так ничего не дёргается.
+type HeroPhase = 'idle' | 'connecting' | 'on';
+const HERO_SPIN_RATE: Record<HeroPhase, number> = { idle: 0, connecting: 6.5, on: 1 };
+let heroPhase: HeroPhase = 'idle';
+let heroSpinRate = 0;
+let heroSpinFrame = 0;
+let heroSpinInit = false;
+let heroEchoTimer: number | null = null;
+
+function rampHeroSpin(target: number) {
+    const anim = document.querySelector('.hero-net')?.getAnimations()[0];
+    if (!anim) return;
+    if (!heroSpinInit) {
+        heroSpinInit = true;
+        anim.pause();
+    }
+    cancelAnimationFrame(heroSpinFrame);
+    const from = heroSpinRate;
+    const t0 = performance.now();
+    const duration = 700;
+    if (target > 0 && anim.playState === 'paused') anim.play();
+    const step = (now: number) => {
+        const k = Math.min(1, (now - t0) / duration);
+        const eased = 1 - Math.pow(1 - k, 3);
+        heroSpinRate = from + (target - from) * eased;
+        anim.playbackRate = heroSpinRate;
+        if (k < 1) {
+            heroSpinFrame = requestAnimationFrame(step);
+        } else if (target === 0) {
+            anim.pause();
+        }
+    };
+    heroSpinFrame = requestAnimationFrame(step);
+}
+
+function setHeroPhase(phase: HeroPhase) {
+    const circle = document.getElementById('hero-circle');
+    if (!circle) return;
+    const prev = heroPhase;
+    heroPhase = phase;
+    circle.classList.toggle('connecting', phase === 'connecting');
+    circle.classList.toggle('connected', phase === 'on');
+    if (prev === 'on' && phase === 'idle') {
+        circle.classList.add('disconnecting');
+        if (heroEchoTimer) window.clearTimeout(heroEchoTimer);
+        heroEchoTimer = window.setTimeout(() => circle.classList.remove('disconnecting'), 1000);
+    }
+    rampHeroSpin(HERO_SPIN_RATE[phase]);
+}
+
 function updateStatusUI() {
-    const heroCircle = document.getElementById('hero-circle');
-    const wasConnected = heroCircle?.classList.contains('connected');
+    const wasConnected = heroPhase === 'on';
     const nowConnected = !!activeLink;
-    heroCircle?.classList.toggle('connected', nowConnected);
+    setHeroPhase(nowConnected ? 'on' : 'idle');
     if (wasConnected !== nowConnected) {
         typeHeroCoreText(nowConnected ? 'connect' : 'null');
     }
@@ -1099,7 +1155,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.3.9";
+        const CURRENT_VERSION = "1.3.10";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;

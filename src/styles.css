@@ -1299,38 +1299,102 @@ dialog::backdrop {
 }
 
 /* **********************************
-   HERO CORE: ROTATING NETWORK
-   Лучи и узлы медленно вращаются, пока ядро подключено.
-   При отключении вращение ставится на паузу, а не сбрасывается,
-   поэтому сеть не «прыгает» назад.
+   HERO CORE: ЖИВОЕ ЯДРО
+   Три состояния: покой, подключение, подключено.
+   Скорость вращения сети меняется плавно из main.ts (playbackRate),
+   поэтому при смене состояния ничего не дёргается.
    ********************************** */
 
 .hero-net {
     transform-origin: 160px 160px;
     animation: heroNetSpin 46s linear infinite;
-    animation-play-state: paused;
-}
-
-.hero-circle.connected .hero-net {
-    animation-play-state: running;
 }
 
 @keyframes heroNetSpin {
     to { transform: rotate(360deg); }
 }
 
+/* мягкое свечение за кольцом */
+.hero-halo {
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    pointer-events: none;
+}
+
+.hero-circle.connecting .hero-halo { opacity: 0.35; }
+.hero-circle.connected .hero-halo { opacity: 0.5; }
+
+/* подключение: линии и узлы загораются розовым волной от кольца,
+   кольцо часто пульсирует */
+.hero-circle.connecting .graph-line-primary line {
+    stroke: var(--accent);
+    transition-delay: calc(var(--i) * 0.07s);
+}
+
+.hero-circle.connecting .graph-node-primary {
+    stroke: var(--accent);
+    transition-delay: calc(var(--i) * 0.07s);
+}
+
+.hero-circle.connecting #core-glow-ring {
+    animation: heroBreathe 1.1s ease-out infinite;
+}
+
+.hero-circle.connecting #hero-core-text {
+    fill: var(--accent);
+}
+
+/* отключение: одна последняя волна от кольца */
+.hero-circle.disconnecting #core-glow-ring {
+    animation: heroEcho 0.9s ease-out 1;
+}
+
+@keyframes heroEcho {
+    0% { opacity: 0.55; r: 78; }
+    100% { opacity: 0; r: 118; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .hero-net {
+    .hero-net,
+    .hero-circle.connecting #core-glow-ring,
+    .hero-circle.disconnecting #core-glow-ring,
+    .hero-circle.connected #core-glow-ring {
         animation: none;
     }
 }
 
-/* Рисунок чуть меньше своего блока: вращающиеся дальние узлы
-   остаются внутри и не заходят на подпись статуса и консоль. */
+/* Рисунок чуть меньше блока и приподнят на 30 px: вращающиеся
+   дальние узлы и нижние линии не заходят на подпись статуса. */
 .hero-circle svg {
-    transform: scale(0.9);
+    transform: translateY(-30px) scale(0.9);
 }
 
 .hero-circle:active svg {
-    transform: scale(0.88);
+    transform: translateY(-30px) scale(0.88);
+}
+
+/* В невысоком окне подъём меньше: сверху рядом консоль Карин. */
+@media (max-height: 700px) {
+    .hero-circle svg {
+        transform: translateY(-16px) scale(0.9);
+    }
+
+    .hero-circle:active svg {
+        transform: translateY(-16px) scale(0.88);
+    }
+}
+
+/* Без рамки выделения вокруг ядра: после клика кнопка остаётся в фокусе,
+   и браузер рисовал вокруг неё синий прямоугольник. С клавиатуры фокус
+   виден по свечению за кольцом. */
+.hero-circle,
+.hero-circle:focus,
+.hero-circle:focus-visible {
+    outline: none;
+    box-shadow: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.hero-circle:focus-visible::before {
+    opacity: 0.45;
 }
