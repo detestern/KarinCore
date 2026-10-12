@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { translations } from "./i18n";
 
 // **********************************
@@ -30,6 +31,9 @@ let currentTheme = localStorage.getItem('karin_theme') || 'dark';
 let currentLang = localStorage.getItem('karin_lang') || 'en';
 let activeLink: string | null = sessionStorage.getItem('karin_active_link') || null;
 let selectedProfileUrl: string | null = localStorage.getItem('karin_selected_profile') || null;
+// Мостик для внешних оболочек (karin-shell / Brain Shell): таймер отложенной отправки снимка и последний известный IP.
+let bridgeTimer: number | null = null;
+let bridgeIp = '';
 let allAvailableTags: string[] = [];
 let currentZone: ZoneKey = 'proxy';
 let defaultOutbound: ZoneKey = 'proxy';
@@ -76,6 +80,7 @@ routeProfiles = routeProfiles.map(p => {
 function saveData() {
     localStorage.setItem('karin_groups', JSON.stringify(appGroups));
     localStorage.setItem('karin_links', JSON.stringify(appLinks));
+    scheduleBridgeSync();
 }
 
 function cleanEmptyGroups() { 
@@ -447,6 +452,80 @@ function updateHeroProfileName() {
         el.setAttribute('data-i18n', 'hero_no_profile');
         el.textContent = t('hero_no_profile');
     }
+    scheduleBridgeSync();
+}
+
+// **********************************
+// МОСТИК ДЛЯ ВНЕШНИХ ОБОЛОЧЕК (karin-shell / Brain Shell)
+// Снимок состояния уходит в Rust (он пишет shell.json), а команды из
+// командной строки приходят событием `bridge-action` и превращаются в те же
+// действия, что кнопки на главном экране.
+// **********************************
+interface BridgeAction { action: 'connect' | 'disconnect' | 'select'; url?: string | null; }
+
+function selectProfile(url: string) {
+    selectedProfileUrl = url;
+    localStorage.setItem('karin_selected_profile', url);
+    renderLinks();
+    updateHeroProfileName();
+}
+
+function buildBridgeSnapshot() {
+    const state = heroPhase === 'on' ? 'connected' : heroPhase === 'connecting' ? 'connecting' : 'disconnected';
+    return {
+        state,
+        selectedUrl: selectedProfileUrl || '',
+        ip: state === 'connected' ? bridgeIp : '',
+        profiles: appLinks.map(l => ({
+            url: l.url,
+            name: getLinkDisplayName(l.url),
+            group: appGroups.find(g => g.id === l.groupId)?.name || ''
+        }))
+    };
+}
+
+async function syncBridgeNow() {
+    try {
+        await invoke('bridge_update', { update: buildBridgeSnapshot() });
+    } catch (e) {
+        console.warn('bridge_update failed', e);
+    }
+}
+
+function scheduleBridgeSync() {
+    if (bridgeTimer !== null) window.clearTimeout(bridgeTimer);
+    bridgeTimer = window.setTimeout(() => { bridgeTimer = null; void syncBridgeNow(); }, 150);
+}
+
+function handleBridgeAction(a: BridgeAction) {
+    const url = a.url && appLinks.some(l => l.url === a.url) ? a.url : null;
+    if (a.url && !url) return; // профиль уже удалён
+    if (a.action === 'select') {
+        if (url) selectProfile(url);
+    } else if (a.action === 'disconnect') {
+        // Во время подключения отключать нечего: как и в интерфейсе, кнопки «Отключить» тогда нет.
+        if (heroPhase === 'on') disconnectProxy();
+    } else if (a.action === 'connect') {
+        if (heroPhase === 'connecting') return;
+        if (url) selectProfile(url);
+        if (heroPhase === 'on') {
+            // Уже подключены: переподключаемся, только если попросили другой профиль.
+            if (url && url !== activeLink) connectProxy(url);
+        } else if (selectedProfileUrl) {
+            connectProxy(selectedProfileUrl);
+        } else {
+            profilesDrawer?.open();
+        }
+    }
+}
+
+async function initBridge() {
+    try {
+        await listen<BridgeAction>('bridge-action', (event) => handleBridgeAction(event.payload));
+    } catch (e) {
+        console.warn('bridge-action listener failed', e);
+    }
+    await syncBridgeNow();
 }
 
 function initHeroCircle() {
@@ -757,6 +836,8 @@ function setHeroPhase(phase: HeroPhase) {
         heroEchoTimer = window.setTimeout(() => circle.classList.remove('disconnecting'), 1000);
     }
     rampHeroSpin(HERO_SPIN_RATE[phase]);
+    if (phase !== 'on') bridgeIp = '';
+    scheduleBridgeSync();
 }
 
 function updateStatusUI() {
@@ -773,7 +854,15 @@ function updateStatusUI() {
         if(btnPing) { btnPing.style.display = "block"; btnPing.innerText = t('btn_ping'); }
         if(statusIpBox) statusIpBox.style.display = "block"; 
         if(statusIp) statusIp.innerText = "...";
-        invoke<string>('get_vpn_ip').then(ip => { if(statusIp) statusIp.innerText = ip; }).catch(() => { if(statusIp) statusIp.innerText = "Error"; });
+        invoke<string>('get_vpn_ip').then(ip => {
+            if(statusIp) statusIp.innerText = ip;
+            bridgeIp = ip.trim();
+            scheduleBridgeSync();
+        }).catch(() => {
+            if(statusIp) statusIp.innerText = "Error";
+            bridgeIp = '';
+            scheduleBridgeSync();
+        });
     } else {
         if(statusText) { statusText.innerText = t('status_inactive'); statusText.className = "status-inactive"; }
         if(btnDisconnect) btnDisconnect.style.display = "none"; 
@@ -1155,7 +1244,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.3.10";
+        const CURRENT_VERSION = "1.4.0";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -1537,6 +1626,7 @@ function init() {
             reader.readAsText(file);
         }
     });
+    void initBridge();
     checkApplicationUpdates();
 }
 
@@ -1579,11 +1669,7 @@ document.addEventListener('click', async (e) => {
   
     const selectableItem = target.closest('.link-item[data-select-url]') as HTMLElement | null;
     if (selectableItem && !isEditMode && !target.closest('.link-actions')) {
-        const url = selectableItem.dataset.selectUrl!;
-        selectedProfileUrl = url;
-        localStorage.setItem('karin_selected_profile', url);
-        renderLinks();
-        updateHeroProfileName();
+        selectProfile(selectableItem.dataset.selectUrl!);
         profilesDrawer?.close();
     }
   

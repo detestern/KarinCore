@@ -3,12 +3,14 @@
 // **********************************
 // IMPORTS
 // **********************************
-use tauri::{State, RunEvent};
+mod bridge;
+
+use tauri::{State, RunEvent, Emitter, Manager};
 use url::Url;
 use std::path::Path;
 use tokio::fs;
 use base64::{Engine as _, engine::general_purpose};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1561,21 +1563,147 @@ fn maximize_window(window: tauri::Window) {
 }
 
 #[tauri::command]
-fn close_window(_window: tauri::Window, _state: State<'_, ProxyState>) {
+fn close_window(_window: tauri::Window, _state: State<'_, ProxyState>, bridge_state: State<'_, bridge::BridgeState>) {
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = None; }
-    teardown_connections(); std::process::exit(0);
+    teardown_connections();
+    bridge_state.exit();
+    std::process::exit(0);
+}
+
+// **********************************
+// МОСТИК ДЛЯ ВНЕШНИХ ОБОЛОЧЕК (karin-shell / Brain Shell)
+// Статус-файл и флаги командной строки; логика в bridge.rs.
+// **********************************
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BridgeProfileArg {
+    url: String,
+    name: String,
+    #[serde(default)]
+    group: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BridgeUpdateArg {
+    state: String,
+    #[serde(default)]
+    selected_url: String,
+    #[serde(default)]
+    ip: String,
+    #[serde(default)]
+    profiles: Vec<BridgeProfileArg>,
+}
+
+#[derive(Clone, Serialize)]
+struct BridgeActionPayload {
+    action: String,
+    url: Option<String>,
+}
+
+fn emit_bridge_actions(app: &tauri::AppHandle, actions: Vec<bridge::ResolvedAction>) {
+    for a in actions {
+        let _ = app.emit("bridge-action", BridgeActionPayload { action: a.action.to_string(), url: a.url });
+    }
+}
+
+fn focus_main_window(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// Прежнее содержимое статус-файла (список профилей), чтобы панель не видела пустоту, пока грузится интерфейс.
+fn load_previous_bridge() -> Option<bridge::Previous> {
+    let path = bridge::state_file_path()?;
+    let text = std::fs::read_to_string(path).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    let text_of = |item: &Value, key: &str| item.get(key).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let profiles = v
+        .get("profiles")?
+        .as_array()?
+        .iter()
+        .filter_map(|p| {
+            let id = p.get("id")?.as_str()?.to_string();
+            Some(bridge::ProfileOut { id, name: text_of(p, "name"), kind: text_of(p, "type"), group: text_of(p, "group") })
+        })
+        .collect();
+    Some(bridge::Previous { selected: text_of(&v, "selected"), profile_name: text_of(&v, "profile_name"), profiles })
+}
+
+/// Фронтенд присылает снимок: состояние, выбранный профиль, IP и список профилей.
+/// Ссылки остаются внутри приложения, в файл идут только id, имя, тип и группа.
+#[tauri::command]
+fn bridge_update(app: tauri::AppHandle, bridge_state: State<'_, bridge::BridgeState>, update: BridgeUpdateArg) {
+    let input = bridge::UpdateIn {
+        state: update.state,
+        selected_url: update.selected_url,
+        ip: update.ip,
+        profiles: update
+            .profiles
+            .into_iter()
+            .map(|p| bridge::ProfileIn { url: p.url, name: p.name, group: p.group })
+            .collect(),
+    };
+    let actions = bridge_state.update(input);
+    emit_bridge_actions(&app, actions);
 }
 
 // **********************************
 // MAIN APPLICATION ENTRY POINT
 // **********************************
 fn main() {
-    tokio::runtime::Runtime::new().unwrap().block_on(async { let _ = ensure_xray().await; let _ = ensure_geo_files().await; });
-    let app = tauri::Builder::default().manage(ProxyState { auth_token: Mutex::new(None) }).invoke_handler(tauri::generate_handler![
-            start_proxy, stop_proxy, fetch_subscription, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, export_profile, minimize_window, maximize_window, close_window, open_browser
+    let argv: Vec<String> = std::env::args_os().map(|a| a.to_string_lossy().into_owned()).collect();
+    let cli = bridge::parse_cli(&argv);
+    let running = bridge::running_instance_alive();
+
+    // `--disconnect`, когда приложение не запущено: отключать нечего, ничего не делаем.
+    if cli.iter().any(|a| matches!(a, bridge::CliAction::Disconnect)) && running == Some(false) {
+        return;
+    }
+
+    // Если экземпляр уже работает, этот процесс лишь передаст ему флаги и выйдет (single-instance),
+    // поэтому тяжёлую подготовку (xray, geo-базы) не повторяем.
+    if running != Some(true) {
+        tokio::runtime::Runtime::new().unwrap().block_on(async { let _ = ensure_xray().await; let _ = ensure_geo_files().await; });
+    }
+
+    let startup_cli = cli.clone();
+    let app = tauri::Builder::default()
+        // Должен регистрироваться первым. Повторный запуск не открывает второе окно:
+        // флаги уходят в работающий экземпляр и превращаются в те же действия, что кнопки на главном экране.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let actions = bridge::parse_cli(&argv);
+            if actions.is_empty() {
+                focus_main_window(app);
+            } else {
+                let resolved = app.state::<bridge::BridgeState>().dispatch(actions);
+                emit_bridge_actions(app, resolved);
+            }
+        }))
+        .manage(ProxyState { auth_token: Mutex::new(None) })
+        .manage(bridge::BridgeState::new(env!("CARGO_PKG_VERSION"), std::process::id(), bridge::state_file_path()))
+        .setup(move |app| {
+            // Первый экземпляр запущен с `--disconnect`: ничего не делаем и не пишем статус-файл.
+            if startup_cli.iter().any(|a| matches!(a, bridge::CliAction::Disconnect)) {
+                std::process::exit(0);
+            }
+            let bridge_state = app.state::<bridge::BridgeState>();
+            bridge_state.start(load_previous_bridge());
+            // Флаги холодного старта ждут, пока фронтенд пришлёт список профилей.
+            if !startup_cli.is_empty() {
+                let _ = bridge_state.dispatch(startup_cli.clone());
+            }
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            start_proxy, stop_proxy, fetch_subscription, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update
         ]).build(tauri::generate_context!()).expect("error while building tauri application");
-    app.run(|_app_handle, event| {
+    app.run(|app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
+            app_handle.state::<bridge::BridgeState>().exit();
             let _ = std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output();
             let _ = std::process::Command::new("sudo").args(["/usr/bin/pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output();
             let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.bak", "/etc/resolv.conf"]).output();

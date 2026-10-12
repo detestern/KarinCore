@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/версия-1.3.10-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/версия-1.4.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/платформа-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/на_чём_написано-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/фреймворк-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,30 @@ KarinCore создана, чтобы избавить пользователей
 * **Более спокойная вкладка маршрутизации.** Та же логика drag & drop и те же настройки DNS, только тоньше рамки и сдержаннее в целом.
 
 <br/>
+
+### v1.4.0 — Shell Bridge
+
+* **Добавлено:** мостик для внешних оболочек и панелей (karin-shell / Brain Shell). Пока приложение работает, оно ведёт статус-файл `${XDG_STATE_HOME:-~/.local/state}/karincore/shell.json`. Запись атомарная (`shell.json.tmp` → rename) и происходит при старте, при выходе (в том числе по закрытию окна) и при любой смене состояния подключения, выбранного профиля, списка профилей или публичного IP:
+
+  ```json
+  {
+    "bridge": 1,
+    "app_version": "1.4.0",
+    "pid": 4242,
+    "state": "connected",
+    "selected": "ba7816bf8f01",
+    "profile_name": "Нидерланды (nl.example.com)",
+    "ip": "203.0.113.5",
+    "profiles": [
+      { "id": "ba7816bf8f01", "name": "Нидерланды (nl.example.com)", "type": "vless", "group": "provider.example" }
+    ],
+    "updated": 1760000000
+  }
+  ```
+
+  `state`: `disconnected`, `connecting` или `connected`; после выхода `pid` равен `0` (вместе с `state: "disconnected"` и пустым `ip`). `type`: `vless`, `vmess`, `trojan`, `shadowsocks`, `wireguard` или `openvpn`. `id` профиля стабилен и не секретен: первые 12 hex-символов `sha256(ссылки)`. Ссылки, ключи, UUID и пароли в файл не попадают.
+* **Добавлено:** флаги командной строки. `karincore --connect [id]` выбирает профиль (если указан) и подключается; если приложение не запущено, оно запустится как обычно, с окном. `karincore --disconnect` отключает (если приложение не запущено, ничего не делает). `karincore --select id` выбирает профиль без подключения. Повторный запуск передаёт флаги уже работающему экземпляру (`tauri-plugin-single-instance`), второе окно не открывается. В работающем приложении флаги делают то же, что кнопки на главном экране, включая анимацию ядра. Флаги можно сочетать: `karincore --select <id> --connect`.
+* **Без изменений:** закрытие окна по-прежнему выключает VPN.
 
 ### v1.3.10 — Живое ядро
 
@@ -243,7 +267,7 @@ yay -S karincore-git
 Свежий `.deb` всегда доступен в разделе [Releases](../../releases). Он сам регистрирует правила `sudoers` и `systemd` при установке. Убедись, что в системе уже стоят `openvpn` и `wireguard-tools`. Xray в `.deb` не входит: установи его отдельно так, чтобы бинарник лежал в `/usr/local/bin/xray` (например, через [XTLS/Xray-install](https://github.com/XTLS/Xray-install)).
 
 ```bash
-sudo dpkg -i KarinCore_1.3.10_amd64.deb
+sudo dpkg -i KarinCore_1.4.0_amd64.deb
 sudo apt install -f # только если не хватает зависимостей
 ```
 

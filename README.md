@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.3.10-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.4.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -38,6 +38,30 @@ This release is a full visual and functional overhaul, not just a patch.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
 
 <br/>
+
+### v1.4.0 — Shell Bridge
+
+* **Added:** a bridge for external shells and panels (karin-shell / Brain Shell). While the app runs it keeps a status file, `${XDG_STATE_HOME:-~/.local/state}/karincore/shell.json`, written atomically (`shell.json.tmp` → rename) whenever the connection state, the selected profile, the profile list or the public IP changes, at start and on exit (closing the window included):
+
+  ```json
+  {
+    "bridge": 1,
+    "app_version": "1.4.0",
+    "pid": 4242,
+    "state": "connected",
+    "selected": "ba7816bf8f01",
+    "profile_name": "Netherlands (nl.example.com)",
+    "ip": "203.0.113.5",
+    "profiles": [
+      { "id": "ba7816bf8f01", "name": "Netherlands (nl.example.com)", "type": "vless", "group": "provider.example" }
+    ],
+    "updated": 1760000000
+  }
+  ```
+
+  `state` is `disconnected`, `connecting` or `connected`; `pid` is `0` after exit (together with `state: "disconnected"` and an empty `ip`). `type` is `vless`, `vmess`, `trojan`, `shadowsocks`, `wireguard` or `openvpn`. A profile `id` is stable and not secret: the first 12 hex characters of `sha256(link)`. Links, keys, UUIDs and passwords never reach the file.
+* **Added:** command-line flags. `karincore --connect [id]` selects the profile (if given) and connects, starting the app with its window if it is not running; `karincore --disconnect` disconnects (does nothing if the app is not running); `karincore --select id` selects a profile without connecting. Launching the app again hands the flags to the running instance (`tauri-plugin-single-instance`) and no second window opens. In the running app the flags do exactly what the buttons on the main screen do, core animation included. Flags can be combined: `karincore --select <id> --connect`.
+* **Unchanged:** closing the window still turns the VPN off.
 
 ### v1.3.10 — Living Core
 
@@ -243,7 +267,7 @@ yay -S karincore-git
 Grab the latest `.deb` from [Releases](../../releases). It registers `sudoers` and `systemd` rules on install. Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately so that the binary is available at `/usr/local/bin/xray` (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)).
 
 ```bash
-sudo dpkg -i KarinCore_1.3.10_amd64.deb
+sudo dpkg -i KarinCore_1.4.0_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 
