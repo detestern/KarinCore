@@ -64,7 +64,11 @@ pub fn check_dir(dir: &Path, owner_uid: u32) -> Result<(), String> {
         return Err(format!("{} не является каталогом", dir.display()));
     }
     if md.uid() != owner_uid {
-        return Err(format!("{}: неверный владелец каталога", dir.display()));
+        return Err(format!(
+            "{}: неверный владелец каталога (после обновления со старой версии выполните: sudo chown -R root:root {})",
+            dir.display(),
+            dir.display()
+        ));
     }
     if md.mode() & 0o022 != 0 {
         return Err(format!("{}: каталог доступен на запись группе или всем", dir.display()));

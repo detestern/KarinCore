@@ -25,6 +25,16 @@ chown root:root /etc/systemd/system/karin-proxy-daemon.service
 chmod 0755 /etc/karin-proxy/route.sh
 chown root:root /etc/karin-proxy/route.sh
 
+# Миграция со старых версий (до 1.5.0): каталог /etc/karin-proxy и файлы в нём
+# принадлежали обычному пользователю — приложение писало туда конфигурацию само.
+# Теперь всё это читает и пишет только root-helper, поэтому возвращаем владельца
+# root. Символические ссылки (их мог подложить кто угодно) удаляем.
+if [ -d /etc/karin-proxy ] && [ ! -L /etc/karin-proxy ]; then
+    find /etc/karin-proxy -type l -delete 2>/dev/null || true
+    chown -R root:root /etc/karin-proxy
+    chmod -R go-w /etc/karin-proxy
+fi
+
 # Привилегированный helper: единственное, что sudoers разрешает группе
 # karincore. Каталог и бинарник должны принадлежать root и не быть доступны
 # на запись другим — иначе правило sudo превратилось бы в дыру.
