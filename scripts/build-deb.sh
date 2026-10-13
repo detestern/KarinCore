@@ -34,6 +34,11 @@ trap 'rm -rf "$WORKDIR"' EXIT
 
 dpkg-deb -R "$DEB_FILE" "$WORKDIR"
 
+# Tauri кладёт в /usr/bin каждый [[bin]] крейта, поэтому helper попадает туда лишним
+# экземпляром. Настоящий helper лежит в /usr/libexec/karincore (на него смотрит sudoers),
+# а копию в PATH убираем: она ни к чему и только путает.
+rm -f "$WORKDIR/usr/bin/karincore-helper"
+
 install -m 0755 "$REPO_ROOT/src-tauri/system/postinst" "$WORKDIR/DEBIAN/postinst"
 install -m 0755 "$REPO_ROOT/src-tauri/system/postrm" "$WORKDIR/DEBIAN/postrm"
 

@@ -483,16 +483,18 @@ mod tests {
     fn gui_config() -> String {
         r#"{
           "log": {"loglevel":"debug","access":"/home/u/.local/share/karin-proxy/access.log","error":"/home/u/.local/share/karin-proxy/error.log"},
-          "dns": {"hosts":{"dns.google":"8.8.8.8"},"servers":[{"address":"https://dns.google/dns-query","outboundTag":"direct","domains":["geosite:ru","domain:.pro"]},{"address":"1.1.1.1","port":53,"outboundTag":"proxy"}]},
+          "dns": {"hosts":{"dns.google":"8.8.8.8"},"servers":[{"address":"https://dns.google/dns-query","tag":"dns-direct","domains":["geosite:ru","domain:.pro"]},{"address":"1.1.1.1","port":53,"tag":"dns-proxy"}]},
           "routing": {"domainStrategy":"IPIfNonMatch","rules":[
             {"type":"field","inboundTag":["dns-in"],"outboundTag":"dns-out"},
+            {"type":"field","inboundTag":["dns-direct"],"outboundTag":"direct"},
+            {"type":"field","inboundTag":["dns-proxy"],"outboundTag":"proxy"},
             {"type":"field","ip":["127.0.0.0/8","fc00::/7"],"outboundTag":"direct"},
             {"type":"field","outboundTag":"direct","domain":["geosite:ru","keyword:foo"]},
             {"type":"field","network":"tcp,udp","outboundTag":"proxy"}]},
           "inbounds": [
             {"port":2080,"listen":"127.0.0.1","protocol":"mixed","settings":{"accounts":[{"user":"karin","pass":"tok"}]}},
             {"tag":"tun-in","port":2081,"listen":"127.0.0.1","protocol":"tun","settings":{"name":"tun0","mtu":1500,"gateway":["172.19.0.1/30"]},"sniffing":{"enabled":true,"destOverride":["http","tls","quic"]}},
-            {"tag":"dns-in","listen":"127.0.0.1","port":53,"protocol":"dokodemo-door","settings":{"address":"1.1.1.1","port":53,"network":"udp"}}],
+            {"tag":"dns-in","listen":"127.0.0.1","port":53,"protocol":"dokodemo-door","settings":{"address":"1.1.1.1","port":53,"network":"tcp,udp"}}],
           "outbounds": [
             {"tag":"proxy","protocol":"vless","settings":{"vnext":[{"address":"203.0.113.5","port":443,"users":[{"id":"uuid","encryption":"none","flow":"xtls-rprx-vision"}]}]},
              "streamSettings":{"network":"tcp","security":"reality","sockopt":{"mark":255},"realitySettings":{"publicKey":"k","shortId":"s","serverName":"example.com","fingerprint":"firefox","spiderX":""}}},

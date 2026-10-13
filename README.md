@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.5.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.5.1-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -36,6 +36,17 @@ This release is a full visual and functional overhaul, not just a patch.
 * **Profiles moved out of the way.** Your saved configs now live in a slide-out side panel instead of eating vertical space on the main screen. Pick one, it lights up with a soft accent glow, and you're back on the connect screen — the big glowing core is the only thing competing for your attention.
 * **A light theme worth using.** The old light mode was a near-inversion of the dark one. It's been rebuilt from scratch with warm, low-contrast neutrals — readable without feeling like a different app.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
+
+<br/>
+
+### v1.5.1 — Dual Stack
+
+* **Added:** IPv6. The tunnel carries IPv6 next to IPv4 (`ip -6` rules and table 100, a private /126 on `tun0`), local IPv6 ranges (`fc00::/7`, `fe80::/10`) and the server's own address of either family stay outside the tunnel, "proxy the server itself" works for IPv6 addresses, and the kill switch now also installs `ip6tables` rules (loopback, tunnel, server, Xray's own marked traffic, then DROP).
+* **Fixed:** DNS routing follows the Xray documentation: every DNS server gets a `tag` and a routing rule with `inboundTag` sends its queries to `direct` or `proxy` (the non-existent `outboundTag` on DNS servers is gone). The local DNS inbound answers over `tcp,udp`.
+* **Fixed:** a subscription header `routing-enable: 0` (also `false`/`off`/`no`) really disables routing import, and a `happ://routing/…` line inside the subscription body is imported when there is no `Routing` header.
+* **Fixed:** Xray is checked when you press Connect and the error is shown in the app (missing, cannot start, version output unreadable, older than 25.6.8) instead of being swallowed at startup. The one supported path is `/usr/bin/xray`: the systemd unit, the app and the docs all use it, and the `.deb` creates a link there if Xray is only in `/usr/local/bin`.
+* **Fixed:** JSON subscriptions with Trojan, Shadowsocks, VMess and other transports (TLS, XHTTP) are converted to links instead of being skipped; `route.sh` reads the server address from `vnext[0]` or `servers[0]`; IPv6 hosts such as `[2001:db8::1]` are parsed in links, WireGuard endpoints and `ss://`.
+* **Changed:** installing or upgrading removes leftovers of older versions from `/etc/karin-proxy` (`resolv.conf.vpn`, old logs, OpenVPN/WireGuard configs when no tunnel is up) and sets `0600` on configs; the `.deb` no longer contains a second copy of the helper in `/usr/bin`.
 
 <br/>
 
@@ -274,10 +285,10 @@ yay -S karincore-git
 
 ### Ubuntu / Debian / Linux Mint
 
-Grab the latest `.deb` from [Releases](../../releases). It installs the privileged helper, a one-line `sudoers` rule and the `systemd` unit, creates the `karincore` group and adds the installing user (log out and back in afterwards). Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately so that the binary is available at `/usr/local/bin/xray` (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)).
+Grab the latest `.deb` from [Releases](../../releases). It installs the privileged helper, a one-line `sudoers` rule and the `systemd` unit, creates the `karincore` group and adds the installing user (log out and back in afterwards). Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)). The binary has to be at `/usr/bin/xray`; if the installer puts it in `/usr/local/bin/xray`, the package creates the link for you.
 
 ```bash
-sudo dpkg -i KarinCore_1.5.0_amd64.deb
+sudo dpkg -i KarinCore_1.5.1_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 

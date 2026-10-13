@@ -104,6 +104,7 @@ jobs:
           deb="$(ls src-tauri/target/release/bundle/deb/KarinCore_*_amd64.deb)"
           dpkg-deb -c "$deb" | tee contents.txt
           grep -q ' ./usr/libexec/karincore/karincore-helper$' contents.txt
+          if grep -q ' ./usr/bin/karincore-helper$' contents.txt; then echo 'лишняя копия helper в /usr/bin'; exit 1; fi
           grep -q ' ./etc/sudoers.d/zz-karincore$' contents.txt
           # helper принадлежит root и не доступен на запись остальным
           dpkg-deb -c "$deb" | grep ' ./usr/libexec/karincore/karincore-helper$' | grep -q '^-rwxr-xr-x root/root'

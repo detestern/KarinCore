@@ -29,6 +29,16 @@ _fix_conf_dir_owner() {
         chown -R root:root /etc/karin-proxy
         chmod -R go-w /etc/karin-proxy
     fi
+
+    # Уборка остатков старых версий. Всё это были файлы времён, когда каталог принадлежал
+    # пользователю: конфигурации с ключами/паролями (config.json мог лежать с правами 0644),
+    # служебные копии и логи, которые теперь живут в /var/log/karin-proxy.
+    rm -f /etc/karin-proxy/resolv.conf.vpn /etc/karin-proxy/*.log 2>/dev/null || true
+    chmod 0600 /etc/karin-proxy/config.json /etc/karin-proxy/openvpn.ovpn /etc/karin-proxy/wg0.conf 2>/dev/null || true
+    # Конфигурации OpenVPN/WireGuard нужны только пока туннель поднят: если его нет, ключи не храним.
+    if [ ! -d /sys/class/net/wg0 ] && [ ! -d /sys/class/net/tun-ovpn ]; then
+        rm -f /etc/karin-proxy/openvpn.ovpn /etc/karin-proxy/wg0.conf 2>/dev/null || true
+    fi
     install -d -m 0755 -o root -g root /var/log/karin-proxy
 }
 

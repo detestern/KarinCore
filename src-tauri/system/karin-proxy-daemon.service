@@ -8,7 +8,7 @@ StartLimitBurst=5
 Type=simple
 User=root
 LimitNOFILE=51200
-ExecStart=/usr/local/bin/xray run -c /etc/karin-proxy/config.json
+ExecStart=/usr/bin/xray run -c /etc/karin-proxy/config.json
 
 # Магия автоматизации здесь:
 ExecStartPost=/etc/karin-proxy/route.sh up

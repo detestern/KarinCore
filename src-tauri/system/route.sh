@@ -1,15 +1,33 @@
 #!/bin/bash
 RP_FILTER_BAK="/etc/karin-proxy/rp_filter.bak"
 LOCAL_BYPASS_NETS="127.0.0.0/8 10.0.0.0/8 192.168.0.0/16"
+LOCAL_BYPASS_NETS6="fc00::/7 fe80::/10"
 
-# Извлекаем данные из конфига с помощью Python
-SERVER_ADDR=$(python3 -c "import json; print(json.load(open('/etc/karin-proxy/config.json'))['outbounds'][0]['settings']['vnext'][0]['address'])" 2>/dev/null)
+# Адрес сервера берём из первого outbound'а: vless/vmess хранят его в settings.vnext[0],
+# trojan и shadowsocks — в settings.servers[0]. В режимах OpenVPN/WireGuard такого поля нет — тогда пусто.
+SERVER_ADDR=$(python3 - <<'PY' 2>/dev/null
+import json
+cfg = json.load(open('/etc/karin-proxy/config.json'))
+settings = cfg['outbounds'][0].get('settings', {})
+entry = (settings.get('vnext') or settings.get('servers') or [{}])[0]
+print(entry.get('address', ''))
+PY
+)
 
-# Если вместо IP указан домен, резолвим его в чистый IP
-if [[ ! "$SERVER_ADDR" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+# Если вместо IP указан домен, резолвим его в чистый IP (IPv4 или IPv6)
+if [[ "$SERVER_ADDR" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$SERVER_ADDR" == *:* ]]; then
+    SERVER_IP="$SERVER_ADDR"
+elif [ -n "$SERVER_ADDR" ]; then
     SERVER_IP=$(getent ahosts "$SERVER_ADDR" | awk '{print $1}' | head -n 1)
 else
-    SERVER_IP="$SERVER_ADDR"
+    SERVER_IP=""
+fi
+
+# Для адреса сервера выбираем нужное семейство `ip`
+if [[ "$SERVER_IP" == *:* ]]; then
+    SERVER_IP_CMD="ip -6"
+else
+    SERVER_IP_CMD="ip"
 fi
 
 case "$1" in
@@ -41,18 +59,27 @@ case "$1" in
         ip link set tun0 up 2>/dev/null
         ip route add default dev tun0 table 100 2>/dev/null
 
+        # IPv6 внутри туннеля: приватный адрес /126 и свой default в той же таблице 100
+        ip -6 addr add fd00:19::2/126 dev tun0 2>/dev/null
+        ip -6 route add default dev tun0 table 100 2>/dev/null
+
         # 3. Базовые правила-исключения локальной сети
         for net in $LOCAL_BYPASS_NETS; do
             ip rule add to "$net" table main pref 10 2>/dev/null
         done
 
+        for net in $LOCAL_BYPASS_NETS6; do
+            ip -6 rule add to "$net" table main pref 10 2>/dev/null
+        done
+
         # Исключаем IP сервера из проксирования, чтобы не было петли
         if [ ! -z "$SERVER_IP" ]; then
-            ip rule add to "$SERVER_IP" table main pref 10 2>/dev/null
+            $SERVER_IP_CMD rule add to "$SERVER_IP" table main pref 10 2>/dev/null
         fi
 
-        # 4. Главное правило: весь остальной трафик — в туннель
+        # 4. Главное правило: весь остальной трафик — в туннель (оба семейства адресов)
         ip rule add not fwmark 255 table 100 pref 20 2>/dev/null
+        ip -6 rule add not fwmark 255 table 100 pref 20 2>/dev/null
 
         # **********************************
         # DNS
@@ -70,13 +97,18 @@ case "$1" in
     down)
         # Полная и чистая уборка за собой при остановке
         ip rule del not fwmark 255 table 100 pref 20 2>/dev/null
+        ip -6 rule del not fwmark 255 table 100 pref 20 2>/dev/null
         if [ ! -z "$SERVER_IP" ]; then
-            ip rule del to "$SERVER_IP" table main pref 10 2>/dev/null
+            $SERVER_IP_CMD rule del to "$SERVER_IP" table main pref 10 2>/dev/null
         fi
         for net in $LOCAL_BYPASS_NETS; do
             ip rule del to "$net" table main pref 10 2>/dev/null
         done
+        for net in $LOCAL_BYPASS_NETS6; do
+            ip -6 rule del to "$net" table main pref 10 2>/dev/null
+        done
         ip route flush table 100 2>/dev/null
+        ip -6 route flush table 100 2>/dev/null
 
         # Восстанавливаем исходные значения rp_filter
         if [ -f "$RP_FILTER_BAK" ]; then

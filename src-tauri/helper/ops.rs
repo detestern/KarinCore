@@ -310,6 +310,11 @@ fn route_fwmark(ctx: &Ctx, req: &Request) -> Res {
     let _ = r.run("sysctl", &["-w", "net.ipv4.conf.all.rp_filter=0"]);
     let _ = r.run("iptables", &["-t", "nat", "-D", "POSTROUTING", "-o", iface, "-j", "MASQUERADE"]);
     let _ = r.run("iptables", &["-t", "nat", "-A", "POSTROUTING", "-o", iface, "-j", "MASQUERADE"]);
+    // IPv6: помеченный трафик ядра тоже уходит в туннель. Если у интерфейса нет IPv6, пакеты
+    // просто не доходят (и клиент переключается на IPv4), а не утекают мимо VPN через основной маршрут.
+    let _ = r.run("ip", &["-6", "rule", "del", "fwmark", "111", "lookup", FWMARK_TABLE]);
+    let _ = r.run("ip", &["-6", "route", "add", "default", "dev", iface, "table", FWMARK_TABLE]);
+    let _ = r.run("ip", &["-6", "rule", "add", "fwmark", "111", "lookup", FWMARK_TABLE]);
     Ok(String::new())
 }
 
@@ -317,6 +322,8 @@ fn route_cleanup(ctx: &Ctx) {
     let r = &ctx.run;
     let _ = r.run("iptables", &["-t", "nat", "-D", "POSTROUTING", "-o", "wg0", "-j", "MASQUERADE"]);
     let _ = r.run("ip", &["rule", "del", "fwmark", "111", "lookup", FWMARK_TABLE]);
+    let _ = r.run("ip", &["-6", "rule", "del", "fwmark", "111", "lookup", FWMARK_TABLE]);
+    let _ = r.run("ip", &["-6", "route", "flush", "table", FWMARK_TABLE]);
     let _ = r.run("iptables", &["-t", "nat", "-D", "POSTROUTING", "-o", "tun-ovpn", "-j", "MASQUERADE"]);
 }
 
@@ -328,18 +335,28 @@ fn bypass(ctx: &Ctx, req: &Request) -> Res {
     let mut done = 0;
     for raw in ips.split(',').filter(|s| !s.is_empty()) {
         let ip = ip_param(raw)?;
-        let v4 = match ip {
-            IpAddr::V4(v) => v,
-            IpAddr::V6(_) => continue, // IPv6 — в следующем релизе
-        };
-        let a = v4.to_string();
-        let a32 = format!("{}/32", a);
         let r = &ctx.run;
-        let _ = r.run("ip", &["rule", "del", "to", &a, "lookup", "main"]);
-        let _ = r.run("ip", &["rule", "del", "to", &a32, "lookup", "main"]);
-        if routes {
-            let _ = r.run("ip", &["route", "del", &a]);
-            let _ = r.run("ip", &["route", "del", &a32]);
+        match ip {
+            IpAddr::V4(v4) => {
+                let a = v4.to_string();
+                let a32 = format!("{}/32", a);
+                let _ = r.run("ip", &["rule", "del", "to", &a, "lookup", "main"]);
+                let _ = r.run("ip", &["rule", "del", "to", &a32, "lookup", "main"]);
+                if routes {
+                    let _ = r.run("ip", &["route", "del", &a]);
+                    let _ = r.run("ip", &["route", "del", &a32]);
+                }
+            }
+            IpAddr::V6(v6) => {
+                let a = v6.to_string();
+                let a128 = format!("{}/128", a);
+                let _ = r.run("ip", &["-6", "rule", "del", "to", &a, "lookup", "main"]);
+                let _ = r.run("ip", &["-6", "rule", "del", "to", &a128, "lookup", "main"]);
+                if routes {
+                    let _ = r.run("ip", &["-6", "route", "del", &a]);
+                    let _ = r.run("ip", &["-6", "route", "del", &a128]);
+                }
+            }
         }
         done += 1;
     }
@@ -348,23 +365,40 @@ fn bypass(ctx: &Ctx, req: &Request) -> Res {
 
 // ---------------------------------------------------------------- kill switch
 
+/// До 16 адресов сервера (v4 и v6 вперемешку), разделённых запятой.
+fn ks_servers(raw: &str) -> Result<Vec<IpAddr>, String> {
+    let mut out = Vec::new();
+    for part in raw.split(',').filter(|s| !s.is_empty()) {
+        out.push(ip_param(part)?);
+    }
+    if out.is_empty() {
+        return Err("не указан ни один адрес сервера".into());
+    }
+    if out.len() > 16 {
+        return Err("слишком много адресов сервера (максимум 16)".into());
+    }
+    Ok(out)
+}
+
 fn ks_on(ctx: &Ctx, req: &Request) -> Res {
     let iface = iface_param(req, IFACES)?;
-    let server = ip_param(req.param("server_ip").ok_or("не указан параметр server_ip")?)?;
-    let server_v4 = match server {
-        IpAddr::V4(v) => v.to_string(),
-        IpAddr::V6(_) => return Err("IPv6-адрес сервера пока не поддерживается killswitch'ем".into()),
-    };
+    let servers = ks_servers(req.param("server_ip").ok_or("не указан параметр server_ip")?)?;
+    let state: Vec<String> = servers.iter().map(|ip| ip.to_string()).collect();
     sys::ensure_dir(&ctx.paths.run_dir, 0o755, ctx.paths.owner_uid)?;
-    sys::write_atomic(&ctx.paths.run_dir, "killswitch_ip", server_v4.as_bytes(), 0o644, ctx.paths.owner_uid)?;
+    sys::write_atomic(&ctx.paths.run_dir, "killswitch_ip", state.join(",").as_bytes(), 0o644, ctx.paths.owner_uid)?;
     let r = &ctx.run;
-    let _ = r.run("iptables", &["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]);
-    let _ = r.run("iptables", &["-A", "OUTPUT", "-o", iface, "-j", "ACCEPT"]);
-    let _ = r.run("iptables", &["-A", "OUTPUT", "-d", &server_v4, "-j", "ACCEPT"]);
     // Трафик, который сам Xray отправляет в outbound "direct" (метка 255), — зона Direct
-    // из пользовательских правил, её killswitch не режет.
-    let _ = r.run("iptables", &["-A", "OUTPUT", "-d", "0.0.0.0/0", "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"]);
-    let _ = r.run("iptables", &["-A", "OUTPUT", "-j", "DROP"]);
+    // из пользовательских правил, её killswitch не режет. То же самое для обоих семейств адресов.
+    for (tool, any) in [("iptables", "0.0.0.0/0"), ("ip6tables", "::/0")] {
+        let v6 = tool == "ip6tables";
+        let _ = r.run(tool, &["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]);
+        let _ = r.run(tool, &["-A", "OUTPUT", "-o", iface, "-j", "ACCEPT"]);
+        for ip in servers.iter().filter(|ip| ip.is_ipv6() == v6) {
+            let _ = r.run(tool, &["-A", "OUTPUT", "-d", &ip.to_string(), "-j", "ACCEPT"]);
+        }
+        let _ = r.run(tool, &["-A", "OUTPUT", "-d", any, "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"]);
+        let _ = r.run(tool, &["-A", "OUTPUT", "-j", "DROP"]);
+    }
     Ok(String::new())
 }
 
@@ -372,19 +406,25 @@ fn ks_off(ctx: &Ctx) {
     let r = &ctx.run;
     // `-D` удаляет одно совпадение за раз; правила могли накопиться после аварийного завершения.
     for _ in 0..3 {
-        let _ = r.run("iptables", &["-D", "OUTPUT", "-j", "DROP"]);
-        let _ = r.run("iptables", &["-D", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]);
-        for iface in IFACES {
-            let _ = r.run("iptables", &["-D", "OUTPUT", "-o", iface, "-j", "ACCEPT"]);
+        for (tool, any) in [("iptables", "0.0.0.0/0"), ("ip6tables", "::/0")] {
+            let _ = r.run(tool, &["-D", "OUTPUT", "-j", "DROP"]);
+            let _ = r.run(tool, &["-D", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]);
+            for iface in IFACES {
+                let _ = r.run(tool, &["-D", "OUTPUT", "-o", iface, "-j", "ACCEPT"]);
+            }
+            let _ = r.run(tool, &["-D", "OUTPUT", "-d", any, "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"]);
         }
-        let _ = r.run("iptables", &["-D", "OUTPUT", "-d", "0.0.0.0/0", "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"]);
     }
     let state = ctx.paths.ks_state();
     if let Ok(saved) = fs::read_to_string(&state) {
-        if let Ok(IpAddr::V4(ip)) = saved.trim().parse::<IpAddr>() {
-            let ip = ip.to_string();
-            for _ in 0..3 {
-                let _ = r.run("iptables", &["-D", "OUTPUT", "-d", &ip, "-j", "ACCEPT"]);
+        // Файл мог быть испорчен: берём только то, что разбирается как IP-адрес.
+        for item in saved.trim().split(',') {
+            if let Ok(ip) = item.trim().parse::<IpAddr>() {
+                let tool = if ip.is_ipv6() { "ip6tables" } else { "iptables" };
+                let ip = ip.to_string();
+                for _ in 0..3 {
+                    let _ = r.run(tool, &["-D", "OUTPUT", "-d", &ip, "-j", "ACCEPT"]);
+                }
             }
         }
     }
@@ -523,9 +563,30 @@ mod tests {
                 "iptables -A OUTPUT -d 203.0.113.5 -j ACCEPT",
                 "iptables -A OUTPUT -d 0.0.0.0/0 -m mark --mark 0xff -j ACCEPT",
                 "iptables -A OUTPUT -j DROP",
+                "ip6tables -A OUTPUT -o lo -j ACCEPT",
+                "ip6tables -A OUTPUT -o tun0 -j ACCEPT",
+                "ip6tables -A OUTPUT -d ::/0 -m mark --mark 0xff -j ACCEPT",
+                "ip6tables -A OUTPUT -j DROP",
             ]
         );
         assert_eq!(fs::read_to_string(c.paths.ks_state()).unwrap(), "203.0.113.5");
+    }
+
+    #[test]
+    fn ks_on_dual_stack_servers() {
+        let (c, f) = ctx("ksdual");
+        dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5,2001:db8::1"), ("iface", "tun0")], b"")).unwrap();
+        let log = f.log();
+        assert!(log.contains(&"iptables -A OUTPUT -d 203.0.113.5 -j ACCEPT".to_string()));
+        assert!(log.contains(&"ip6tables -A OUTPUT -d 2001:db8::1 -j ACCEPT".to_string()));
+        assert!(!log.contains(&"iptables -A OUTPUT -d 2001:db8::1 -j ACCEPT".to_string()));
+        assert_eq!(fs::read_to_string(c.paths.ks_state()).unwrap(), "203.0.113.5,2001:db8::1");
+        f.calls.borrow_mut().clear();
+        dispatch(&c, &rq("ks-off", &[], b"")).unwrap();
+        let log = f.log();
+        assert_eq!(log.iter().filter(|l| *l == "ip6tables -D OUTPUT -d 2001:db8::1 -j ACCEPT").count(), 3);
+        assert_eq!(log.iter().filter(|l| *l == "ip6tables -D OUTPUT -j DROP").count(), 3);
+        assert!(!c.paths.ks_state().exists());
     }
 
     #[test]
@@ -557,7 +618,9 @@ mod tests {
         assert!(dispatch(&c, &rq("ks-on", &[("server_ip", "1.2.3.4/32"), ("iface", "tun0")], b"")).is_err());
         assert!(dispatch(&c, &rq("ks-on", &[("server_ip", "example.com"), ("iface", "tun0")], b"")).is_err());
         assert!(dispatch(&c, &rq("ks-on", &[("iface", "tun0")], b"")).is_err());
-        assert!(dispatch(&c, &rq("ks-on", &[("server_ip", "2001:db8::1"), ("iface", "tun0")], b"")).is_err());
+        assert!(dispatch(&c, &rq("ks-on", &[("server_ip", "1.2.3.4,evil"), ("iface", "tun0")], b"")).is_err());
+        let many = (1..=17).map(|i| format!("10.0.0.{}", i)).collect::<Vec<_>>().join(",");
+        assert!(dispatch(&c, &rq("ks-on", &[("server_ip", many.as_str()), ("iface", "tun0")], b"")).is_err());
         assert!(f.log().is_empty());
     }
 
@@ -571,15 +634,19 @@ mod tests {
         assert_eq!(log[1], "ip route add default dev wg0 table 111");
         assert!(log.contains(&"sysctl -w net.ipv4.conf.wg0.rp_filter=0".to_string()));
         assert!(log.contains(&"iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE".to_string()));
+        assert!(log.contains(&"ip -6 route add default dev wg0 table 111".to_string()));
+        assert!(log.contains(&"ip -6 rule add fwmark 111 lookup 111".to_string()));
     }
 
     #[test]
-    fn bypass_validates_ips_and_skips_v6() {
+    fn bypass_validates_ips_and_handles_v6() {
         let (c, f) = ctx("bypass");
         dispatch(&c, &rq("bypass", &[("ips", "203.0.113.5,2001:db8::1"), ("routes", "1")], b"")).unwrap();
         let log = f.log();
-        assert_eq!(log.len(), 4);
+        assert_eq!(log.len(), 8);
         assert!(log.contains(&"ip route del 203.0.113.5/32".to_string()));
+        assert!(log.contains(&"ip -6 rule del to 2001:db8::1/128 lookup main".to_string()));
+        assert!(log.contains(&"ip -6 route del 2001:db8::1/128".to_string()));
         f.calls.borrow_mut().clear();
         assert!(dispatch(&c, &rq("bypass", &[("ips", "1.2.3.4,evil")], b"")).is_err());
     }

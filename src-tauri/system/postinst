@@ -35,6 +35,23 @@ if [ -d /etc/karin-proxy ] && [ ! -L /etc/karin-proxy ]; then
     chmod -R go-w /etc/karin-proxy
 fi
 
+# Уборка остатков старых версий. Всё это были файлы времён, когда каталог принадлежал
+# пользователю: конфигурации с ключами/паролями (config.json мог лежать с правами 0644),
+# служебные копии и логи, которые теперь живут в /var/log/karin-proxy.
+rm -f /etc/karin-proxy/resolv.conf.vpn /etc/karin-proxy/*.log 2>/dev/null || true
+chmod 0600 /etc/karin-proxy/config.json /etc/karin-proxy/openvpn.ovpn /etc/karin-proxy/wg0.conf 2>/dev/null || true
+# Конфигурации OpenVPN/WireGuard нужны только пока туннель поднят: если его нет, ключи не храним.
+if [ ! -d /sys/class/net/wg0 ] && [ ! -d /sys/class/net/tun-ovpn ]; then
+    rm -f /etc/karin-proxy/openvpn.ovpn /etc/karin-proxy/wg0.conf 2>/dev/null || true
+fi
+
+# Xray ищется только по пути /usr/bin/xray (его запускает systemd-юнит). Установка с
+# XTLS/Xray-install кладёт бинарник в /usr/local/bin — тогда делаем ссылку, но ничего
+# не трогаем, если /usr/bin/xray уже есть.
+if [ ! -e /usr/bin/xray ] && [ -x /usr/local/bin/xray ]; then
+    ln -s /usr/local/bin/xray /usr/bin/xray
+fi
+
 # Привилегированный helper: единственное, что sudoers разрешает группе
 # karincore. Каталог и бинарник должны принадлежать root и не быть доступны
 # на запись другим — иначе правило sudo превратилось бы в дыру.

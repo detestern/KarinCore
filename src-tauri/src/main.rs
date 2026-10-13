@@ -5,6 +5,7 @@
 // **********************************
 mod bridge;
 mod helper_client;
+mod subjson;
 mod token;
 
 use tauri::{State, RunEvent, Emitter, Manager};
@@ -217,9 +218,26 @@ fn happ_rules_into_zone(zone: &mut Vec<Value>, sites: Option<&Value>, ips: Optio
     }
 }
 
+/// Значение заголовка `routing-enable`: `0` / `false` / `off` / `no` отключают импорт маршрутизации,
+/// всё остальное (в том числе `1` и `true`) оставляет включённым.
+fn routing_enable_value(raw: &str) -> bool {
+    !matches!(raw.trim().to_ascii_lowercase().as_str(), "0" | "false" | "off" | "no")
+}
+
+/// Строка `happ://routing/...` в теле подписки (в открытом виде или внутри base64-обёртки).
+fn find_happ_routing_line(text: &str) -> Option<String> {
+    let scan = |t: &str| -> Option<String> {
+        t.lines()
+            .map(str::trim)
+            .find(|l| l.to_ascii_lowercase().starts_with("happ://routing/"))
+            .map(|l| l.to_string())
+    };
+    scan(text).or_else(|| decode_base64_flexible(text).and_then(|d| scan(&d)))
+}
+
 fn convert_happ_routing(header: &str) -> (Option<Value>, Option<Value>, Option<String>, Option<String>) {
     let mut payload = header.trim();
-    for prefix in ["happ://routing/onadd/", "happ://routing/add/"] {
+    for prefix in ["happ://routing/onadd/", "happ://routing/add/", "happ://routing/"] {
         if let Some(rest) = payload.strip_prefix(prefix) { payload = rest; break; }
     }
     let payload = payload.replace("%3D", "=").replace("%3d", "=");
@@ -262,7 +280,19 @@ fn convert_happ_routing(header: &str) -> (Option<Value>, Option<Value>, Option<S
 // **********************************
 // DNS
 // **********************************
-fn build_dns_server_entry(entry: &Value, outbound_tag: &str, hosts: &mut serde_json::Map<String, Value>) -> Value {
+// По документации Xray у DNS-сервера нет поля outboundTag: запросы сервера помечаются его `tag`
+// как inboundTag, а дальше их направляет обычное правило маршрутизации.
+const DNS_TAG_DIRECT: &str = "dns-direct";
+const DNS_TAG_PROXY: &str = "dns-proxy";
+
+fn dns_routing_rules() -> Vec<Value> {
+    vec![
+        json!({ "type": "field", "inboundTag": [DNS_TAG_DIRECT], "outboundTag": "direct" }),
+        json!({ "type": "field", "inboundTag": [DNS_TAG_PROXY], "outboundTag": "proxy" }),
+    ]
+}
+
+fn build_dns_server_entry(entry: &Value, dns_tag: &str, hosts: &mut serde_json::Map<String, Value>) -> Value {
     let server_type = entry.get("type").and_then(|v| v.as_str()).unwrap_or("dou");
     let url = entry.get("url").and_then(|v| v.as_str()).unwrap_or("");
     let ip = entry.get("ip").and_then(|v| v.as_str()).unwrap_or("");
@@ -275,9 +305,9 @@ fn build_dns_server_entry(entry: &Value, outbound_tag: &str, hosts: &mut serde_j
                 }
             }
         }
-        json!({ "address": url, "outboundTag": outbound_tag })
+        json!({ "address": url, "tag": dns_tag })
     } else {
-        json!({ "address": ip, "port": 53, "outboundTag": outbound_tag })
+        json!({ "address": ip, "port": 53, "tag": dns_tag })
     }
 }
 
@@ -301,13 +331,13 @@ fn build_dns_config(dns_params: &Value, routing_state: &Value) -> Value {
     let domestic_entry = dns_params.get("domestic").unwrap_or(&empty);
     let remote_entry = dns_params.get("remote").unwrap_or(&empty);
 
-    let mut domestic_server = build_dns_server_entry(domestic_entry, "direct", &mut hosts);
+    let mut domestic_server = build_dns_server_entry(domestic_entry, DNS_TAG_DIRECT, &mut hosts);
     if !domestic_domains.is_empty() {
         if let Some(obj) = domestic_server.as_object_mut() {
             obj.insert("domains".to_string(), json!(domestic_domains));
         }
     }
-    let remote_server = build_dns_server_entry(remote_entry, "proxy", &mut hosts);
+    let remote_server = build_dns_server_entry(remote_entry, DNS_TAG_PROXY, &mut hosts);
 
     json!({
         "hosts": Value::Object(hosts),
@@ -355,9 +385,9 @@ async fn resolve_server_ips(server: &str, port: u16) -> (String, Vec<String>) {
 
 async fn build_vless_or_trojan_outbound(link: &str, protocol: &str) -> Result<(Value, String, Vec<String>), String> {
     let parsed_url = Url::parse(link).map_err(|e| e.to_string())?;
-    let server = parsed_url.host_str().unwrap_or("").to_string();
+    let server = parsed_url.host_str().unwrap_or("").trim_matches(|c| c == '[' || c == ']').to_string();
     let port = parsed_url.port().unwrap_or(443);
-    let secret = parsed_url.username().to_string();
+    let secret = subjson::pct_decode(parsed_url.username());
 
     let (out_addr, resolved_ips) = resolve_server_ips(&server, port).await;
 
@@ -480,6 +510,21 @@ async fn build_vmess_outbound(link: &str) -> Result<(Value, String, Vec<String>)
     Ok((outbound, out_addr, resolved_ips))
 }
 
+/// `host:port` или `[ipv6]:port` -> (хост без скобок, порт; по умолчанию 443).
+fn split_host_port(hostport: &str) -> (String, u16) {
+    let hostport = hostport.split(['?', '/']).next().unwrap_or(hostport);
+    if let Some(rest) = hostport.strip_prefix('[') {
+        if let Some((host, tail)) = rest.split_once(']') {
+            let port = tail.strip_prefix(':').and_then(|p| p.parse().ok()).unwrap_or(443);
+            return (host.to_string(), port);
+        }
+    }
+    match hostport.rsplit_once(':') {
+        Some((host, port)) => (host.to_string(), port.parse().unwrap_or(443)),
+        None => (hostport.to_string(), 443),
+    }
+}
+
 fn split_shadowsocks_userinfo(decoded: &str) -> Option<(String, String)> {
     let mut parts = decoded.splitn(2, ':');
     let method = parts.next()?.to_string();
@@ -496,9 +541,7 @@ async fn build_shadowsocks_outbound(link: &str) -> Result<(Value, String, Vec<St
         let hostport = &hostport[1..];
         let userinfo = decode_base64_flexible(userinfo_b64).unwrap_or_else(|| userinfo_b64.to_string());
         let (method, password) = split_shadowsocks_userinfo(&userinfo).ok_or_else(|| "Некорректные учётные данные Shadowsocks".to_string())?;
-        let mut hp = hostport.splitn(2, ':');
-        let host = hp.next().unwrap_or("").to_string();
-        let port: u16 = hp.next().unwrap_or("443").parse().unwrap_or(443);
+        let (host, port) = split_host_port(hostport);
         (method, password, host, port)
     } else {
         let decoded = decode_base64_flexible(body).ok_or_else(|| "Не удалось декодировать Shadowsocks-ссылку".to_string())?;
@@ -506,9 +549,7 @@ async fn build_shadowsocks_outbound(link: &str) -> Result<(Value, String, Vec<St
         let (cred, hostport) = decoded.split_at(at_pos);
         let hostport = &hostport[1..];
         let (method, password) = split_shadowsocks_userinfo(cred).ok_or_else(|| "Некорректные учётные данные Shadowsocks".to_string())?;
-        let mut hp = hostport.splitn(2, ':');
-        let host = hp.next().unwrap_or("").to_string();
-        let port: u16 = hp.next().unwrap_or("443").parse().unwrap_or(443);
+        let (host, port) = split_host_port(hostport);
         (method, password, host, port)
     };
 
@@ -556,16 +597,10 @@ async fn ensure_geo_files() -> Result<(), String> {
 // **********************************
 // XRAY
 // **********************************
-const XRAY_MIN_VERSION: (u32, u32, u32) = (25, 0, 0);
-
-fn find_xray_binary() -> Option<&'static str> {
-    for candidate in ["/usr/bin/xray", "/usr/local/bin/xray"] {
-        if Path::new(candidate).exists() {
-            return Some(candidate);
-        }
-    }
-    None
-}
+// TUN-inbound появился в ветке 25.x; ниже этой версии ядро не поднимет tun0.
+// Единственный поддерживаемый путь — /usr/bin/xray (пакет из репозитория дистрибутива).
+const XRAY_MIN_VERSION: (u32, u32, u32) = (25, 6, 8);
+const XRAY_PATH: &str = "/usr/bin/xray";
 
 fn parse_xray_version(output: &str) -> Option<(u32, u32, u32)> {
     for token in output.split_whitespace() {
@@ -584,33 +619,37 @@ fn parse_xray_version(output: &str) -> Option<(u32, u32, u32)> {
     None
 }
 
-async fn ensure_xray() -> Result<(), String> {
-    let xray_path = match find_xray_binary() {
-        Some(p) => p,
-        None => {
-            return Err(
-                "Xray не установлен. Установите его через пакетный менеджер: \
-                 sudo pacman -S xray (это зависимость пакета karincore-git, \
-                 переустановка пакета тоже исправит это)."
-                    .into(),
-            );
-        }
-    };
+fn ensure_xray() -> Result<(), String> {
+    if !Path::new(XRAY_PATH).exists() {
+        return Err(format!(
+            "Xray не найден по пути {}. Установите его пакетным менеджером: \
+             sudo pacman -S xray (Arch); на Debian/Ubuntu поставьте релиз XTLS так, чтобы бинарник лежал в {}; \
+             systemd-юнит karin-proxy-daemon запускает только его.",
+            XRAY_PATH, XRAY_PATH
+        ));
+    }
 
-    let output = std::process::Command::new(xray_path)
+    let output = std::process::Command::new(XRAY_PATH)
         .arg("version")
         .output()
-        .map_err(|e| format!("Не удалось запустить xray для проверки версии: {}", e))?;
+        .map_err(|e| format!("Не удалось запустить {} для проверки версии: {}", XRAY_PATH, e))?;
+    if !output.status.success() {
+        return Err(format!("{} version завершился с ошибкой: {}", XRAY_PATH, String::from_utf8_lossy(&output.stderr).trim()));
+    }
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     match parse_xray_version(&stdout) {
         Some(v) if v >= XRAY_MIN_VERSION => Ok(()),
         Some(v) => Err(format!(
-            "Установленная версия Xray {}.{}.{} устарела. Обновите пакет: \
-             sudo pacman -Syu xray (или пересоберите karincore-git).",
-            v.0, v.1, v.2
+            "Установленная версия Xray {}.{}.{} слишком старая (нужна {}.{}.{} или новее, TUN-inbound). \
+             Обновите пакет: sudo pacman -Syu xray (или пересоберите karincore-git).",
+            v.0, v.1, v.2, XRAY_MIN_VERSION.0, XRAY_MIN_VERSION.1, XRAY_MIN_VERSION.2
         )),
-        None => Ok(()),
+        None => Err(format!(
+            "Не удалось определить версию Xray из вывода `{} version`: {:?}",
+            XRAY_PATH,
+            stdout.lines().next().unwrap_or("")
+        )),
     }
 }
 
@@ -659,8 +698,14 @@ fn teardown_connections() {
 // цикла route.sh up/down, поэтому переживают падение/автоперезапуск демона
 // (systemd Restart=on-failure) — снимаются только явным отключением или
 // новой попыткой подключения через teardown_connections().
-fn enable_kill_switch(server_ip: &str, tun_iface: &str) {
-    let _ = helper_client::call("ks-on", &[("server_ip", server_ip), ("iface", tun_iface)], None);
+// Адреса сервера передаются списком (IPv4 и IPv6 вместе): helper раскладывает их
+// по iptables / ip6tables. Больше 16 адресов helper не принимает.
+fn enable_kill_switch(server_ips: &[String], tun_iface: &str) {
+    let list = ip_list_param(&server_ips.iter().take(16).cloned().collect::<Vec<_>>());
+    if list.is_empty() {
+        return;
+    }
+    let _ = helper_client::call("ks-on", &[("server_ip", list.as_str()), ("iface", tun_iface)], None);
 }
 
 // IP-адреса, пригодные для параметра helper'а (остальное — например, имя хоста, оставшееся
@@ -699,7 +744,7 @@ async fn fetch_subscription(url: String) -> Result<SubscriptionResult, String> {
             routing_header = Some(v.to_string());
         }
         if let Some(v) = response.headers().get("routing-enable").and_then(|v| v.to_str().ok()) {
-            routing_enabled = !v.trim().eq_ignore_ascii_case("false");
+            routing_enabled = routing_enable_value(v);
         }
         text = response.text().await.map_err(|e| format!("Ошибка чтения ответа: {}", e))?;
 
@@ -742,30 +787,8 @@ async fn fetch_subscription(url: String) -> Result<SubscriptionResult, String> {
                 let remarks = item.get("remarks").and_then(|v| v.as_str()).unwrap_or("Proxy");
                 let outbounds_arr = item.get("outbounds").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
-                if let Some(outbounds) = item.get("outbounds").and_then(|v| v.as_array()) {
-                    for out in outbounds {
-                        if out.get("protocol").and_then(|v| v.as_str()) == Some("vless") {
-                            let address = out.pointer("/settings/vnext/0/address").and_then(|v| v.as_str()).unwrap_or("");
-                            let port = out.pointer("/settings/vnext/0/port").and_then(|v| v.as_u64()).unwrap_or(443);
-                            let id = out.pointer("/settings/vnext/0/users/0/id").and_then(|v| v.as_str()).unwrap_or("");
-                            let flow = out.pointer("/settings/vnext/0/users/0/flow").and_then(|v| v.as_str()).unwrap_or("");
-
-                            let stream = out.get("streamSettings");
-                            let network = stream.and_then(|v| v.pointer("/network")).and_then(|v| v.as_str()).unwrap_or("tcp");
-                            let security = stream.and_then(|v| v.pointer("/security")).and_then(|v| v.as_str()).unwrap_or("none");
-                            let pbk = stream.and_then(|v| v.pointer("/realitySettings/publicKey")).and_then(|v| v.as_str()).unwrap_or("");
-                            let sni = stream.and_then(|v| v.pointer("/realitySettings/serverName")).and_then(|v| v.as_str()).unwrap_or("");
-                            let sid = stream.and_then(|v| v.pointer("/realitySettings/shortId")).and_then(|v| v.as_str()).unwrap_or("");
-                            let fp = stream.and_then(|v| v.pointer("/realitySettings/fingerprint")).and_then(|v| v.as_str()).unwrap_or("firefox");
-
-                            let safe_remarks = remarks.replace(' ', "%20");
-                            let link = format!("vless://{}@{}:{}?type={}&security={}&pbk={}&sni={}&sid={}&fp={}&flow={}#{}",
-                                id, address, port, network, security, pbk, sni, sid, fp, flow, safe_remarks
-                            );
-                            out_links.push(link);
-                            break;
-                        }
-                    }
+                if let Some(link) = subjson::first_outbound_link(&outbounds_arr, remarks) {
+                    out_links.push(link);
                 }
 
                 if out_routing.is_none() {
@@ -841,6 +864,10 @@ async fn fetch_subscription(url: String) -> Result<SubscriptionResult, String> {
     }
 
     if routing_enabled {
+        // Заголовок `Routing` приоритетнее; если его нет, берём `happ://routing/...` из тела подписки.
+        if routing_header.is_none() {
+            routing_header = find_happ_routing_line(&text);
+        }
         if let Some(header) = routing_header.as_deref() {
             let (header_routing, header_dns, header_outbound, header_name) = convert_happ_routing(header);
             imported_default_outbound = header_outbound;
@@ -964,9 +991,7 @@ async fn start_openvpn_proxy(
     }
 
     if kill_switch {
-        if let Some(ip) = resolved_ips_for_route_del.first() {
-            enable_kill_switch(ip, "tun-ovpn");
-        }
+        enable_kill_switch(&resolved_ips_for_route_del, "tun-ovpn");
     }
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
@@ -1014,7 +1039,7 @@ async fn start_wireguard_proxy(
             let parts: Vec<&str> = trimmed.split('=').collect();
             if parts.len() >= 2 {
                 let endpoint = parts[1].trim();
-                let host = endpoint.rsplit_once(':').map(|(h, _)| h).unwrap_or(endpoint);
+                let host = endpoint.rsplit_once(':').map(|(h, _)| h).unwrap_or(endpoint).trim_matches(|c| c == '[' || c == ']');
                 if let Ok(ip) = host.parse::<std::net::IpAddr>() {
                     resolved_ips_for_route_del.push(ip.to_string());
                 } else if let Ok(mut addrs) = tokio::net::lookup_host(format!("{}:80", host)).await {
@@ -1099,9 +1124,7 @@ async fn start_wireguard_proxy(
     }
 
     if kill_switch {
-        if let Some(ip) = resolved_ips_for_route_del.first() {
-            enable_kill_switch(ip, "wg0");
-        }
+        enable_kill_switch(&resolved_ips_for_route_del, "wg0");
     }
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
@@ -1129,6 +1152,9 @@ async fn start_proxy(
     proxy_lan: bool,
     kill_switch: bool
 ) -> Result<String, String> {
+    // Ядро нужно всем режимам (VLESS/OpenVPN/WireGuard): без подходящего Xray даже не начинаем.
+    ensure_xray()?;
+
     teardown_connections();
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
@@ -1150,6 +1176,7 @@ async fn start_proxy(
 
     let mut all_rules = vec![];
     all_rules.push(json!({ "type": "field", "inboundTag": ["dns-in"], "outboundTag": "dns-out" }));
+    all_rules.extend(dns_routing_rules());
     all_rules.push(json!({ "type": "field", "inboundTag": ["ping-in"], "outboundTag": "proxy" }));
     let mut local_ips = vec!["127.0.0.0/8".to_string()];
     if !proxy_lan {
@@ -1174,7 +1201,7 @@ async fn start_proxy(
         "inbounds": [
             { "port": 2080, "listen": "127.0.0.1", "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": token } ] } },
             { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1500, "gateway": ["172.19.0.1/30"] }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } },
-            { "tag": "dns-in", "listen": "127.0.0.1", "port": 53, "protocol": "dokodemo-door", "settings": { "address": "1.1.1.1", "port": 53, "network": "udp" } },
+            { "tag": "dns-in", "listen": "127.0.0.1", "port": 53, "protocol": "dokodemo-door", "settings": { "address": "1.1.1.1", "port": 53, "network": "tcp,udp" } },
             { "tag": "ping-in", "listen": "127.0.0.1", "port": 2082, "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": token } ] } }
         ],
         "outbounds": [
@@ -1196,7 +1223,7 @@ async fn start_proxy(
         return Err("Ядро не успело подняться (порт 2080 не отвечает). Попробуйте подключиться ещё раз.".into());
     }
     if kill_switch {
-        enable_kill_switch(&out_addr, "tun0");
+        enable_kill_switch(std::slice::from_ref(&out_addr), "tun0");
     }
     if allow_server_proxy {
         let ips = ip_list_param(&resolved_ips);
@@ -1405,7 +1432,8 @@ fn main() {
     // Если экземпляр уже работает, этот процесс лишь передаст ему флаги и выйдет (single-instance),
     // поэтому тяжёлую подготовку (xray, geo-базы) не повторяем.
     if running != Some(true) {
-        tokio::runtime::Runtime::new().unwrap().block_on(async { let _ = ensure_xray().await; let _ = ensure_geo_files().await; });
+        if let Err(e) = ensure_xray() { eprintln!("karincore: {}", e); }
+        tokio::runtime::Runtime::new().unwrap().block_on(async { let _ = ensure_geo_files().await; });
     }
 
     let startup_cli = cli.clone();
@@ -1445,4 +1473,74 @@ fn main() {
             helper_client::call_quiet("stop-services", &[]);
         }
     });
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn routing_enable_header_values() {
+        assert!(!routing_enable_value("0"));
+        assert!(!routing_enable_value(" false "));
+        assert!(!routing_enable_value("OFF"));
+        assert!(routing_enable_value("1"));
+        assert!(routing_enable_value("true"));
+        assert!(routing_enable_value(""));
+    }
+
+    #[test]
+    fn happ_routing_line_found_in_body_plain_and_base64() {
+        let plain = "vless://a@b:1#x\nhappe://nope\n  happ://routing/onadd/e30=  \n";
+        assert_eq!(find_happ_routing_line(plain).as_deref(), Some("happ://routing/onadd/e30="));
+        let wrapped = general_purpose::STANDARD.encode("trojan://p@h:443#t\nhapp://routing/add/e30=\n");
+        assert_eq!(find_happ_routing_line(&wrapped).as_deref(), Some("happ://routing/add/e30="));
+        assert!(find_happ_routing_line("vless://a@b:1#x").is_none());
+    }
+
+    #[test]
+    fn happ_routing_payload_prefixes() {
+        let payload = general_purpose::STANDARD.encode(r#"{"Name":"P","GlobalProxy":"true","DirectSites":["geosite:ru"]}"#);
+        for prefix in ["happ://routing/onadd/", "happ://routing/add/", "happ://routing/"] {
+            let (routing, _, outbound, name) = convert_happ_routing(&format!("{}{}", prefix, payload));
+            assert!(routing.is_some(), "{}", prefix);
+            assert_eq!(outbound.as_deref(), Some("proxy"));
+            assert_eq!(name.as_deref(), Some("P"));
+        }
+    }
+
+    #[test]
+    fn host_port_split_handles_ipv6() {
+        assert_eq!(split_host_port("example.com:8388"), ("example.com".to_string(), 8388));
+        assert_eq!(split_host_port("[2001:db8::1]:8443"), ("2001:db8::1".to_string(), 8443));
+        assert_eq!(split_host_port("[2001:db8::1]"), ("2001:db8::1".to_string(), 443));
+        assert_eq!(split_host_port("example.com"), ("example.com".to_string(), 443));
+    }
+
+    #[test]
+    fn dns_servers_use_tags_not_outbound_tag() {
+        let params = json!({
+            "domestic": { "type": "dou", "url": "", "ip": "77.88.8.8" },
+            "remote": { "type": "doh", "url": "https://dns.google/dns-query", "ip": "8.8.8.8" }
+        });
+        let cfg = build_dns_config(&params, &json!({ "direct": [{ "type": "geosite", "value": "ru" }] }));
+        let servers = cfg["servers"].as_array().unwrap();
+        assert_eq!(servers[0]["tag"], DNS_TAG_DIRECT);
+        assert_eq!(servers[1]["tag"], DNS_TAG_PROXY);
+        assert!(servers.iter().all(|s| s.get("outboundTag").is_none()));
+        assert_eq!(servers[0]["domains"][0], "geosite:ru");
+
+        let rules = dns_routing_rules();
+        assert_eq!(rules[0]["inboundTag"][0], DNS_TAG_DIRECT);
+        assert_eq!(rules[0]["outboundTag"], "direct");
+        assert_eq!(rules[1]["inboundTag"][0], DNS_TAG_PROXY);
+        assert_eq!(rules[1]["outboundTag"], "proxy");
+    }
+
+    #[test]
+    fn xray_version_parsing() {
+        assert_eq!(parse_xray_version("Xray 25.6.8 (Xray, Penetrates Everything.)"), Some((25, 6, 8)));
+        assert_eq!(parse_xray_version("Xray v26.1.23 (go1.25)"), Some((26, 1, 23)));
+        assert_eq!(parse_xray_version("garbage"), None);
+        assert!((25, 6, 7) < XRAY_MIN_VERSION && (25, 6, 8) >= XRAY_MIN_VERSION);
+    }
 }
