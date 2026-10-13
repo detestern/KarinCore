@@ -1,16 +1,30 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "KarinCore",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "identifier": "com.nikitahya.karincore",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:all",
     "frontendDist": "../dist"
   },
   "app": {
     "withGlobalTauri": false,
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: asset: http://asset.localhost",
+        "font-src": "'self' data:",
+        "connect-src": "ipc: http://ipc.localhost https://api.github.com",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'",
+        "frame-ancestors": "'none'"
+      }
+    },
     "windows": [
       {
         "title": "KarinCore",
@@ -34,6 +48,7 @@
           "/etc/sudoers.d/zz-karincore": "system/karincore-sudoers",
           "/etc/systemd/system/karin-proxy-daemon.service": "system/karin-proxy-daemon.service",
           "/etc/karin-proxy/route.sh": "system/route.sh",
+          "/usr/libexec/karincore/karincore-helper": "target/release/karincore-helper",
           "/usr/share/pixmaps/karin-proxy.png": "icons/icon.png"
         }
       }

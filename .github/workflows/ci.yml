@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (tests, clippy)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # tauri::generate_context!() требует собранный frontendDist
+      - run: npm run build
+      - name: Tests (app and privileged helper)
+        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+      - name: Clippy (privileged helper — warnings are errors)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --bin karincore-helper -- -D warnings
+      - name: Clippy (app — informational)
+        continue-on-error: true
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --bin karin-proxy
+
+  frontend:
+    name: Frontend (typecheck, build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  shell:
+    name: Shell scripts and sudoers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck sudo
+          shellcheck src-tauri/system/route.sh scripts/build-deb.sh
+          shellcheck -s sh src-tauri/system/postinst src-tauri/system/postrm
+      - name: sudoers syntax
+        run: sudo visudo -cf src-tauri/system/karincore-sudoers
+      - name: sudoers grants only the helper
+        run: |
+          rules="$(grep -v '^[[:space:]]*\(#\|$\)' src-tauri/system/karincore-sudoers)"
+          test "$(printf '%s\n' "$rules" | wc -l)" -eq 1
+          printf '%s\n' "$rules" | grep -Fx '%karincore ALL=(root) NOPASSWD: /usr/libexec/karincore/karincore-helper ""'
+
+  deb:
+    name: .deb build and smoke test
+    runs-on: ubuntu-24.04
+    needs: [rust, frontend, shell]
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev pkg-config \
+            fakeroot openvpn wireguard-tools unzip
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run tauri build -- --bundles deb
+      - run: ./scripts/build-deb.sh
+      - name: Package contents
+        run: |
+          deb="$(ls src-tauri/target/release/bundle/deb/KarinCore_*_amd64.deb)"
+          dpkg-deb -c "$deb" | tee contents.txt
+          grep -q ' ./usr/libexec/karincore/karincore-helper$' contents.txt
+          grep -q ' ./etc/sudoers.d/zz-karincore$' contents.txt
+          # helper принадлежит root и не доступен на запись остальным
+          dpkg-deb -c "$deb" | grep ' ./usr/libexec/karincore/karincore-helper$' | grep -q '^-rwxr-xr-x root/root'
+      - name: Install, check privileges, remove
+        run: |
+          deb="$(ls src-tauri/target/release/bundle/deb/KarinCore_*_amd64.deb)"
+          sudo apt-get install -y "./$deb"
+          getent group karincore
+          sudo visudo -c
+          stat -c '%U:%G %a' /usr/libexec/karincore /usr/libexec/karincore/karincore-helper /etc/sudoers.d/zz-karincore
+          test "$(stat -c '%U %a' /usr/libexec/karincore/karincore-helper)" = "root 755"
+          test "$(stat -c '%U %a' /etc/sudoers.d/zz-karincore)" = "root 440"
+          # helper должен отвечать на version без прав root и отказывать на неизвестную операцию
+          printf 'KARIN-HELPER/1 version\n' | /usr/libexec/karincore/karincore-helper | head -n1 | grep -qx OK
+          printf 'KARIN-HELPER/1 rm-rf\n' | sudo /usr/libexec/karincore/karincore-helper | head -n1 | grep -qx ERR
+          sudo apt-get purge -y karincore || sudo apt-get purge -y karin-proxy || true

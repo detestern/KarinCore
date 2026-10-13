@@ -25,6 +25,38 @@ chown root:root /etc/systemd/system/karin-proxy-daemon.service
 chmod 0755 /etc/karin-proxy/route.sh
 chown root:root /etc/karin-proxy/route.sh
 
+# Привилегированный helper: единственное, что sudoers разрешает группе
+# karincore. Каталог и бинарник должны принадлежать root и не быть доступны
+# на запись другим — иначе правило sudo превратилось бы в дыру.
+chown root:root /usr/libexec/karincore /usr/libexec/karincore/karincore-helper
+chmod 0755 /usr/libexec/karincore /usr/libexec/karincore/karincore-helper
+
+# Группа, которой разрешён helper. Правило sudoers привязано к ней, поэтому
+# без группы приложение не сможет управлять сетью.
+if ! getent group karincore >/dev/null 2>&1; then
+    groupadd -r karincore
+fi
+
+# Каталоги для логов и состояния helper'а — строго root:root, 0755/0700.
+install -d -m 0755 -o root -g root /var/log/karin-proxy
+install -d -m 0755 -o root -g root /etc/karin-proxy
+
+# Добавляем в группу пользователя, который ставил пакет (sudo/doas/pkexec).
+# При обновлении (когда в группе уже кто-то есть) состав группы не трогаем.
+_target_user="${SUDO_USER:-${DOAS_USER:-}}"
+if [ -z "$_target_user" ] && [ -n "${PKEXEC_UID:-}" ]; then
+    _target_user="$(getent passwd "$PKEXEC_UID" | cut -d: -f1)"
+fi
+if [ -n "$_target_user" ] && [ "$_target_user" != "root" ] \
+   && [ -z "$(getent group karincore | cut -d: -f4)" ]; then
+    gpasswd -a "$_target_user" karincore >/dev/null 2>&1 || true
+    echo "KarinCore: пользователь '$_target_user' добавлен в группу 'karincore'."
+    echo "           Перезайдите в сессию, чтобы это применилось."
+elif [ -z "$(getent group karincore | cut -d: -f4)" ]; then
+    echo "KarinCore: не удалось определить пользователя. Выполните:"
+    echo "           sudo gpasswd -a <ваш-логин> karincore"
+fi
+
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
 fi

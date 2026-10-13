@@ -1,77 +1,13 @@
-# **********************************
-# SERVICE CONTROL
-# **********************************
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart karin-proxy-daemon.service
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop karin-proxy-daemon.service
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u karin-proxy-daemon.service -n 15 --no-pager
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/openvpn --config /etc/karin-proxy/openvpn.ovpn
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/pkill -f /etc/karin-proxy/openvpn.ovpn
-
-# **********************************
-# DNS (resolv.conf)
-# **********************************
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/cp /etc/resolv.conf /etc/karin-proxy/resolv.conf.bak
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/cp /etc/karin-proxy/resolv.conf.vpn /etc/resolv.conf
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/cp /etc/karin-proxy/resolv.conf.bak /etc/resolv.conf
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/karin-proxy/resolv.conf.bak
-
-# **********************************
-# OPENVPN ROUTING
-# **********************************
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/ip rule del fwmark 111 lookup 111
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/ip route add default dev tun-ovpn table 111
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/ip rule add fwmark 111 lookup 111
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/sysctl -w net.ipv4.conf.tun-ovpn.rp_filter=0
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/sysctl -w net.ipv4.conf.all.rp_filter=0
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -A POSTROUTING -o tun-ovpn -j MASQUERADE
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -D POSTROUTING -o tun-ovpn -j MASQUERADE
-
-# **********************************
-# GEO DATA
-# **********************************
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /etc/karin-proxy/geo
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/geosite.dat /etc/karin-proxy/geo/geosite.dat
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/geoip.dat /etc/karin-proxy/geo/geoip.dat
-
-# **********************************
-# WIREGUARD
-# **********************************
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/wg-quick up /etc/karin-proxy/wg0.conf
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/wg-quick down /etc/karin-proxy/wg0.conf
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/ip route add default dev wg0 table 111
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/sysctl -w net.ipv4.conf.wg0.rp_filter=0
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/wg show wg0
-
-# **********************************
-# IP RULES / ROUTE CLEANUP
-# **********************************
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/ip rule del to * lookup main
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/ip rule del to * lookup *
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/ip route del *
-
-# **********************************
-# CONFIG DEPLOY
-# **********************************
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/karin_config.json /etc/karin-proxy/config.json
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/karin_openvpn.ovpn /etc/karin-proxy/openvpn.ovpn
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/karin_wg0.conf /etc/karin-proxy/wg0.conf
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/cp /tmp/karin_resolv.conf.vpn /etc/karin-proxy/resolv.conf.vpn
-
-# **********************************
-# KILL SWITCH
-# **********************************
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -A OUTPUT -o lo -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -A OUTPUT -o tun0 -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -A OUTPUT -o tun-ovpn -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -A OUTPUT -o wg0 -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -A OUTPUT -d * -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -A OUTPUT -j DROP
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -D OUTPUT -o lo -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -D OUTPUT -o tun0 -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -D OUTPUT -o tun-ovpn -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -D OUTPUT -o wg0 -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -D OUTPUT -d * -j ACCEPT
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/iptables -D OUTPUT -j DROP
-%karincore ALL=(ALL) NOPASSWD: /usr/bin/rm -f /tmp/karin_killswitch_server_ip
+# KarinCore: единственное правило sudo.
+#
+# Участникам группы `karincore` разрешён запуск ровно одного root-владельца
+# бинарника — привилегированного helper'а — и только БЕЗ аргументов (пустая
+# строка "" в конце запрещает любые аргументы командной строки). Запрос
+# передаётся helper'у через stdin и проверяется им на стороне root: операция
+# из фиксированного списка, параметры с жёстким алфавитом, конфигурации
+# Xray/OpenVPN/WireGuard — через allowlist директив (см. src-tauri/helper/).
+#
+# Раньше здесь были десятки «сырых» правил (cp, openvpn, wg-quick, ip,
+# iptables, …), которые давали участнику группы повышение привилегий до root.
+# Не добавляйте сюда правил для других программ.
+%karincore ALL=(root) NOPASSWD: /usr/libexec/karincore/karincore-helper ""

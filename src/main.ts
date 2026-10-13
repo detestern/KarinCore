@@ -160,7 +160,7 @@ function applyColumnOrder() {
             if (index < zonePriority.length - 1) {
                 const arrow = document.createElement('div');
                 arrow.className = 'routing-arrow';
-                arrow.innerHTML = '➔';
+                arrow.textContent = '➔';
                 arrow.style.cssText = 'display: flex; align-items: center; justify-content: center; color: var(--accent); font-weight: bold; font-size: 20px; opacity: 0.5; padding: 0 5px; user-select: none; pointer-events: none;';
                 container.appendChild(arrow);
             }
@@ -886,6 +886,18 @@ function updateDefaultOutboundUI() {
     } 
 }
 
+// Всё, что приходит извне (имена профилей и групп, ссылки, подписки, импортированные
+// правила маршрутизации), вставляется в разметку только через esc() — иначе имя профиля
+// вида `<img src=x onerror=...>` исполнялось бы в окне приложения, которое имеет доступ к IPC.
+function esc(v: unknown): string {
+    return String(v ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function formatProxyInfo(linkUrl: string): string {
     try {
         if (linkUrl.startsWith('vmess://')) { if (!linkUrl.includes('?')) return 'VMESS | Base64'; }
@@ -975,25 +987,25 @@ function renderLinkItem(item: ProxyLink) {
 
     const formattedProtocol = formatProxyInfo(item.url);
     const pinIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>`;
-    const checkboxHtml = isEditMode ? `<input type="checkbox" class="edit-checkbox" data-id="${item.id}" ${selectedLinks.has(item.id) ? 'checked' : ''}>` : '';
+    const checkboxHtml = isEditMode ? `<input type="checkbox" class="edit-checkbox" data-id="${esc(item.id)}" ${selectedLinks.has(item.id) ? 'checked' : ''}>` : '';
     const actionsHtml = isEditMode ? '' : `
-        <button class="btn-menu-dots" data-index="${item.id}">⋮</button>
-        <div class="dropdown-menu" id="menu-${item.id}" style="display:none;">
-          <button class="btn-share" data-url="${item.url}">${t('btn_share')}</button>
-          <button class="btn-pin" data-id="${item.id}">${item.pinned ? t('btn_unpin') : t('btn_pin')}</button>
-          <button class="btn-delete-link danger" style="background: transparent; color: var(--danger);" data-id="${item.id}">${t('btn_delete')}</button>
+        <button class="btn-menu-dots" data-index="${esc(item.id)}">⋮</button>
+        <div class="dropdown-menu" id="menu-${esc(item.id)}" style="display:none;">
+          <button class="btn-share" data-url="${esc(item.url)}">${t('btn_share')}</button>
+          <button class="btn-pin" data-id="${esc(item.id)}">${item.pinned ? t('btn_unpin') : t('btn_pin')}</button>
+          <button class="btn-delete-link danger" style="background: transparent; color: var(--danger);" data-id="${esc(item.id)}">${t('btn_delete')}</button>
         </div>
     `;
 
     return `
-      <div class="link-item ${isSelected ? 'link-item-selected' : ''}" data-select-url="${item.url}" style="${isEditMode ? '' : 'cursor: pointer;'}">
+      <div class="link-item ${isSelected ? 'link-item-selected' : ''}" data-select-url="${esc(item.url)}" style="${isEditMode ? '' : 'cursor: pointer;'}">
         ${checkboxHtml}
         <div class="link-info">
           <div class="link-name" style="font-size: 14.5px; display: flex; align-items: center; ${isCurrentActive ? 'color: var(--success); font-weight: bold;' : 'font-weight: 500;'}">
-            ${item.pinned && !item.groupId ? pinIcon : ''}${displayName}
+            ${item.pinned && !item.groupId ? pinIcon : ''}${esc(displayName)}
           </div>
           <div class="link-url" style="font-size: 12px; color: var(--text-dim); opacity: 0.95; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; letter-spacing: 0.3px;">
-            ${formattedProtocol}
+            ${esc(formattedProtocol)}
           </div>
         </div>
         <div class="link-actions">${actionsHtml}</div>
@@ -1025,10 +1037,10 @@ function renderLinks() {
         const pinIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>`;
         
         let html = `
-          <div class="group-header" data-id="${g.id}">
+          <div class="group-header" data-id="${esc(g.id)}">
               <div style="display: flex; align-items: center; gap: 8px;">
-                  ${isEditMode ? `<input type="checkbox" class="edit-checkbox" data-group-id="${g.id}" ${selectedGroups.has(g.id) ? 'checked' : ''} onclick="event.stopPropagation()">` : ''}
-                  ${g.pinned ? pinIcon : ''} <span>${g.name}</span> <span style="font-size:12px; color:var(--text-dim);">(${gLinks.length})</span>
+                  ${isEditMode ? `<input type="checkbox" class="edit-checkbox" data-group-id="${esc(g.id)}" ${selectedGroups.has(g.id) ? 'checked' : ''}>` : ''}
+                  ${g.pinned ? pinIcon : ''} <span>${esc(g.name)}</span> <span style="font-size:12px; color:var(--text-dim);">(${gLinks.length})</span>
               </div>
               <div style="display:flex; gap:10px;">
                   <span style="color:var(--text-dim); transition: transform 0.2s; transform: ${g.isOpen ? 'rotate(180deg)' : 'rotate(0deg)'};">▼</span>
@@ -1050,6 +1062,8 @@ function renderLinks() {
     linksContainer.innerHTML = html;
     
     document.querySelectorAll('.edit-checkbox[data-group-id]').forEach(cb => {
+        // раньше было inline-атрибутом onclick="event.stopPropagation()" — CSP такое запрещает
+        cb.addEventListener('click', (e) => e.stopPropagation());
         cb.addEventListener('change', (e) => {
             const gId = (e.target as HTMLInputElement).dataset.groupId!;
             const isChecked = (e.target as HTMLInputElement).checked;
@@ -1068,12 +1082,24 @@ function renderRouting() {
     Object.keys(zones).forEach(key => { 
         const zone = zones[key as keyof typeof zones]; 
         if(zone) { 
-            zone.innerHTML = `<button class="btn-add" data-zone="${key}">+</button>`; 
+            zone.textContent = '';
+            const addBtn = document.createElement('button');
+            addBtn.className = 'btn-add';
+            addBtn.dataset.zone = key;
+            addBtn.textContent = '+';
+            zone.appendChild(addBtn);
             if (routingState[key as ZoneKey]) {
                 routingState[key as ZoneKey].forEach((rule: any) => { 
                     const el = document.createElement('div'); 
                     el.className = 'tag-item'; 
-                    el.innerHTML = `${rule.value} <span class="btn-delete-tag" data-tag="${rule.value}" data-zone="${key}" style="pointer-events: auto;">×</span>`; 
+                    el.appendChild(document.createTextNode(`${rule.value} `));
+                    const del = document.createElement('span');
+                    del.className = 'btn-delete-tag';
+                    del.dataset.tag = String(rule.value);
+                    del.dataset.zone = key;
+                    del.style.pointerEvents = 'auto';
+                    del.textContent = '×';
+                    el.appendChild(del);
                     zone.appendChild(el); 
                 }); 
             }
@@ -1086,22 +1112,24 @@ function renderRoutingProfiles() {
     const list = document.getElementById('routing-profiles-list');
     if (!list) return;
     list.innerHTML = '';
+    let profilesHtml = '';
     routeProfiles.forEach(p => {
-        list.innerHTML += `
+        profilesHtml += `
             <div class="profile-item">
-                <span>${p.name}</span>
+                <span>${esc(p.name)}</span>
                 <div class="link-actions">
-                    <button class="secondary btn-load-profile" data-id="${p.id}" style="padding: 6px 12px; font-size: 13px;">${t('btn_select')}</button>
-                    <button class="btn-menu-dots btn-route-menu-dots" data-index="${p.id}">⋮</button>
-                    <div class="dropdown-menu" id="route-menu-${p.id}" style="display:none;">
-                        <button class="btn-edit-profile" data-id="${p.id}">${t('btn_rename')}</button>
-                        <button class="btn-export-profile" data-id="${p.id}">${t('btn_share')}</button>
-                        <button class="btn-del-profile danger" style="background: transparent; color: var(--danger);" data-id="${p.id}">${t('btn_delete')}</button>
+                    <button class="secondary btn-load-profile" data-id="${esc(p.id)}" style="padding: 6px 12px; font-size: 13px;">${t('btn_select')}</button>
+                    <button class="btn-menu-dots btn-route-menu-dots" data-index="${esc(p.id)}">⋮</button>
+                    <div class="dropdown-menu" id="route-menu-${esc(p.id)}" style="display:none;">
+                        <button class="btn-edit-profile" data-id="${esc(p.id)}">${t('btn_rename')}</button>
+                        <button class="btn-export-profile" data-id="${esc(p.id)}">${t('btn_share')}</button>
+                        <button class="btn-del-profile danger" style="background: transparent; color: var(--danger);" data-id="${esc(p.id)}">${t('btn_delete')}</button>
                     </div>
                 </div>
             </div>
         `;
     });
+    list.innerHTML = profilesHtml;
 }
 
 function renderAboutPage() {
@@ -1244,7 +1272,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.4.0";
+        const CURRENT_VERSION = "1.5.0";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -1278,6 +1306,12 @@ async function checkApplicationUpdates() {
 // INITIALIZATION & EVENT LISTENERS
 // **********************************
 function init() {
+    // Кнопки закрытия диалогов (раньше — inline onclick, запрещённый CSP).
+    document.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            (document.getElementById(btn.dataset.closeModal || '') as HTMLDialogElement | null)?.close();
+        });
+    });
     document.getElementById('titlebar-minimize')?.addEventListener('click', () => invoke('minimize_window'));
     document.getElementById('titlebar-maximize')?.addEventListener('click', () => invoke('maximize_window'));
     document.getElementById('titlebar-close')?.addEventListener('click', () => invoke('close_window'));

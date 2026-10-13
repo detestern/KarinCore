@@ -1,0 +1,65 @@
+//! Токен локального прокси (пароль для inbound'ов на 127.0.0.1).
+//!
+//! Раньше токен строился из текущего времени в наносекундах — это предсказуемо.
+//! Теперь 256 бит берутся из CSPRNG ядра (`/dev/urandom`).
+
+use std::io::Read;
+
+fn to_hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{:02x}", b));
+    }
+    s
+}
+
+pub fn generate_from<R: Read>(src: &mut R) -> Result<String, String> {
+    let mut buf = [0u8; 32];
+    src.read_exact(&mut buf)
+        .map_err(|e| format!("Не удалось получить случайные данные для токена: {}", e))?;
+    Ok(format!("karin_{}", to_hex(&buf)))
+}
+
+pub fn generate() -> Result<String, String> {
+    let mut f = std::fs::File::open("/dev/urandom").map_err(|e| format!("Не удалось открыть /dev/urandom: {}", e))?;
+    generate_from(&mut f)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_has_256_bits_of_hex() {
+        let t = generate().unwrap();
+        let hex = t.strip_prefix("karin_").unwrap();
+        assert_eq!(hex.len(), 64);
+        assert!(hex.bytes().all(|b| b.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn tokens_differ() {
+        assert_ne!(generate().unwrap(), generate().unwrap());
+    }
+
+    #[test]
+    fn token_is_not_derived_from_time() {
+        // два токена подряд не должны иметь общего длинного префикса (у времени он был бы)
+        let a = generate().unwrap();
+        let b = generate().unwrap();
+        let common = a.bytes().zip(b.bytes()).take_while(|(x, y)| x == y).count();
+        assert!(common < "karin_".len() + 8);
+    }
+
+    #[test]
+    fn short_source_is_an_error() {
+        let mut short: &[u8] = &[1, 2, 3];
+        assert!(generate_from(&mut short).is_err());
+    }
+
+    #[test]
+    fn known_bytes_encode_as_hex() {
+        let mut src: &[u8] = &[0xab; 32];
+        assert_eq!(generate_from(&mut src).unwrap(), format!("karin_{}", "ab".repeat(32)));
+    }
+}

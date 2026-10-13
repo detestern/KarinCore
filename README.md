@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.4.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.5.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -36,6 +36,16 @@ This release is a full visual and functional overhaul, not just a patch.
 * **Profiles moved out of the way.** Your saved configs now live in a slide-out side panel instead of eating vertical space on the main screen. Pick one, it lights up with a soft accent glow, and you're back on the connect screen — the big glowing core is the only thing competing for your attention.
 * **A light theme worth using.** The old light mode was a near-inversion of the dark one. It's been rebuilt from scratch with warm, low-contrast neutrals — readable without feeling like a different app.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
+
+<br/>
+
+### v1.5.0 — Privilege Boundary
+
+* **Security:** the long list of `sudo` rules is gone. Members of the `karincore` group can now run exactly one root-owned program, `/usr/libexec/karincore/karincore-helper`, and only with no arguments. The app sends a request over stdin and the helper validates it as root: operations come from a fixed list, parameters use a strict character set, and Xray / OpenVPN / WireGuard configs are re-built from an allowlist of options. Scripts, hooks, plugins, arbitrary file paths and log paths are rejected. Previously the raw `cp`, `openvpn`, `wg-quick`, `ip` and `iptables` rules could be turned into root by any group member.
+* **Security:** HTML injection through profile, group and rule names (subscriptions, imports) is fixed, and a strict Content-Security-Policy is now set.
+* **Security:** the local proxy password is generated from the system CSPRNG instead of the clock.
+* **Changed:** logs are written to `/var/log/karin-proxy` and cleared via the helper; the package creates the `karincore` group and adds the installing user.
+* **Added:** CI (tests, clippy, build, shellcheck, sudoers check, `.deb` smoke test).
 
 <br/>
 
@@ -264,10 +274,10 @@ yay -S karincore-git
 
 ### Ubuntu / Debian / Linux Mint
 
-Grab the latest `.deb` from [Releases](../../releases). It registers `sudoers` and `systemd` rules on install. Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately so that the binary is available at `/usr/local/bin/xray` (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)).
+Grab the latest `.deb` from [Releases](../../releases). It installs the privileged helper, a one-line `sudoers` rule and the `systemd` unit, creates the `karincore` group and adds the installing user (log out and back in afterwards). Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately so that the binary is available at `/usr/local/bin/xray` (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)).
 
 ```bash
-sudo dpkg -i KarinCore_1.4.0_amd64.deb
+sudo dpkg -i KarinCore_1.5.0_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 
@@ -283,7 +293,7 @@ Don't run `systemctl enable` on it. Just launch KarinCore from your application 
 
 Privileges are split between a single unprivileged app and a small set of root-side helpers:
 
-**Frontend (`karincore`)** — a Tauri GUI running entirely in user-space. It never runs as root itself. Privileged actions go through a fixed set of pre-approved `sudo` commands, allowed only for members of the `karincore` group.
+**Frontend (`karincore`)** — a Tauri GUI running entirely in user-space. It never runs as root itself. Privileged actions go through a single root-owned helper (`/usr/libexec/karincore/karincore-helper`), the only program the `karincore` group may run via `sudo`. It reads a request on stdin, validates it as root and performs the operation.
 
 **Root side** — the `karin-proxy-daemon` systemd service runs Xray (or OpenVPN/WireGuard) with the generated config, and `route.sh` sets up the TUN interface, policy routing and DNS (`resolvectl`), then restores everything on disconnect.
 

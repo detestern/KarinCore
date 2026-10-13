@@ -14,4 +14,10 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
     fi
 fi
 
+if [ "$1" = "purge" ]; then
+    # Группа создавалась пакетом; при полном удалении убираем её и логи.
+    getent group karincore >/dev/null 2>&1 && groupdel karincore >/dev/null 2>&1 || true
+    rm -rf /var/log/karin-proxy
+fi
+
 exit 0

@@ -82,7 +82,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 1.4.0</div>
+      <div class="app-version-text">v 1.5.0</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -398,7 +398,7 @@
       <input type="text" id="manual-input" data-i18n-placeholder="modal_manual" placeholder="IP или домен...">
       <button id="btn-manual-add" data-i18n="btn_add">Добавить</button>
     </div>
-    <button class="secondary" style="margin-top: 20px; width: 100%;" onclick="document.getElementById('search-modal').close()" data-i18n="btn_close">Закрыть</button>
+    <button class="secondary" style="margin-top: 20px; width: 100%;" data-close-modal="search-modal" data-i18n="btn_close">Закрыть</button>
   </dialog>
 
   <dialog id="prompt-modal" class="panel">
@@ -415,7 +415,7 @@
     <div style="display: flex; flex-direction: column; gap: 10px;">
       <button id="btn-route-save" class="secondary" data-i18n="route_save_new">Сохранить как новый профиль</button>
       <button id="btn-route-import" class="secondary" data-i18n="route_import">Импортировать из файла</button>
-      <button class="secondary" onclick="document.getElementById('route-action-modal').close()" data-i18n="btn_cancel">Отмена</button>
+      <button class="secondary" data-close-modal="route-action-modal" data-i18n="btn_cancel">Отмена</button>
     </div>
     <input type="file" id="route-file-input" accept=".json" style="display: none;">
   </dialog>

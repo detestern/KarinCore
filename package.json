@@ -1,11 +1,13 @@
 {
   "name": "karin-proxy",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:helper": "cargo build --release --manifest-path src-tauri/Cargo.toml --bin karincore-helper",
+    "build:all": "npm run build && npm run build:helper",
     "preview": "vite preview",
     "tauri": "tauri"
   },

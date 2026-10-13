@@ -4,16 +4,16 @@
 // IMPORTS
 // **********************************
 mod bridge;
+mod helper_client;
+mod token;
 
 use tauri::{State, RunEvent, Emitter, Manager};
 use url::Url;
 use std::path::Path;
-use tokio::fs;
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 // **********************************
 // STATE & AUTHENTICATION
@@ -22,31 +22,15 @@ struct ProxyState {
     auth_token: Mutex<Option<String>>,
 }
 
-fn generate_token() -> String {
-    let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    format!("karin_token_{:x}", time)
-}
-
 // **********************************
 // CORE HELPER FUNCTIONS
 // **********************************
-fn get_log_paths() -> (String, String) {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let log_dir = format!("{}/.local/share/karin-proxy", home);
-    
-    let _ = std::fs::create_dir_all(&log_dir);
-    
-    let err_log = format!("{}/error.log", log_dir);
-    let acc_log = format!("{}/access.log", log_dir);
-    
-    if !std::path::Path::new(&err_log).exists() {
-        let _ = std::fs::File::create(&err_log);
-    }
-    if !std::path::Path::new(&acc_log).exists() {
-        let _ = std::fs::File::create(&acc_log);
-    }
+// Логи пишет root-процесс (Xray, OpenVPN, helper) в каталог, принадлежащий root, —
+// из GUI их можно только читать. Очистка идёт через helper.
+const LOG_DIR: &str = "/var/log/karin-proxy";
 
-    (err_log, acc_log)
+fn get_log_paths() -> (String, String) {
+    (format!("{}/error.log", LOG_DIR), format!("{}/access.log", LOG_DIR))
 }
 
 fn build_xray_rules(state: Value, priority: Vec<String>) -> Value {
@@ -551,29 +535,21 @@ async fn build_proxy_outbound(link: &str) -> Result<(Value, String, Vec<String>)
 }
 
 async fn ensure_geo_files() -> Result<(), String> {
-    if !Path::new("/etc/karin-proxy/geo").exists() {
-        std::process::Command::new("sudo").args(["/usr/bin/mkdir", "-p", "/etc/karin-proxy/geo"]).output().ok();
-    }
-
     let files = vec![
-        ("geosite.dat", "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"),
-        ("geoip.dat", "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"),
+        ("geosite", "geosite.dat", "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"),
+        ("geoip", "geoip.dat", "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"),
     ];
-    
-    for (filename, url) in files {
+
+    for (name, filename, url) in files {
         let final_path = format!("/etc/karin-proxy/geo/{}", filename);
         if !Path::new(&final_path).exists() {
             let response = reqwest::get(url).await.map_err(|e| e.to_string())?;
             let content = response.bytes().await.map_err(|e| e.to_string())?;
-            
-            let tmp_path = format!("/tmp/{}", filename);
-            fs::write(&tmp_path, &content).await.map_err(|e| e.to_string())?;
-            
-            std::process::Command::new("sudo").args(["/usr/bin/cp", &tmp_path, &final_path]).output().ok();
-            std::process::Command::new("rm").args(["-f", &tmp_path]).output().ok();
+            // Файл ставит helper: он сам создаёт каталог и пишет файл атомарно от root.
+            helper_client::call("geo-install", &[("name", name)], Some(&content[..]))?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -654,22 +630,9 @@ fn restart_core_daemon() -> Result<(), String> {
         return Err("Системный сервис karin-proxy-daemon.service не установлен. Похоже, пакет установлен некорректно — переустановите KarinCore.".into());
     }
 
-    let output = std::process::Command::new("sudo")
-        .args(["/usr/bin/systemctl", "restart", "karin-proxy-daemon.service"])
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let log_text = std::process::Command::new("sudo")
-        .args(["/usr/bin/journalctl", "-u", "karin-proxy-daemon.service", "-n", "15", "--no-pager"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_else(|_| "не удалось прочитать журнал".to_string());
-
-    Err(format!("Ядро (karin-proxy-daemon.service) не запустилось. Лог:\n{}", log_text))
+    helper_client::call("core-restart", &[], None)
+        .map(|_| ())
+        .map_err(|log| format!("Ядро (karin-proxy-daemon.service) не запустилось. Лог:\n{}", log))
 }
 
 // Ждём, пока Xray реально поднимет SOCKS/HTTP inbound на 2080, вместо
@@ -686,15 +649,8 @@ async fn wait_for_core_ready() -> bool {
 }
 
 fn teardown_connections() {
-    disable_kill_switch();
-    std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/wg-quick", "down", "/etc/karin-proxy/wg0.conf"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "wg0", "-j", "MASQUERADE"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/ip", "rule", "del", "fwmark", "111", "lookup", "111"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "tun-ovpn", "-j", "MASQUERADE"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.bak", "/etc/resolv.conf"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/rm", "-f", "/etc/karin-proxy/resolv.conf.bak"]).output().ok();
+    // Всё привилегированное (killswitch, ядро, OpenVPN, WireGuard, маршруты, DNS) снимает helper.
+    helper_client::call_quiet("teardown", &[]);
 }
 
 // Killswitch: разрешаем OUTPUT-трафик только через loopback, туннельный
@@ -703,101 +659,22 @@ fn teardown_connections() {
 // цикла route.sh up/down, поэтому переживают падение/автоперезапуск демона
 // (systemd Restart=on-failure) — снимаются только явным отключением или
 // новой попыткой подключения через teardown_connections().
-const KILLSWITCH_IP_FILE: &str = "/tmp/karin_killswitch_server_ip";
-
 fn enable_kill_switch(server_ip: &str, tun_iface: &str) {
-    let _ = std::fs::write(KILLSWITCH_IP_FILE, server_ip);
-    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-o", tun_iface, "-j", "ACCEPT"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-d", server_ip, "-j", "ACCEPT"]).output().ok();
-    // Трафик, который сам Xray отправляет в outbound "direct" (сокеты с меткой 255), —
-    // это зона Direct из пользовательских правил, её нельзя резать killswitch'ем.
-    // Форма "-d <...> -j ACCEPT" покрыта существующим sudoers-правилом с wildcard.
-    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-d", "0.0.0.0/0", "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-A", "OUTPUT", "-j", "DROP"]).output().ok();
+    let _ = helper_client::call("ks-on", &[("server_ip", server_ip), ("iface", tun_iface)], None);
 }
 
-fn disable_kill_switch() {
-    // -D удаляет только первое совпадение за раз — на случай, если правила
-    // накопились за несколько сессий (например, после аварийного завершения
-    // приложения), чистим по несколько раз подряд, игнорируя ошибки "не найдено".
-    for _ in 0..3 {
-        std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-j", "DROP"]).output().ok();
-        std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]).output().ok();
-        for iface in ["tun0", "tun-ovpn", "wg0"] {
-            std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-o", iface, "-j", "ACCEPT"]).output().ok();
-        }
-        std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-d", "0.0.0.0/0", "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"]).output().ok();
-    }
-    if let Ok(saved_ip) = std::fs::read_to_string(KILLSWITCH_IP_FILE) {
-        let ip = saved_ip.trim();
-        if !ip.is_empty() {
-            for _ in 0..3 {
-                std::process::Command::new("sudo").args(["/usr/bin/iptables", "-D", "OUTPUT", "-d", ip, "-j", "ACCEPT"]).output().ok();
-            }
-        }
-    }
-    std::process::Command::new("sudo").args(["/usr/bin/rm", "-f", KILLSWITCH_IP_FILE]).output().ok();
-}
-
-// **********************************
-// OPENVPN CONFIG SANITIZATION
-// **********************************
-const OVPN_EXEC_DIRECTIVES: &[&str] = &[
-    "up",
-    "down",
-    "up-restart",
-    "up-delay",
-    "down-pre",
-    "plugin",
-    "route-up",
-    "route-pre-down",
-    "ipchange",
-    "client-connect",
-    "client-disconnect",
-    "client-crresponse",
-    "tls-verify",
-    "tls-export-cert",
-    "learn-address",
-    "auth-user-pass-verify",
-    "setenv",
-    "script-security",
-];
-
-fn sanitize_ovpn_config(raw: &str) -> String {
-    raw.lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
-                return true;
-            }
-            let first_word = trimmed.split_whitespace().next().unwrap_or("");
-            !OVPN_EXEC_DIRECTIVES
-                .iter()
-                .any(|d| d.eq_ignore_ascii_case(first_word))
-        })
+// IP-адреса, пригодные для параметра helper'а (остальное — например, имя хоста, оставшееся
+// после неудачного резолва — отбрасываем).
+fn ip_list_param(ips: &[String]) -> String {
+    ips.iter()
+        .filter(|s| s.parse::<std::net::IpAddr>().is_ok())
+        .cloned()
         .collect::<Vec<_>>()
-        .join("\n")
+        .join(",")
 }
 
-// **********************************
-// WIREGUARD CONFIG SANITIZATION
-// **********************************
-const WG_EXEC_DIRECTIVES: &[&str] = &["postup", "preup", "postdown", "predown"];
-
-fn sanitize_wg_config(raw: &str) -> String {
-    raw.lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                return true;
-            }
-            let key = trimmed.split('=').next().unwrap_or("").trim().to_lowercase();
-            !WG_EXEC_DIRECTIVES.iter().any(|d| *d == key)
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
+// Фильтрация конфигураций OpenVPN и WireGuard (allowlist директив) выполняется в helper'е,
+// на стороне root: граница привилегий проходит там, а не в GUI.
 
 // **********************************
 // TAURI COMMANDS: PROXY & NETWORK MANAGEMENT
@@ -997,7 +874,7 @@ async fn start_openvpn_proxy(
     if b64_payload.is_empty() { return Err("Ошибка: В полученной ссылке отсутствует payload конфигурации".into()); }
 
     let decoded_bytes = general_purpose::STANDARD.decode(&b64_payload).map_err(|e| format!("Ошибка декодирования Base64: {}", e))?;
-    let mut ovpn_config = String::from_utf8(decoded_bytes).map_err(|e| format!("Ошибка UTF-8 при сборке конфигурации: {}", e))?;
+    let ovpn_config = String::from_utf8(decoded_bytes).map_err(|e| format!("Ошибка UTF-8 при сборке конфигурации: {}", e))?;
 
     let mut resolved_ips_for_route_del: Vec<String> = vec![];
     for line in ovpn_config.lines() {
@@ -1017,80 +894,25 @@ async fn start_openvpn_proxy(
         }
     }
 
-    ovpn_config = sanitize_ovpn_config(&ovpn_config);
-
-    ovpn_config.push_str("\npull-filter ignore \"redirect-gateway\"\npull-filter ignore \"dhcp-option DNS\"\npull-filter ignore \"tun-mtu\"\ntun-mtu 1360\nmssfix 1320\ndev tun-ovpn\nmark 255\nscript-security 0\n");
-
-    let tmp_ovpn = "/tmp/karin_openvpn.ovpn";
-    std::fs::write(tmp_ovpn, ovpn_config).map_err(|e| format!("Ошибка записи временного файла: {}", e))?;
-    let copy_ovpn = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_ovpn, "/etc/karin-proxy/openvpn.ovpn"]).output().map_err(|e| e.to_string())?;
-    if !copy_ovpn.status.success() { return Err("Нет прав на запись конфигурации OpenVPN".into()); }
-    std::process::Command::new("rm").args(["-f", tmp_ovpn]).output().ok();
-
-    let config_path = "/etc/karin-proxy/openvpn.ovpn";
-
-    let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
-    let tmp_dns = "/tmp/karin_resolv.conf.vpn";
-    let _ = std::fs::write(tmp_dns, vpn_dns_content);
-    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
-    let _ = std::process::Command::new("rm").args(["-f", tmp_dns]).output();
-
-    if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() {
-        let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output();
-    }
-    
-    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
-
-    std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output().ok();
-
-    let mut child = tokio::process::Command::new("sudo").args(["/usr/bin/openvpn", "--config", config_path]).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| format!("Не удалось запустить процесс OpenVPN: {}", e))?;
-
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-    let (err_log, _) = get_log_paths();
-    let err_log_stdout = err_log.clone();
-    let err_log_stderr = err_log.clone();
-
-    tokio::spawn(async move {
-        use tokio::io::AsyncBufReadExt;
-        let mut reader = tokio::io::BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            if let Ok(mut file) = tokio::fs::OpenOptions::new().create(true).append(true).open(&err_log_stdout).await {
-                use tokio::io::AsyncWriteExt;
-                let _ = file.write_all(format!("{}\n", line).as_bytes()).await;
-            }
-        }
-    });
-
-    tokio::spawn(async move {
-        use tokio::io::AsyncBufReadExt;
-        let mut reader = tokio::io::BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            if let Ok(mut file) = tokio::fs::OpenOptions::new().create(true).append(true).open(&err_log_stderr).await {
-                use tokio::io::AsyncWriteExt;
-                let _ = file.write_all(format!("{}\n", line).as_bytes()).await;
-            }
-        }
-    });
+    // Фильтрацию директив (allowlist), запись конфигурации и запуск OpenVPN выполняет helper
+    // от root. Служебные директивы (dev, mark, tun-mtu, script-security 0, pull-filter) он
+    // добавляет сам.
+    let _ = helper_client::call("dns-vpn", &[], None);
+    helper_client::call_quiet("core-stop", &[]);
+    helper_client::call("ovpn-start", &[], Some(ovpn_config.as_bytes()))
+        .map_err(|e| format!("Не удалось запустить OpenVPN: {}", e))?;
 
     let mut attempts = 0;
     while attempts < 20 {
         if std::path::Path::new("/sys/class/net/tun-ovpn").exists() {
-            std::process::Command::new("sudo").args(["/usr/bin/ip", "rule", "del", "fwmark", "111", "lookup", "111"]).output().ok();
-            std::process::Command::new("sudo").args(["/usr/bin/ip", "route", "add", "default", "dev", "tun-ovpn", "table", "111"]).output().ok();
-            std::process::Command::new("sudo").args(["/usr/bin/ip", "rule", "add", "fwmark", "111", "lookup", "111"]).output().ok();
-            std::process::Command::new("sudo").args(["/usr/bin/sysctl", "-w", "net.ipv4.conf.tun-ovpn.rp_filter=0"]).output().ok();
-            std::process::Command::new("sudo").args(["/usr/bin/sysctl", "-w", "net.ipv4.conf.all.rp_filter=0"]).output().ok();
-            std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "tun-ovpn", "-j", "MASQUERADE"]).output().ok();
-            std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "tun-ovpn", "-j", "MASQUERADE"]).output().ok();
+            let _ = helper_client::call("route-fwmark", &[("iface", "tun-ovpn")], None);
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         attempts += 1;
     }
-    
+
     if attempts >= 20 { teardown_connections(); return Err("Таймаут: сервер OpenVPN не отвечает".into()); }
 
     let dynamic_rules = build_xray_rules(routing_state, zone_priority);
@@ -1128,19 +950,10 @@ async fn start_openvpn_proxy(
         ]
     });
 
-    let tmp_conf = "/tmp/karin_config.json";
-    std::fs::write(tmp_conf, config.to_string()).map_err(|e| e.to_string())?;
-
-    let copy_status = std::process::Command::new("sudo")
-        .args(["/usr/bin/cp", tmp_conf, "/etc/karin-proxy/config.json"])
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if !copy_status.status.success() {
-        return Err("Нет прав на обновление конфигурации Xray".into());
-    }
-
-    std::process::Command::new("rm").args(["-f", tmp_conf]).output().ok();
+    // helper проверяет конфигурацию (allowlist, фиксированные пути логов, listen только на loopback)
+    // и сам записывает её в /etc/karin-proxy/config.json.
+    helper_client::call("core-config", &[], Some(config.to_string().as_bytes()))
+        .map_err(|e| format!("Не удалось применить конфигурацию Xray: {}", e))?;
 
     if let Err(e) = restart_core_daemon() { teardown_connections(); return Err(e); }
 
@@ -1157,14 +970,11 @@ async fn start_openvpn_proxy(
     }
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
+        let ips = ip_list_param(&resolved_ips_for_route_del);
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-            for ip in resolved_ips_for_route_del {
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "rule", "del", "to", &ip, "lookup", "main"]).output();
-                let ip_32 = format!("{}/32", ip);
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "rule", "del", "to", &ip_32, "lookup", "main"]).output();
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "route", "del", &ip]).output();
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "route", "del", &ip_32]).output();
+            if !ips.is_empty() {
+                let _ = helper_client::call("bypass", &[("ips", ips.as_str()), ("routes", "1")], None);
             }
         });
     }
@@ -1191,7 +1001,7 @@ async fn start_wireguard_proxy(
 
     let decoded_bytes = general_purpose::STANDARD.decode(&b64_payload).map_err(|e| format!("Ошибка Base64: {}", e))?;
     let raw_conf = String::from_utf8(decoded_bytes).map_err(|e| format!("Ошибка UTF-8: {}", e))?;
-    let original_conf = sanitize_wg_config(&raw_conf);
+    let original_conf = raw_conf;
 
     let mut resolved_ips_for_route_del: Vec<String> = vec![];
     let mut modified_conf = String::new();
@@ -1220,66 +1030,23 @@ async fn start_wireguard_proxy(
         }
     }
 
-    let tmp_wg = "/tmp/karin_wg0.conf";
-    std::fs::write(tmp_wg, modified_conf).map_err(|e| format!("Ошибка записи временного файла: {}", e))?;
-    let copy_wg = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_wg, "/etc/karin-proxy/wg0.conf"]).output().map_err(|e| e.to_string())?;
-    if !copy_wg.status.success() { return Err("Нет прав на запись конфигурации WireGuard".into()); }
-    std::process::Command::new("rm").args(["-f", tmp_wg]).output().ok();
-
-    let config_path = "/etc/karin-proxy/wg0.conf";
-
-    let vpn_dns_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
-    let tmp_dns = "/tmp/karin_resolv.conf.vpn";
-    let _ = std::fs::write(tmp_dns, vpn_dns_content);
-    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", tmp_dns, "/etc/karin-proxy/resolv.conf.vpn"]).output();
-    let _ = std::process::Command::new("rm").args(["-f", tmp_dns]).output();
-    if !std::path::Path::new("/etc/karin-proxy/resolv.conf.bak").exists() { let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/resolv.conf", "/etc/karin-proxy/resolv.conf.bak"]).output(); }
-    let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.vpn", "/etc/resolv.conf"]).output();
-
-    std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/wg-quick", "down", config_path]).output().ok();
-
-    let output = std::process::Command::new("sudo").args(["/usr/bin/wg-quick", "up", config_path]).output().map_err(|e| format!("Не удалось запустить wg-quick: {}", e))?;
-
-    let (err_log, _) = get_log_paths();
-
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&err_log) {
-        use std::io::Write;
-        let _ = writeln!(file, "[WireGuard] Инициализация интерфейса wg0...");
-        if !output.stdout.is_empty() { let _ = writeln!(file, "{}", String::from_utf8_lossy(&output.stdout)); }
-        if !output.stderr.is_empty() { let _ = writeln!(file, "{}", String::from_utf8_lossy(&output.stderr)); }
+    // Фильтрацию (allowlist ключей, без PostUp/PreUp/…), запись и `wg-quick up` выполняет helper от root.
+    let _ = helper_client::call("dns-vpn", &[], None);
+    helper_client::call_quiet("core-stop", &[]);
+    if let Err(e) = helper_client::call("wg-up", &[], Some(modified_conf.as_bytes())) {
+        teardown_connections();
+        return Err(e);
     }
 
-    if !output.status.success() { teardown_connections(); return Err(format!("Ошибка WireGuard:\n{}", String::from_utf8_lossy(&output.stderr))); }
+    let _ = helper_client::call("route-fwmark", &[("iface", "wg0")], None);
 
-    std::process::Command::new("sudo").args(["/usr/bin/ip", "rule", "del", "fwmark", "111", "lookup", "111"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/ip", "route", "add", "default", "dev", "wg0", "table", "111"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/ip", "rule", "add", "fwmark", "111", "lookup", "111"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/sysctl", "-w", "net.ipv4.conf.wg0.rp_filter=0"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/sysctl", "-w", "net.ipv4.conf.all.rp_filter=0"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "wg0", "-j", "MASQUERADE"]).output().ok();
-    std::process::Command::new("sudo").args(["/usr/bin/iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "wg0", "-j", "MASQUERADE"]).output().ok();
-
-    let log_path_clone = err_log.clone();
+    // Раз в 3 секунды helper дописывает в лог строку со статусом рукопожатия.
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
         loop {
             interval.tick().await;
             if !std::path::Path::new("/sys/class/net/wg0").exists() { break; }
-            let wg_status = std::process::Command::new("sudo").args(["/usr/bin/wg", "show", "wg0"]).output();
-            if let Ok(out) = wg_status {
-                if out.status.success() {
-                    let status_str = String::from_utf8_lossy(&out.stdout);
-                    let mut log_lines = Vec::new();
-                    for line in status_str.lines() { if line.contains("latest handshake:") || line.contains("transfer:") || line.contains("endpoint:") { log_lines.push(line.trim().to_string()); } }
-                    if !log_lines.is_empty() {
-                        if let Ok(mut file) = tokio::fs::OpenOptions::new().create(true).append(true).open(&log_path_clone).await {
-                            use tokio::io::AsyncWriteExt;
-                            let _ = file.write_all(format!("[WireGuard Status] {}\n", log_lines.join(" | ")).as_bytes()).await;
-                        }
-                    }
-                }
-            }
+            let _ = helper_client::call("wg-status-log", &[], None);
         }
     });
 
@@ -1318,19 +1085,10 @@ async fn start_wireguard_proxy(
         ]
     });
 
-    let tmp_conf = "/tmp/karin_config.json";
-    std::fs::write(tmp_conf, config.to_string()).map_err(|e| e.to_string())?;
-
-    let copy_status = std::process::Command::new("sudo")
-        .args(["/usr/bin/cp", tmp_conf, "/etc/karin-proxy/config.json"])
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if !copy_status.status.success() {
-        return Err("Нет прав на обновление конфигурации Xray".into());
-    }
-
-    std::process::Command::new("rm").args(["-f", tmp_conf]).output().ok();
+    // helper проверяет конфигурацию (allowlist, фиксированные пути логов, listen только на loopback)
+    // и сам записывает её в /etc/karin-proxy/config.json.
+    helper_client::call("core-config", &[], Some(config.to_string().as_bytes()))
+        .map_err(|e| format!("Не удалось применить конфигурацию Xray: {}", e))?;
 
     if let Err(e) = restart_core_daemon() { teardown_connections(); return Err(e); }
 
@@ -1347,14 +1105,11 @@ async fn start_wireguard_proxy(
     }
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
+        let ips = ip_list_param(&resolved_ips_for_route_del);
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-            for ip in resolved_ips_for_route_del {
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "rule", "del", "to", &ip, "lookup", "main"]).output();
-                let ip_32 = format!("{}/32", ip);
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "rule", "del", "to", &ip_32, "lookup", "main"]).output();
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "route", "del", &ip]).output();
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "route", "del", &ip_32]).output();
+            if !ips.is_empty() {
+                let _ = helper_client::call("bypass", &[("ips", ips.as_str()), ("routes", "1")], None);
             }
         });
     }
@@ -1385,7 +1140,7 @@ async fn start_proxy(
         return start_wireguard_proxy(_state, vless_link, routing_state, default_outbound, dns_params, allow_server_proxy, zone_priority, proxy_lan, kill_switch).await;
     }
 
-    let token = generate_token();
+    let token = token::generate()?;
     if let Ok(mut guard) = _state.auth_token.lock() { *guard = Some(token.clone()); }
 
     let (proxy_outbound, out_addr, resolved_ips) = build_proxy_outbound(&vless_link).await?;
@@ -1430,24 +1185,10 @@ async fn start_proxy(
         ]
     });
 
-    let tmp_conf = "/tmp/karin_config.json";
-    std::fs::write(tmp_conf, config.to_string()).map_err(|e| e.to_string())?;
-
-    let copy_status = std::process::Command::new("sudo")
-        .args(["/usr/bin/cp", tmp_conf, "/etc/karin-proxy/config.json"])
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if !copy_status.status.success() {
-        return Err("Нет прав на обновление конфигурации Xray".into());
-    }
-
-    std::process::Command::new("rm").args(["-f", tmp_conf]).output().ok();
-
-    let rotate_if_needed = |path: &str| { if let Ok(meta) = std::fs::metadata(path) { if meta.len() > 5 * 1024 * 1024 { let _ = std::fs::write(path, ""); } } };
-    rotate_if_needed(&err_log); rotate_if_needed(&acc_log);
-    let _ = std::fs::OpenOptions::new().create(true).append(true).open(&err_log);
-    let _ = std::fs::OpenOptions::new().create(true).append(true).open(&acc_log);
+    // helper проверяет конфигурацию (allowlist, фиксированные пути логов, listen только на loopback)
+    // и сам записывает её в /etc/karin-proxy/config.json.
+    helper_client::call("core-config", &[], Some(config.to_string().as_bytes()))
+        .map_err(|e| format!("Не удалось применить конфигурацию Xray: {}", e))?;
 
     if let Err(e) = restart_core_daemon() { teardown_connections(); return Err(e); }
     if !wait_for_core_ready().await {
@@ -1458,13 +1199,11 @@ async fn start_proxy(
         enable_kill_switch(&out_addr, "tun0");
     }
     if allow_server_proxy {
-        let ips_to_delete = resolved_ips.clone();
+        let ips = ip_list_param(&resolved_ips);
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-            for ip in ips_to_delete {
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "rule", "del", "to", &ip, "lookup", "main"]).output();
-                let ip_32 = format!("{}/32", ip);
-                let _ = std::process::Command::new("sudo").args(["-n", "/usr/bin/ip", "rule", "del", "to", &ip_32, "lookup", "main"]).output();
+            if !ips.is_empty() {
+                let _ = helper_client::call("bypass", &[("ips", ips.as_str())], None);
             }
         });
     }
@@ -1539,8 +1278,7 @@ fn get_geosite_list() -> Vec<String> {
 
 #[tauri::command]
 fn clear_logs() -> Result<String, String> {
-    let (err_log, acc_log) = get_log_paths();
-    let _ = std::fs::write(&err_log, ""); let _ = std::fs::write(&acc_log, "");
+    helper_client::call("logs-clear", &[], None)?;
     Ok("Очищено".into())
 }
 
@@ -1704,9 +1442,7 @@ fn main() {
     app.run(|app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
             app_handle.state::<bridge::BridgeState>().exit();
-            let _ = std::process::Command::new("sudo").args(["/usr/bin/systemctl", "stop", "karin-proxy-daemon.service"]).output();
-            let _ = std::process::Command::new("sudo").args(["/usr/bin/pkill", "-f", "/etc/karin-proxy/openvpn.ovpn"]).output();
-            let _ = std::process::Command::new("sudo").args(["/usr/bin/cp", "/etc/karin-proxy/resolv.conf.bak", "/etc/resolv.conf"]).output();
+            helper_client::call_quiet("stop-services", &[]);
         }
     });
 }
