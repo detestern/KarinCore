@@ -115,9 +115,9 @@ jobs:
           # проверяем только наш файл: в образе GitHub есть чужой /etc/sudoers.d/runner
           # с неверными правами, из-за которого общий `visudo -c` падает
           sudo visudo -cf /etc/sudoers.d/zz-karincore
-          stat -c '%U:%G %a %n' /usr/libexec/karincore /usr/libexec/karincore/karincore-helper /etc/sudoers.d/zz-karincore
+          sudo stat -c '%U:%G %a %n' /usr/libexec/karincore /usr/libexec/karincore/karincore-helper /etc/sudoers.d/zz-karincore /etc/karin-proxy
           test "$(stat -c '%U %a' /usr/libexec/karincore/karincore-helper)" = "root 755"
-          test "$(stat -c '%U %a' /etc/sudoers.d/zz-karincore)" = "root 440"
+          test "$(sudo stat -c '%U %a' /etc/sudoers.d/zz-karincore)" = "root 440"
           test "$(stat -c '%U %a' /etc/karin-proxy)" = "root 755"
           # Ответы helper читаем в переменные: при `set -o pipefail` его код выхода 2
           # (ошибка протокола) иначе проваливал бы весь конвейер.
@@ -127,4 +127,4 @@ jobs:
           test "$(printf '%s\n' "$out" | sed -n 1p)" = "ERR"
           sudo apt-get purge -y karin-core
           test ! -e /usr/libexec/karincore/karincore-helper
-          test ! -e /etc/sudoers.d/zz-karincore
+          sudo test ! -e /etc/sudoers.d/zz-karincore
