@@ -112,11 +112,19 @@ jobs:
           deb="$(ls src-tauri/target/release/bundle/deb/KarinCore_*_amd64.deb)"
           sudo apt-get install -y "./$deb"
           getent group karincore
-          sudo visudo -c
-          stat -c '%U:%G %a' /usr/libexec/karincore /usr/libexec/karincore/karincore-helper /etc/sudoers.d/zz-karincore
+          # проверяем только наш файл: в образе GitHub есть чужой /etc/sudoers.d/runner
+          # с неверными правами, из-за которого общий `visudo -c` падает
+          sudo visudo -cf /etc/sudoers.d/zz-karincore
+          stat -c '%U:%G %a %n' /usr/libexec/karincore /usr/libexec/karincore/karincore-helper /etc/sudoers.d/zz-karincore
           test "$(stat -c '%U %a' /usr/libexec/karincore/karincore-helper)" = "root 755"
           test "$(stat -c '%U %a' /etc/sudoers.d/zz-karincore)" = "root 440"
-          # helper должен отвечать на version без прав root и отказывать на неизвестную операцию
-          printf 'KARIN-HELPER/1 version\n' | /usr/libexec/karincore/karincore-helper | head -n1 | grep -qx OK
-          printf 'KARIN-HELPER/1 rm-rf\n' | sudo /usr/libexec/karincore/karincore-helper | head -n1 | grep -qx ERR
+          test "$(stat -c '%U %a' /etc/karin-proxy)" = "root 755"
+          # Ответы helper читаем в переменные: при `set -o pipefail` его код выхода 2
+          # (ошибка протокола) иначе проваливал бы весь конвейер.
+          out="$(printf 'KARIN-HELPER/1 version\n' | /usr/libexec/karincore/karincore-helper || true)"
+          test "$(printf '%s\n' "$out" | sed -n 1p)" = "OK"
+          out="$(printf 'KARIN-HELPER/1 rm-rf\n' | sudo /usr/libexec/karincore/karincore-helper || true)"
+          test "$(printf '%s\n' "$out" | sed -n 1p)" = "ERR"
           sudo apt-get purge -y karin-core
+          test ! -e /usr/libexec/karincore/karincore-helper
+          test ! -e /etc/sudoers.d/zz-karincore
