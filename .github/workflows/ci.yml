@@ -65,8 +65,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends shellcheck sudo
-          shellcheck src-tauri/system/route.sh scripts/build-deb.sh
-          shellcheck -s sh src-tauri/system/postinst src-tauri/system/postrm
+          shellcheck --severity=error src-tauri/system/route.sh scripts/build-deb.sh
+          shellcheck --severity=error -s sh src-tauri/system/postinst src-tauri/system/postrm
       - name: sudoers syntax
         run: sudo visudo -cf src-tauri/system/karincore-sudoers
       - name: sudoers grants only the helper
@@ -119,4 +119,4 @@ jobs:
           # helper должен отвечать на version без прав root и отказывать на неизвестную операцию
           printf 'KARIN-HELPER/1 version\n' | /usr/libexec/karincore/karincore-helper | head -n1 | grep -qx OK
           printf 'KARIN-HELPER/1 rm-rf\n' | sudo /usr/libexec/karincore/karincore-helper | head -n1 | grep -qx ERR
-          sudo apt-get purge -y karincore || sudo apt-get purge -y karin-proxy || true
+          sudo apt-get purge -y karin-core
