@@ -1,6 +1,10 @@
 export const translations: Record<string, Record<string, string>> = {
   en: {
-    routing_hint_mobile: "Zones are checked from top to bottom. Tap a zone to edit its rules.",
+    routing_hint_mobile: "Hold a zone and drag it to change its priority. Tap a zone to edit its rules.",
+
+    routing_selected_profile: "Selected profile",
+
+    routing_default_route: "Default route",
     zone_desc_direct: "Straight to the internet, outside the VPN",
     zone_desc_proxy: "Through the VPN server",
     zone_desc_block: "Connection is dropped",
@@ -240,7 +244,11 @@ export const translations: Record<string, Record<string, string>> = {
     about_legal_privacy: "KarinCore has no developer-operated telemetry, analytics, advertising or profile-storage service. Connections still contact the proxy, subscription and DNS services you configure, plus documented update and network-diagnostic endpoints. Profiles and keys are not sent to those diagnostic services. See PRIVACY.md in the project repository."
   },
   ru: {
-    routing_hint_mobile: "Зоны проверяются сверху вниз. Нажмите на зону, чтобы изменить её правила.",
+    routing_hint_mobile: "Зажмите зону и перетащите, чтобы изменить приоритет. Нажмите на зону, чтобы править её правила.",
+
+    routing_selected_profile: "Выбранный профиль",
+
+    routing_default_route: "Маршрут по умолчанию",
     zone_desc_direct: "Напрямую в интернет, мимо VPN",
     zone_desc_proxy: "Через VPN-сервер",
     zone_desc_block: "Соединение обрывается",
@@ -480,7 +488,11 @@ export const translations: Record<string, Record<string, string>> = {
     about_legal_privacy: "В KarinCore нет телеметрии разработчика, аналитики, рекламы или удалённого хранилища профилей. Для подключения используются настроенные прокси, подписки и DNS, а также описанные сервисы обновлений и сетевой диагностики. Профили и ключи этим диагностическим сервисам не отправляются. Подробности — в PRIVACY.md репозитория."
   },
   fr: {
-    routing_hint_mobile: "Les zones sont vérifiées de haut en bas. Touchez une zone pour modifier ses règles.",
+    routing_hint_mobile: "Maintenez une zone et faites-la glisser pour changer sa priorité. Touchez une zone pour modifier ses règles.",
+
+    routing_selected_profile: "Profil sélectionné",
+
+    routing_default_route: "Route par défaut",
     zone_desc_direct: "Directement vers Internet, hors VPN",
     zone_desc_proxy: "Via le serveur VPN",
     zone_desc_block: "Connexion coupée",
@@ -571,7 +583,11 @@ logs_export_diagnostics: "Exporter le diagnostic", logs_exporting: "Exportation.
     about_legal_privacy: "KarinCore n'utilise aucun service de télémétrie, d'analyse, de publicité ou de stockage de profils exploité par le développeur. Les connexions utilisent néanmoins les services proxy, d'abonnement et DNS configurés, ainsi que les points de terminaison documentés de mise à jour et de diagnostic réseau. Les profils et les clés ne sont pas envoyés à ces services de diagnostic. Consultez PRIVACY.md dans le dépôt."
   },
   zh: {
-    routing_hint_mobile: "区域按从上到下的顺序检查。点按区域以编辑其规则。",
+    routing_hint_mobile: "长按区域并拖动以更改优先级。点按区域以编辑其规则。",
+
+    routing_selected_profile: "已选配置",
+
+    routing_default_route: "默认路由",
     zone_desc_direct: "直连互联网，不经过 VPN",
     zone_desc_proxy: "通过 VPN 服务器",
     zone_desc_block: "连接被丢弃",
@@ -662,7 +678,11 @@ logs_export_diagnostics: "导出诊断", logs_exporting: "正在导出...", logs
     about_legal_privacy: "KarinCore 不包含由开发者运营的遥测、分析、广告或远程配置存储服务。连接仍会访问您配置的代理、订阅和 DNS 服务，以及文档中说明的更新与网络诊断端点。配置和密钥不会发送给这些诊断服务。详情请参阅仓库中的 PRIVACY.md。"
   },
   tr: {
-    routing_hint_mobile: "Bölgeler yukarıdan aşağıya doğru kontrol edilir. Kurallarını düzenlemek için bir bölgeye dokunun.",
+    routing_hint_mobile: "Önceliği değiştirmek için bir bölgeyi basılı tutup sürükleyin. Kurallarını düzenlemek için bir bölgeye dokunun.",
+
+    routing_selected_profile: "Seçili profil",
+
+    routing_default_route: "Varsayılan rota",
     zone_desc_direct: "Doğrudan internete, VPN dışında",
     zone_desc_proxy: "VPN sunucusu üzerinden",
     zone_desc_block: "Bağlantı kesilir",

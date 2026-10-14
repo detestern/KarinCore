@@ -40,7 +40,6 @@ const PROJECT_REPO = 'detestern/KarinCore';
 const ANDROID_BRANCH = 'android';
 const SITE_DOWNLOAD_URL = 'https://karincore.ru/#download';
 const UPSTREAM_REPO = 'detestern/KarinCore';
-const KARIN_ICON_URL = new URL('../src-tauri/icons/icon.png', import.meta.url).href;
 interface VpnRuntimeStatus {
     running: boolean;
     starting: boolean;
@@ -577,6 +576,17 @@ function applyKarinAssistantVisibility() {
 }
 applyKarinAssistantVisibility();
 
+/** Edit mode must never survive closing the configurations panel. */
+function leaveEditMode() {
+    if (!isEditMode) return;
+    isEditMode = false;
+    selectedLinks.clear();
+    selectedGroups.clear();
+    if (editBar) editBar.style.display = 'none';
+    if (importBar) importBar.style.display = 'flex';
+    renderLinks();
+}
+
 function initProfilesDrawer() {
     const trigger = document.getElementById('btn-open-profiles');
     const closeBtn = document.getElementById('btn-close-profiles');
@@ -585,7 +595,7 @@ function initProfilesDrawer() {
     if (!trigger || !drawer || !overlay) return;
 
     const open = () => { drawer.classList.add('open'); overlay.classList.add('open'); };
-    const close = () => { drawer.classList.remove('open'); overlay.classList.remove('open'); };
+    const close = () => { drawer.classList.remove('open'); overlay.classList.remove('open'); leaveEditMode(); };
 
     trigger.addEventListener('click', open);
     closeBtn?.addEventListener('click', close);
@@ -627,6 +637,16 @@ function updateHeroProfileName() {
     } else {
         el.setAttribute('data-i18n', 'hero_no_profile');
         el.textContent = t('hero_no_profile');
+    }
+    const routingName = document.getElementById('routing-profile-name');
+    if (routingName) {
+        if (target) {
+            routingName.textContent = getLinkDisplayName(target);
+            routingName.removeAttribute('data-i18n');
+        } else {
+            routingName.setAttribute('data-i18n', 'hero_no_profile');
+            routingName.textContent = t('hero_no_profile');
+        }
     }
 }
 
@@ -1237,6 +1257,111 @@ function closeTopLayer(): boolean {
     return false;
 }
 
+
+// Long-press + drag reordering of the routing zone cards (touch and mouse).
+let suppressZoneClickUntil = 0;
+
+function initZoneCardDragAndDrop() {
+    const host = document.getElementById('zone-cards');
+    if (!host) return;
+
+    const HOLD_MS = 320;
+    const MOVE_TOLERANCE = 9;
+
+    let holdTimer: number | null = null;
+    let card: HTMLElement | null = null;
+    let pointerId: number | null = null;
+    let startX = 0, startY = 0, grabOffset = 0;
+    let dragging = false;
+
+    const cards = () => Array.from(host.querySelectorAll<HTMLElement>('.zone-card'));
+
+    const cancelHold = () => {
+        if (holdTimer !== null) { window.clearTimeout(holdTimer); holdTimer = null; }
+    };
+
+    const beginDrag = () => {
+        if (!card || getProviderRoutingContext()) return;
+        dragging = true;
+        host.classList.add('is-sorting');
+        host.querySelectorAll('.zone-arrow').forEach(el => el.remove());
+        card.classList.add('is-dragging');
+        const rect = card.getBoundingClientRect();
+        grabOffset = startY - rect.top;
+        if (navigator.vibrate) navigator.vibrate(12);
+    };
+
+    const moveDrag = (clientY: number) => {
+        if (!card) return;
+        const siblings = cards().filter(el => el !== card);
+        // Where would the card land? Compare the finger with the centres of the others.
+        let before: HTMLElement | null = null;
+        for (const other of siblings) {
+            const r = other.getBoundingClientRect();
+            if (clientY < r.top + r.height / 2) { before = other; break; }
+        }
+        const currentNext = card.nextElementSibling as HTMLElement | null;
+        if (before !== currentNext) host.insertBefore(card, before);
+
+        card.style.transform = 'none';
+        const natural = card.getBoundingClientRect().top;
+        card.style.transform = `translateY(${clientY - grabOffset - natural}px) scale(1.02)`;
+    };
+
+    const finish = (commit: boolean) => {
+        cancelHold();
+        const wasDragging = dragging;
+        const draggedCard = card;
+        if (wasDragging && draggedCard) {
+            suppressZoneClickUntil = Date.now() + 400;
+            if (commit) {
+                const order = cards().map(el => el.dataset.zoneOpen as ZoneKey);
+                if (order.length === zonePriority.length && order.every(z => zonePriority.includes(z))) {
+                    zonePriority = order;
+                    localStorage.setItem('karin_zone_priority', JSON.stringify(zonePriority));
+                    applyColumnOrder();
+                }
+            }
+            draggedCard.style.transform = '';
+            draggedCard.classList.remove('is-dragging');
+        }
+        host.classList.remove('is-sorting');
+        dragging = false;
+        card = null;
+        pointerId = null;
+        if (wasDragging) renderRouting();
+    };
+
+    host.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        const target = (e.target as HTMLElement).closest<HTMLElement>('.zone-card');
+        if (!target || getProviderRoutingContext()) return;
+        card = target;
+        pointerId = e.pointerId;
+        startX = e.clientX;
+        startY = e.clientY;
+        cancelHold();
+        holdTimer = window.setTimeout(beginDrag, HOLD_MS);
+    });
+
+    host.addEventListener('pointermove', (e) => {
+        if (card === null || e.pointerId !== pointerId) return;
+        if (!dragging) {
+            if (Math.abs(e.clientX - startX) > MOVE_TOLERANCE || Math.abs(e.clientY - startY) > MOVE_TOLERANCE) cancelHold();
+            return;
+        }
+        e.preventDefault();
+        moveDrag(e.clientY);
+    });
+
+    // While a card is held, the page must not scroll under the finger.
+    host.addEventListener('touchmove', (e) => { if (dragging) e.preventDefault(); }, { passive: false });
+    host.addEventListener('contextmenu', (e) => { if (card) e.preventDefault(); });
+
+    host.addEventListener('pointerup', (e) => { if (e.pointerId === pointerId) finish(true); });
+    host.addEventListener('pointercancel', (e) => { if (e.pointerId === pointerId) finish(false); });
+}
+
 function initSwipeNavigation() {
     let startX = 0, startY = 0, startT = 0, tracking = false;
     const blocked = (el: EventTarget | null) =>
@@ -1337,8 +1462,7 @@ async function handleAndroidBackPress() {
         return;
     }
     if (action === 'close-profiles') {
-        profiles?.classList.remove('open');
-        document.getElementById('profiles-drawer-overlay')?.classList.remove('open');
+        profilesDrawer?.close();
         return;
     }
     if (action === 'close-menu') {
@@ -1917,48 +2041,41 @@ function renderAboutPage() {
     if (infoPanel) {
         infoPanel.innerHTML = `
             <div class="about-identity">
-                <img class="about-logo" src="${KARIN_ICON_URL}" alt="KarinCore">
+                <img class="about-logo" src="/karin-splash.png" alt="KarinCore">
                 <div class="about-identity-copy">
                     <h2>KarinCore</h2>
                     <div class="about-version">KarinCore Android v${runtimeInfo.version}</div>
                 </div>
             </div>
             
-            <div class="tab-scroll-content" style="font-size: 14px; line-height: 1.6; color: var(--text-color); display: flex; flex-direction: column; gap: 16px; padding-bottom: 30px;">
-                <p style="margin: 0; text-align: justify;">${t('about_p1')}</p>
-                
-                <div>
-                    <h4 style="margin: 0 0 2px 0; color: var(--accent); font-size: 15px; font-weight: 600;">${t('about_manifest_title')}</h4>
-                    <p style="margin: 0; text-align: justify;">${t('about_manifest_p1')}</p>
-                </div>
-                
-                <div>
-                    <h4 style="margin: 0 0 2px 0; color: var(--accent); font-size: 15px; font-weight: 600;">${t('about_roadmap_title')}</h4>
-                    <p style="margin: 0; padding-left: 10px; border-left: 2px solid var(--border-color); text-align: justify;">${t('about_roadmap_p1')}</p>
-                </div>
-                
-                <div>
-                    <h4 style="margin: 0 0 2px 0; color: var(--accent); font-size: 15px; font-weight: 600;">${t('about_support_title')}</h4>
-                    <p style="margin: 0; text-align: justify;">${t('about_support_p1')}</p>
-                </div>
-                
-                <div style="background: var(--base-crust); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; font-family: monospace; font-size: 13px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
-                    <div><span style="color: var(--accent);">• ${t('about_author')}:</span> detestern, VivaGushter</div>
-                    <div><span style="color: var(--accent);">• GitHub:</span> <span class="copyable-item" data-copy="https://github.com/${PROJECT_REPO}/tree/${ANDROID_BRANCH}" style="color: var(--text-color);">https://github.com/${PROJECT_REPO}/tree/${ANDROID_BRANCH}</span></div>
-                    <div><span style="color: var(--accent);">• Upstream:</span> <span class="copyable-item" data-copy="https://github.com/${UPSTREAM_REPO}" style="color: var(--text-dim);">https://github.com/${UPSTREAM_REPO}</span></div>
-                </div>
-                
-                <div style="margin-top: 4px; background: var(--base-crust); border: 1px solid var(--border-color); padding: 14px; border-radius: 8px; flex-shrink: 0; position: relative; overflow: hidden;">
-                    <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--success);"></div>
-                    <h4 style="margin: 0 0 10px 0; color: var(--success); font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                        ${t('about_legal_title')}
-                    </h4>
-                    <div style="font-size: 13px; color: var(--text-color); line-height: 1.6; text-align: justify; font-family: monospace;">
-                        <span style="color: var(--accent);">[COPYRIGHT]</span> ${t('about_legal_copyright')}<br><br>
-                        <span style="color: var(--accent);">[ZERO TELEMETRY]</span> ${t('about_legal_privacy')}
+            <div class="about-sections">
+                <p class="about-lead">${t('about_p1')}</p>
+
+                <section class="about-card">
+                    <h4 class="about-card-title">${svgIcon('<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/>', 16)}${t('about_manifest_title')}</h4>
+                    <p class="about-card-text">${t('about_manifest_p1')}</p>
+                </section>
+
+                <section class="about-card">
+                    <h4 class="about-card-title">${svgIcon('<circle cx="12" cy="12" r="10"/><path d="m16.2 7.8-2.1 6.3-6.3 2.1 2.1-6.3z"/>', 16)}${t('about_roadmap_title')}</h4>
+                    <div class="about-list">${t('about_roadmap_p1').split(/<br\s*\/?>/i).map(item => item.replace(/^\s*•\s*/, '').trim()).filter(Boolean).map(item => `<div class="about-list-item">${item}</div>`).join('')}</div>
+                </section>
+
+                <section class="about-card">
+                    <h4 class="about-card-title">${svgIcon('<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><path d="M6 1v3"/><path d="M10 1v3"/><path d="M14 1v3"/>', 16)}${t('about_support_title')}</h4>
+                    <p class="about-card-text">${t('about_support_p1')}</p>
+                    <div class="about-contacts">
+                        <div class="about-contact"><span class="about-contact-label">${t('about_author')}</span><span class="about-contact-value">detestern, VivaGushter</span></div>
+                        <div class="about-contact"><span class="about-contact-label">GitHub</span><span class="about-contact-value copyable-item" data-copy="https://github.com/${PROJECT_REPO}/tree/${ANDROID_BRANCH}">https://github.com/${PROJECT_REPO}/tree/${ANDROID_BRANCH}</span></div>
+                        <div class="about-contact"><span class="about-contact-label">Upstream</span><span class="about-contact-value copyable-item" data-copy="https://github.com/${UPSTREAM_REPO}">https://github.com/${UPSTREAM_REPO}</span></div>
                     </div>
-                </div>
+                </section>
+
+                <section class="about-card about-card-legal">
+                    <h4 class="about-card-title">${svgIcon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 16)}${t('about_legal_title')}</h4>
+                    <p class="about-card-text"><span class="about-tag">COPYRIGHT</span>${t('about_legal_copyright')}</p>
+                    <p class="about-card-text"><span class="about-tag">ZERO TELEMETRY</span>${t('about_legal_privacy')}</p>
+                </section>
             </div>
         `;
 
@@ -2492,6 +2609,7 @@ async function init() {
     document.documentElement.classList.toggle('platform-android', runtimeInfo.platform === 'android');
     await initAndroidBackNavigation();
     initSwipeNavigation();
+    initZoneCardDragAndDrop();
     document.getElementById('btn-close-search-modal')?.addEventListener('click', () => searchModal?.close());
     document.getElementById('btn-close-route-action-modal')?.addEventListener('click', () => {
         (document.getElementById('route-action-modal') as HTMLDialogElement | null)?.close();
@@ -2988,6 +3106,7 @@ document.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;
 
     const zoneCard = target.closest<HTMLElement>('[data-zone-open]');
+    if (zoneCard && Date.now() < suppressZoneClickUntil) return;
     if (zoneCard) { openZonePage(zoneCard.dataset.zoneOpen as ZoneKey); return; }
     if (target.closest('[data-subpage-close]')) { closeSubpages(); return; }
     if (target.closest('[data-open-patches]')) { openSubpage('subpage-patches'); return; }

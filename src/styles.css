@@ -2993,3 +2993,265 @@ html.platform-android {
     font-size: 13px;
     line-height: 1.55;
 }
+
+/* **********************************
+   ALPHA.37 — polish
+   ********************************** */
+
+/* Side-menu button: quiet outline instead of a filled block */
+#btn-menu,
+.platform-android #btn-menu {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-dim);
+}
+
+#btn-menu:hover,
+.platform-android #btn-menu:hover {
+    background: transparent;
+    border-color: var(--border-hover);
+    color: var(--text-color);
+}
+
+#btn-menu:active,
+.platform-android #btn-menu:active {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Routing page header and summary */
+.routing-header { margin-bottom: 12px; }
+
+.routing-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 14px;
+    margin-bottom: 4px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+}
+
+.routing-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+}
+
+.routing-summary-row + .routing-summary-row {
+    border-top: 1px solid var(--border-color);
+}
+
+.routing-summary-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.routing-summary-label {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.routing-summary-value {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#default-outbound-label.routing-summary-value { font-weight: 700; }
+
+.route-share-btn,
+.platform-android .route-share-btn {
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--border-hover);
+    border-radius: 10px;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.route-share-btn svg { width: 18px; height: 18px; }
+.route-share-btn:hover { background: transparent; }
+.route-share-btn:active {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: var(--accent);
+}
+
+.routing-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.section-description { margin: 12px 0 14px; }
+
+/* Zone cards: sortable by long press */
+.zone-card {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+.zone-cards.is-sorting { gap: 8px; }
+.zone-cards.is-sorting .zone-card:not(.is-dragging) { opacity: 0.8; }
+
+.zone-card.is-dragging {
+    position: relative;
+    z-index: 5;
+    transition: none;
+    border-color: var(--zone-color);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+    background: var(--input-bg);
+}
+
+/* About page */
+.about-logo {
+    object-position: center;
+}
+
+.about-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 8px;
+}
+
+.about-lead {
+    margin: 0;
+    padding: 2px 0 2px 14px;
+    border-left: 3px solid var(--accent);
+    color: var(--text-color);
+    font-size: 14.5px;
+    line-height: 1.65;
+}
+
+.about-card {
+    padding: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--base-crust);
+}
+
+.about-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.about-card-text {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 13.5px;
+    line-height: 1.6;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+.about-card-text + .about-card-text { margin-top: 10px; }
+
+.about-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.about-list-item {
+    position: relative;
+    padding-left: 14px;
+    color: var(--text-dim);
+    font-size: 13.5px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.about-list-item::before {
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    content: '•';
+}
+
+.about-list-item strong { color: var(--text-color); font-weight: 600; }
+
+.about-contacts {
+    display: flex;
+    flex-direction: column;
+    margin-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.about-contact {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.about-contact:last-child { border-bottom: none; padding-bottom: 0; }
+
+.about-contact-label {
+    color: var(--text-dim);
+    font-size: 11.5px;
+}
+
+.about-contact-value {
+    color: var(--text-color);
+    font-family: monospace;
+    font-size: 12.5px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.about-contact-value.copyable-item { color: var(--accent); cursor: pointer; }
+
+.about-card-legal {
+    border-left: 3px solid var(--success);
+}
+
+.about-card-legal .about-card-title { color: var(--success); }
+
+.about-tag {
+    display: inline-block;
+    margin-right: 8px;
+    padding: 1px 7px;
+    border: 1px solid color-mix(in srgb, var(--success) 45%, transparent);
+    border-radius: 999px;
+    color: var(--success);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    vertical-align: 1px;
+}
+
+.routing-header,
+.routing-summary,
+.platform-android .section-description {
+    margin-left: 4px;
+    margin-right: 4px;
+}
+
+.about-lead { font-size: 14px; }

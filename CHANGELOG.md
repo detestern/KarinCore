@@ -4,6 +4,21 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.37] - 2026-10-15
+
+Small polish after the first real-phone test.
+
+### Changed
+- Routing page order: selected profile (with a small share button) and the default route on top, then the three zones, DNS, saved profiles and, last, the "Proxy server IP" and "Proxy local network" switches.
+- About: the Karin picture instead of the logo; the description, manifesto, roadmap, support and legal text are now laid out as cards, in the same style as the patch notes.
+- The side-menu button is a quiet outlined button with a lighter icon.
+
+### Added
+- Routing zones can be reordered again: hold a card for a moment and drag it up or down. The Up/Down buttons on the zone page still work.
+
+### Fixed
+- The configurations panel no longer opens with the edit bar already shown: leaving the panel now also leaves edit mode.
+
 ## [0.1.0-alpha.36] - 2026-10-15
 
 Visual pass after testing on a real phone.

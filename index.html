@@ -82,13 +82,13 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.36</div>
+      <div class="app-version-text">v 0.1.0-alpha.37</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
 
   <div class="app-header">
-    <button id="btn-menu" class="icon-btn" type="button" aria-label="Menu"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg></button>
+    <button id="btn-menu" class="icon-btn" type="button" aria-label="Menu"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h11"/><path d="M4 17h16"/></svg></button>
     <h2 style="margin: 0; font-weight: 600;">KarinCore</h2>
   </div>
 
@@ -210,16 +210,26 @@
   <div id="page-routing" class="page-view">
     <div class="panel links-wrapper routing-panel">
       
-      <div style="display: flex; justify-content: space-between; align-items: center;" class="header-actions routing-header">
-        <h3>
-          <span data-i18n="routing_title">Маршрутизация</span> 
-          (<span data-i18n="routing_default">По умолчанию:</span> <span id="default-outbound-label" style="color:var(--accent);">Proxy</span>)
-        </h3>
-        <button id="btn-route-action" class="icon-btn" type="button">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share-icon lucide-share"><path d="M12 2v13"/><path d="m16 6-4-4-4 4"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
-        </button>
+      <div class="routing-header">
+        <h3 data-i18n="routing_title">Маршрутизация</h3>
       </div>
-      
+
+      <div class="routing-summary">
+        <div class="routing-summary-row">
+          <div class="routing-summary-text">
+            <span class="routing-summary-label" data-i18n="routing_selected_profile">Выбранный профиль</span>
+            <span id="routing-profile-name" class="routing-summary-value">—</span>
+          </div>
+          <button id="btn-route-action" class="route-share-btn" type="button" aria-label="Share">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share-icon lucide-share"><path d="M12 2v13"/><path d="m16 6-4-4-4 4"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
+          </button>
+        </div>
+        <div class="routing-summary-row">
+          <span class="routing-summary-label" data-i18n="routing_default_route">Маршрут по умолчанию</span>
+          <span id="default-outbound-label" class="routing-summary-value">Proxy</span>
+        </div>
+      </div>
+
       <p id="routing-description" class="section-description" data-i18n="routing_hint">
         Перетаскивайте колонки для изменения приоритета (слева направо). Кликните на фон, чтобы сделать маршрутом по умолчанию.
       </p>
@@ -239,28 +249,6 @@
       </section>
       
       <div class="links-list routing-content" style="padding-bottom: 30px;">
-        <div class="setting-card routing-option-card">
-          <div class="setting-card-copy">
-            <div class="setting-card-title" data-i18n="routing_server_ip">Проксировать IP сервера</div>
-            <div class="setting-card-description" data-i18n="routing_server_ip_desc">Снимает системный bypass. Включайте для проксирования сервера, на котором расположен VPN.</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="toggle-server-proxy">
-            <span class="slider"></span>
-          </label>
-        </div>
-
-        <div class="setting-card routing-option-card">
-          <div class="setting-card-copy">
-            <div class="setting-card-title" data-i18n="routing_proxy_lan">Проксировать локальную сеть (LAN)</div>
-            <div class="setting-card-description" data-i18n="routing_proxy_lan_desc">Направляет подсети 10.x, 192.168.x и 172.x через прокси. По умолчанию отключено (прямой доступ).</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="toggle-proxy-lan">
-            <span class="slider"></span>
-          </label>
-        </div>
-        
         <div id="zone-cards" class="zone-cards"></div>
 
         <div id="routing-grid" class="routing-container" style="display: flex; gap: 10px; align-items: stretch; padding-bottom: 5px;">
@@ -320,6 +308,30 @@
                 Сохраненные профили
             </h3>
             <div id="routing-profiles-list"></div>
+        </div>
+
+        <div class="routing-toggles">
+        <div class="setting-card routing-option-card">
+          <div class="setting-card-copy">
+            <div class="setting-card-title" data-i18n="routing_server_ip">Проксировать IP сервера</div>
+            <div class="setting-card-description" data-i18n="routing_server_ip_desc">Снимает системный bypass. Включайте для проксирования сервера, на котором расположен VPN.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-server-proxy">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-card routing-option-card">
+          <div class="setting-card-copy">
+            <div class="setting-card-title" data-i18n="routing_proxy_lan">Проксировать локальную сеть (LAN)</div>
+            <div class="setting-card-description" data-i18n="routing_proxy_lan_desc">Направляет подсети 10.x, 192.168.x и 172.x через прокси. По умолчанию отключено (прямой доступ).</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-proxy-lan">
+            <span class="slider"></span>
+          </label>
+        </div>
         </div>
       </div>
     </div>
