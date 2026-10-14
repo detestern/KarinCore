@@ -168,6 +168,7 @@ if (!routingState.proxy) routingState.proxy = [];
 if (!routingState.block) routingState.block = [];
 
 let routeProfiles: RouteProfile[] = safeParse('karin_route_profiles', []);
+let activeRouteProfileId: string | null = localStorage.getItem('karin_active_route_profile');
 if (!Array.isArray(routeProfiles)) routeProfiles = [];
 routeProfiles = routeProfiles.map(p => {
     if (!p.domDns) p.domDns = { type: "doh", url: "https://dns.yandex.ru/dns-query", ip: "77.88.8.8" };
@@ -576,14 +577,21 @@ function applyKarinAssistantVisibility() {
 }
 applyKarinAssistantVisibility();
 
-/** Edit mode must never survive closing the configurations panel. */
+/** The edit bar is shown only while edit mode is on; this is the single place that enforces it. */
+function syncEditBar() {
+    if (editBar) {
+        editBar.dataset.active = isEditMode ? 'true' : 'false';
+        editBar.style.display = isEditMode ? 'flex' : 'none';
+    }
+    if (importBar) importBar.style.display = isEditMode ? 'none' : 'flex';
+}
+
+/** Edit mode must never survive closing or opening the configurations panel. */
 function leaveEditMode() {
-    if (!isEditMode) return;
     isEditMode = false;
     selectedLinks.clear();
     selectedGroups.clear();
-    if (editBar) editBar.style.display = 'none';
-    if (importBar) importBar.style.display = 'flex';
+    syncEditBar();
     renderLinks();
 }
 
@@ -594,7 +602,7 @@ function initProfilesDrawer() {
     const overlay = document.getElementById('profiles-drawer-overlay');
     if (!trigger || !drawer || !overlay) return;
 
-    const open = () => { drawer.classList.add('open'); overlay.classList.add('open'); };
+    const open = () => { leaveEditMode(); drawer.classList.add('open'); overlay.classList.add('open'); };
     const close = () => { drawer.classList.remove('open'); overlay.classList.remove('open'); leaveEditMode(); };
 
     trigger.addEventListener('click', open);
@@ -637,16 +645,6 @@ function updateHeroProfileName() {
     } else {
         el.setAttribute('data-i18n', 'hero_no_profile');
         el.textContent = t('hero_no_profile');
-    }
-    const routingName = document.getElementById('routing-profile-name');
-    if (routingName) {
-        if (target) {
-            routingName.textContent = getLinkDisplayName(target);
-            routingName.removeAttribute('data-i18n');
-        } else {
-            routingName.setAttribute('data-i18n', 'hero_no_profile');
-            routingName.textContent = t('hero_no_profile');
-        }
     }
 }
 
@@ -1785,6 +1783,7 @@ function renderLinkItem(item: ProxyLink) {
 }
 
 function renderLinks() {
+    syncEditBar();
     if(!linksContainer) return;
     linksContainer.innerHTML = '';
     renderProviderRoutingView();
@@ -2007,6 +2006,34 @@ function renderRouting() {
     renderProviderRoutingView();
     renderZoneCards();
     if (openZone) renderZoneSubpage();
+    updateRoutingProfileName();
+}
+
+function setActiveRouteProfile(id: string | null) {
+    activeRouteProfileId = id;
+    try {
+        if (id) localStorage.setItem('karin_active_route_profile', id);
+        else localStorage.removeItem('karin_active_route_profile');
+    } catch { /* storage unavailable */ }
+    updateRoutingProfileName();
+}
+
+/** Name of the routing profile (rules + DNS preset) that was last applied or saved. */
+function updateRoutingProfileName() {
+    const el = document.getElementById('routing-profile-name');
+    if (!el) return;
+    const profile = activeRouteProfileId ? routeProfiles.find(p => p.id === activeRouteProfileId) : undefined;
+    if (activeRouteProfileId && !profile) {
+        activeRouteProfileId = null;
+        try { localStorage.removeItem('karin_active_route_profile'); } catch { /* ignore */ }
+    }
+    if (profile) {
+        el.textContent = profile.name;
+        el.removeAttribute('data-i18n');
+    } else {
+        el.setAttribute('data-i18n', 'routing_profile_none');
+        el.textContent = t('routing_profile_none');
+    }
 }
 
 function renderRoutingProfiles() {
@@ -2030,8 +2057,12 @@ function renderRoutingProfiles() {
             </div>
         `;
         const row = wrapper.firstElementChild;
-        if (row) list.appendChild(row);
+        if (row) {
+            if (p.id === activeRouteProfileId) row.classList.add('profile-item-active');
+            list.appendChild(row);
+        }
     });
+    updateRoutingProfileName();
 }
 
 function renderAboutPage() {
@@ -2065,9 +2096,10 @@ function renderAboutPage() {
                     <h4 class="about-card-title">${svgIcon('<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><path d="M6 1v3"/><path d="M10 1v3"/><path d="M14 1v3"/>', 16)}${t('about_support_title')}</h4>
                     <p class="about-card-text">${t('about_support_p1')}</p>
                     <div class="about-contacts">
-                        <div class="about-contact"><span class="about-contact-label">${t('about_author')}</span><span class="about-contact-value">detestern, VivaGushter</span></div>
-                        <div class="about-contact"><span class="about-contact-label">GitHub</span><span class="about-contact-value copyable-item" data-copy="https://github.com/${PROJECT_REPO}/tree/${ANDROID_BRANCH}">https://github.com/${PROJECT_REPO}/tree/${ANDROID_BRANCH}</span></div>
-                        <div class="about-contact"><span class="about-contact-label">Upstream</span><span class="about-contact-value copyable-item" data-copy="https://github.com/${UPSTREAM_REPO}">https://github.com/${UPSTREAM_REPO}</span></div>
+                        <div class="about-contact"><span class="about-contact-label">${t('about_author')}</span><span class="about-contact-value">detestern</span></div>
+                        <div class="about-contact"><span class="about-contact-label">${t('about_web')}</span><span class="about-contact-value copyable-item" data-copy="https://karincore.ru">karincore.ru</span></div>
+                        <div class="about-contact"><span class="about-contact-label">GitHub</span><span class="about-contact-value copyable-item" data-copy="https://github.com/${UPSTREAM_REPO}">https://github.com/${UPSTREAM_REPO}</span></div>
+                        <div class="about-contact"><span class="about-contact-label">${t('about_contact')}</span><span class="about-contact-value copyable-item" data-copy="detestern@proton.me">detestern@proton.me</span></div>
                     </div>
                 </section>
 
@@ -2610,6 +2642,8 @@ async function init() {
     await initAndroidBackNavigation();
     initSwipeNavigation();
     initZoneCardDragAndDrop();
+    isEditMode = false;
+    syncEditBar();
     document.getElementById('btn-close-search-modal')?.addEventListener('click', () => searchModal?.close());
     document.getElementById('btn-close-route-action-modal')?.addEventListener('click', () => {
         (document.getElementById('route-action-modal') as HTMLDialogElement | null)?.close();
@@ -3065,13 +3099,15 @@ async function init() {
         routeModal?.close();
         const name = await showPrompt(t('prompt_profile_name'));
         if (name && domType && domUrl && domIp && remType && remUrl && remIp) {
+            const savedId = 'rp_' + Date.now();
             routeProfiles.push({
-                id: 'rp_' + Date.now(), name, defaultOutbound, rules: routingState,
+                id: savedId, name, defaultOutbound, rules: routingState,
                 domDns: { type: domType.value, url: domUrl.value, ip: domIp.value },
                 remDns: { type: remType.value, url: remUrl.value, ip: remIp.value },
                 zonePriority: [...zonePriority] 
             });
             localStorage.setItem('karin_route_profiles', JSON.stringify(routeProfiles));
+            setActiveRouteProfile(savedId);
             renderRoutingProfiles();
         }
     });
@@ -3261,7 +3297,9 @@ document.addEventListener('click', async (e) => {
                 localStorage.setItem('karin_default_outbound', defaultOutbound); 
                 localStorage.setItem('karin_routing', JSON.stringify(routingState));
                 updateDefaultOutboundUI(); 
+                setActiveRouteProfile(p.id);
                 renderRouting();
+                renderRoutingProfiles();
                 
                 const orig = loadBtn.innerText;
                 loadBtn.innerText = t('status_applied');
@@ -3275,6 +3313,7 @@ document.addEventListener('click', async (e) => {
     const delBtn = target.closest('.btn-del-profile') as HTMLElement;
     if (delBtn) {
         routeProfiles = routeProfiles.filter(x => x.id !== delBtn.dataset.id);
+        if (activeRouteProfileId === delBtn.dataset.id) setActiveRouteProfile(null);
         localStorage.setItem('karin_route_profiles', JSON.stringify(routeProfiles)); 
         renderRoutingProfiles();
     }

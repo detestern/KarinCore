@@ -5,6 +5,14 @@ export const translations: Record<string, Record<string, string>> = {
     routing_selected_profile: "Selected profile",
 
     routing_default_route: "Default route",
+
+
+    about_web: "Web",
+
+
+
+
+    routing_profile_none: "None",
     zone_desc_direct: "Straight to the internet, outside the VPN",
     zone_desc_proxy: "Through the VPN server",
     zone_desc_block: "Connection is dropped",
@@ -249,6 +257,14 @@ export const translations: Record<string, Record<string, string>> = {
     routing_selected_profile: "Выбранный профиль",
 
     routing_default_route: "Маршрут по умолчанию",
+
+
+    about_web: "Web",
+
+
+
+
+    routing_profile_none: "Не выбран",
     zone_desc_direct: "Напрямую в интернет, мимо VPN",
     zone_desc_proxy: "Через VPN-сервер",
     zone_desc_block: "Соединение обрывается",
@@ -493,6 +509,14 @@ export const translations: Record<string, Record<string, string>> = {
     routing_selected_profile: "Profil sélectionné",
 
     routing_default_route: "Route par défaut",
+
+
+    about_web: "Site web",
+
+
+
+
+    routing_profile_none: "Aucun",
     zone_desc_direct: "Directement vers Internet, hors VPN",
     zone_desc_proxy: "Via le serveur VPN",
     zone_desc_block: "Connexion coupée",
@@ -588,6 +612,14 @@ logs_export_diagnostics: "Exporter le diagnostic", logs_exporting: "Exportation.
     routing_selected_profile: "已选配置",
 
     routing_default_route: "默认路由",
+
+
+    about_web: "网站",
+
+
+
+
+    routing_profile_none: "未选择",
     zone_desc_direct: "直连互联网，不经过 VPN",
     zone_desc_proxy: "通过 VPN 服务器",
     zone_desc_block: "连接被丢弃",
@@ -683,6 +715,14 @@ logs_export_diagnostics: "导出诊断", logs_exporting: "正在导出...", logs
     routing_selected_profile: "Seçili profil",
 
     routing_default_route: "Varsayılan rota",
+
+
+    about_web: "Web",
+
+
+
+
+    routing_profile_none: "Seçilmedi",
     zone_desc_direct: "Doğrudan internete, VPN dışında",
     zone_desc_proxy: "VPN sunucusu üzerinden",
     zone_desc_block: "Bağlantı kesilir",

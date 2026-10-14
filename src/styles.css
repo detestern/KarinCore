@@ -3255,3 +3255,11 @@ html.platform-android {
 }
 
 .about-lead { font-size: 14px; }
+
+/* ALPHA.38 */
+.edit-bar:not([data-active="true"]) { display: none !important; }
+
+.profile-item-active {
+    border-color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent);
+}

@@ -4,6 +4,15 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.38] - 2026-10-15
+
+### Changed
+- Routing page: "Selected profile" now shows the routing profile (the saved set of rules and DNS you applied or saved), not the VPN connection. The applied profile is also marked in the saved profiles list.
+- About: the contacts are Author, Web, GitHub and Contact (e-mail); tap a value to copy it.
+
+### Fixed
+- The edit bar in the configurations panel can no longer be shown outside edit mode: it is hidden on start, whenever the panel opens or closes, and on every redraw of the list.
+
 ## [0.1.0-alpha.37] - 2026-10-15
 
 Small polish after the first real-phone test.
