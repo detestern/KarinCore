@@ -4,6 +4,25 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.36] - 2026-10-15
+
+Visual pass after testing on a real phone.
+
+### Added
+- Routing: Direct, Proxy and Block are now stacked cards. Tap a card to open its page with the rules, the default-route switch, priority and "Add rule".
+- Swipe right opens the side menu; swipe right also closes an open section (configurations panel, routing zone, patch notes). Swipe left closes the menu.
+- About shows only the latest patch notes, with a "View all" page for the full history.
+- Empty configurations list: a drawn plus instead of the picture.
+
+### Changed
+- Loading screen shows the Karin picture.
+- Logs and Settings buttons are slim outlined buttons; log text wraps to the screen width.
+
+### Fixed
+- App launcher icon is the KarinCore core again (the build used to fall back to the default Tauri icon); the build now checks the APK for it.
+- Dark circle around the core while connecting is gone.
+- Ping is no longer highlighted after a tap.
+
 ## [0.1.0-alpha.35] - 2026-10-12
 
 The home screen core comes alive.

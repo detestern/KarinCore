@@ -37,7 +37,7 @@
 <body>
 
   <div id="splash-screen">
-    <img src="/src-tauri/icons/icon.png" alt="KarinCore" class="splash-img">
+    <img src="/karin-splash.png" alt="KarinCore" class="splash-img">
     <div class="splash-text">Initializing KarinCore...</div>
   </div>
 
@@ -82,7 +82,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.35</div>
+      <div class="app-version-text">v 0.1.0-alpha.36</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -102,13 +102,6 @@
     <div class="hero-connect">
       <button id="hero-circle" class="hero-circle" aria-label="Подключить">
         <svg viewBox="0 0 320 320" width="420" height="420">
-          <defs>
-            <radialGradient id="hero-halo-grad" cx="50%" cy="50%" r="50%">
-              <stop offset="0" style="stop-color:var(--accent);stop-opacity:.45"/>
-              <stop offset="1" style="stop-color:var(--accent);stop-opacity:0"/>
-            </radialGradient>
-          </defs>
-          <circle class="hero-halo" cx="160" cy="160" r="150" fill="url(#hero-halo-grad)"/>
           <g class="hero-net">
             <g class="graph-line-primary" style="--i:0"><line x1="173" y1="84" x2="180" y2="44"/></g>
             <g class="graph-line-primary" style="--i:1"><line x1="219" y1="111" x2="261" y2="76"/></g>
@@ -268,6 +261,8 @@
           </label>
         </div>
         
+        <div id="zone-cards" class="zone-cards"></div>
+
         <div id="routing-grid" class="routing-container" style="display: flex; gap: 10px; align-items: stretch; padding-bottom: 5px;">
           <div class="route-column" id="col-direct" data-zone="direct" draggable="true" style="flex: 1; min-width: 0;">
             <h3 style="color: var(--success); pointer-events: none; display: flex; align-items: center; gap: 6px;">
@@ -440,6 +435,9 @@
       </div>
     </div>
   </div>
+
+  <div id="subpage-zone" class="subpage" aria-hidden="true"></div>
+  <div id="subpage-patches" class="subpage" aria-hidden="true"></div>
 
   <div id="back-exit-toast" class="back-exit-toast" role="status" aria-live="polite"></div>
 

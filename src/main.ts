@@ -4,7 +4,7 @@ import projectChangelog from "../CHANGELOG.md?raw";
 import packageMetadata from "../package.json";
 import { translations } from "./i18n";
 import { escapeHtml } from "./security";
-import { DISCONNECTED_CORE_LABEL, renderProjectChangelog, resolveAndroidBackAction, resolveRuntimeInfo } from "./ui";
+import { changelogReleaseCount, DISCONNECTED_CORE_LABEL, renderProjectChangelog, resolveAndroidBackAction, resolveRuntimeInfo } from "./ui";
 
 // **********************************
 // TYPES & INTERFACES
@@ -1063,9 +1063,217 @@ function toggleMenu(show?: boolean) {
     overlay?.classList.toggle('open', shouldOpen); 
 }
 
+
+// **********************************
+// SUBPAGES (routing zone, patch notes) & SWIPES
+// **********************************
+type SubpageId = 'subpage-zone' | 'subpage-patches';
+let openZone: ZoneKey | null = null;
+
+const ZONE_META: Record<ZoneKey, { label: string, color: string, descKey: string, icon: string }> = {
+    direct: {
+        label: 'Direct', color: 'var(--success)', descKey: 'zone_desc_direct',
+        icon: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>'
+    },
+    proxy: {
+        label: 'Proxy', color: 'var(--accent)', descKey: 'zone_desc_proxy',
+        icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+    },
+    block: {
+        label: 'Block', color: 'var(--danger)', descKey: 'zone_desc_block',
+        icon: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>'
+    },
+};
+
+function svgIcon(path: string, size = 20): string {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+}
+
+function subpageElement(id: SubpageId): HTMLElement | null {
+    return document.getElementById(id);
+}
+
+function openSubpage(id: SubpageId) {
+    const el = subpageElement(id);
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+    el.scrollTop = 0;
+}
+
+function isSubpageOpen(): boolean {
+    return document.querySelector('.subpage.open') !== null;
+}
+
+function closeSubpages() {
+    document.querySelectorAll<HTMLElement>('.subpage.open').forEach(el => {
+        el.classList.remove('open');
+        el.setAttribute('aria-hidden', 'true');
+    });
+    openZone = null;
+}
+
+function renderZoneCards() {
+    const host = document.getElementById('zone-cards');
+    if (!host) return;
+    const context = getProviderRoutingContext();
+    const routing = context?.routing || routingState;
+    const effectiveDefault: ZoneKey = context ? 'proxy' : defaultOutbound;
+    host.replaceChildren();
+    zonePriority.forEach((zone, index) => {
+        const meta = ZONE_META[zone];
+        const count = routing[zone]?.length || 0;
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `zone-card${zone === effectiveDefault ? ' is-default' : ''}`;
+        card.dataset.zoneOpen = zone;
+        card.style.setProperty('--zone-color', meta.color);
+        card.innerHTML = `
+            <span class="zone-card-icon">${svgIcon(meta.icon, 22)}</span>
+            <span class="zone-card-body">
+                <span class="zone-card-title">${escapeHtml(meta.label)}${zone === effectiveDefault ? `<span class="zone-badge">${escapeHtml(t('zone_default_badge'))}</span>` : ''}</span>
+                <span class="zone-card-desc">${escapeHtml(t(meta.descKey))}</span>
+                <span class="zone-card-meta">${escapeHtml(count > 0 ? t('zone_rules_count').replace('{n}', String(count)) : t('zone_no_rules'))}</span>
+            </span>
+            <span class="zone-card-chevron">${svgIcon('<path d="m9 6 6 6-6 6"/>', 18)}</span>
+        `;
+        host.appendChild(card);
+        if (index < zonePriority.length - 1) {
+            const arrow = document.createElement('div');
+            arrow.className = 'zone-arrow';
+            arrow.setAttribute('aria-hidden', 'true');
+            arrow.innerHTML = svgIcon('<path d="M12 5v14"/><path d="m6 13 6 6 6-6"/>', 16);
+            host.appendChild(arrow);
+        }
+    });
+}
+
+function renderZoneSubpage() {
+    const host = document.getElementById('subpage-zone');
+    if (!host || !openZone) return;
+    const zone = openZone;
+    const meta = ZONE_META[zone];
+    const context = getProviderRoutingContext();
+    const readOnly = !!context;
+    const routing = context?.routing || routingState;
+    const effectiveDefault: ZoneKey = context ? 'proxy' : defaultOutbound;
+    const rules: RoutingRule[] = routing[zone] || [];
+    const position = zonePriority.indexOf(zone);
+
+    const rulesHtml = rules.length === 0
+        ? `<div class="zone-empty">${escapeHtml(t('zone_empty'))}</div>`
+        : rules.map(rule => `
+            <div class="tag-item zone-rule${readOnly ? ' provider-tag-item' : ''}">
+                <span class="zone-rule-text">${escapeHtml(String(rule.value))}</span>
+                ${readOnly ? '' : `<span class="btn-delete-tag" data-tag="${escapeHtml(String(rule.value))}" data-zone="${zone}" role="button" aria-label="${escapeHtml(t('btn_delete'))}">×</span>`}
+            </div>`).join('');
+
+    host.style.setProperty('--zone-color', meta.color);
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${escapeHtml(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 22)}</button>
+            <div class="subpage-title zone-title"><span class="zone-title-icon">${svgIcon(meta.icon, 20)}</span>${escapeHtml(meta.label)}</div>
+        </div>
+        <div class="subpage-body">
+            <p class="subpage-lead">${escapeHtml(t(meta.descKey))}</p>
+            ${readOnly ? '' : `
+            <div class="zone-setting">
+                <div class="zone-setting-copy">
+                    <div class="zone-setting-title">${escapeHtml(t('zone_default_title'))}</div>
+                    <div class="zone-setting-hint">${escapeHtml(t('zone_default_hint'))}</div>
+                </div>
+                ${zone === effectiveDefault
+                    ? `<span class="zone-badge zone-badge-solid">${escapeHtml(t('zone_default_badge'))}</span>`
+                    : `<button type="button" class="outline-btn" data-zone-default="${zone}">${escapeHtml(t('zone_make_default'))}</button>`}
+            </div>
+            <div class="zone-setting">
+                <div class="zone-setting-copy">
+                    <div class="zone-setting-title">${escapeHtml(t('zone_priority').replace('{n}', String(position + 1)).replace('{total}', String(zonePriority.length)))}</div>
+                    <div class="zone-setting-hint">${escapeHtml(t('zone_priority_hint'))}</div>
+                </div>
+                <div class="zone-move">
+                    <button type="button" class="outline-btn icon-only" data-zone-move="-1" aria-label="${escapeHtml(t('zone_move_up'))}" ${position <= 0 ? 'disabled' : ''}>${svgIcon('<path d="m18 15-6-6-6 6"/>', 18)}</button>
+                    <button type="button" class="outline-btn icon-only" data-zone-move="1" aria-label="${escapeHtml(t('zone_move_down'))}" ${position >= zonePriority.length - 1 ? 'disabled' : ''}>${svgIcon('<path d="m6 9 6 6 6-6"/>', 18)}</button>
+                </div>
+            </div>`}
+            <h4 class="subpage-section-title">${escapeHtml(t('zone_rules_title'))}</h4>
+            <div class="zone-rules">${rulesHtml}</div>
+            ${readOnly ? '' : `<button type="button" class="btn-add" data-zone="${zone}">${escapeHtml(t('zone_add_rule'))}</button>`}
+        </div>
+    `;
+}
+
+function openZonePage(zone: ZoneKey) {
+    openZone = zone;
+    renderZoneSubpage();
+    openSubpage('subpage-zone');
+}
+
+function renderPatchesSubpage() {
+    const host = document.getElementById('subpage-patches');
+    if (!host) return;
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${escapeHtml(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 22)}</button>
+            <div class="subpage-title">${escapeHtml(t('patch_notes'))}</div>
+        </div>
+        <div class="subpage-body">${renderProjectChangelog(projectChangelog)}</div>
+    `;
+}
+
+/** Closes the topmost overlay (dialog, subpage, add-link panel). Returns false when none was open. */
+function closeTopLayer(): boolean {
+    const openDialog = document.querySelector<HTMLDialogElement>('dialog[open]');
+    if (openDialog) {
+        if (openDialog.id === 'prompt-modal') document.getElementById('prompt-cancel')?.click();
+        else openDialog.close();
+        return true;
+    }
+    if (isSubpageOpen()) { closeSubpages(); return true; }
+    if (document.getElementById('profiles-drawer')?.classList.contains('open')) {
+        profilesDrawer?.close();
+        return true;
+    }
+    return false;
+}
+
+function initSwipeNavigation() {
+    let startX = 0, startY = 0, startT = 0, tracking = false;
+    const blocked = (el: EventTarget | null) =>
+        el instanceof Element && el.closest('input, textarea, select, pre, .no-swipe, .hero-circle') !== null;
+
+    document.addEventListener('touchstart', (e) => {
+        tracking = e.touches.length === 1 && !blocked(e.target);
+        if (!tracking) return;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        startT = Date.now();
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+        if (!tracking) return;
+        tracking = false;
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        if (Date.now() - startT > 700) return;
+        if (Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+
+        if (dx > 0) {
+            // Swipe right: close the open section, otherwise reveal the side menu.
+            if (closeTopLayer()) return;
+            if (sidebar?.classList.contains('open')) return;
+            toggleMenu(true);
+        } else if (sidebar?.classList.contains('open')) {
+            toggleMenu(false);
+        }
+    }, { passive: true });
+}
+
 function switchPage(pageId: string) { 
     pages.forEach(page => page.classList.toggle('active', page.id === pageId)); 
     toggleMenu(false); 
+    closeSubpages();
     resetBackExitConfirmation();
     
     if (pageId === 'page-logs' && toggleLogs?.checked) { 
@@ -1107,6 +1315,7 @@ async function handleAndroidBackPress() {
     const profiles = document.getElementById('profiles-drawer');
     const action = resolveAndroidBackAction({
         dialogOpen: openDialog !== null,
+        subpageOpen: isSubpageOpen(),
         profilesOpen: profiles?.classList.contains('open') === true,
         menuOpen: sidebar?.classList.contains('open') === true,
         activePageId: document.querySelector<HTMLElement>('.page-view.active')?.id || 'page-main',
@@ -1121,6 +1330,10 @@ async function handleAndroidBackPress() {
         } else {
             openDialog?.close();
         }
+        return;
+    }
+    if (action === 'close-subpage') {
+        closeSubpages();
         return;
     }
     if (action === 'close-profiles') {
@@ -1455,7 +1668,11 @@ function renderLinks() {
     if (appLinks.length === 0) { 
      linksContainer.innerHTML = `
        <div class="empty-state">
-           <img src="/karin-empty.png" alt="Karin" class="empty-state-img">
+           <svg class="empty-state-svg" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+               <circle cx="60" cy="60" r="46" stroke="var(--border-hover)" stroke-width="2" stroke-dasharray="4 8" stroke-linecap="round"/>
+               <circle cx="60" cy="60" r="32" fill="var(--input-bg)" stroke="var(--accent)" stroke-width="2"/>
+               <path d="M60 46v28M46 60h28" stroke="var(--accent)" stroke-width="4" stroke-linecap="round"/>
+           </svg>
            <div class="empty-state-text">
                ${t('empty_state_text')}
            </div>
@@ -1624,8 +1841,8 @@ function renderRouting() {
     grid?.classList.toggle('provider-routing-mode', !!context);
     if (routeAction) routeAction.hidden = !!context;
     if (description) {
-        description.setAttribute('data-i18n', context ? 'provider_routing_readonly' : 'routing_hint');
-        description.textContent = t(context ? 'provider_routing_readonly' : 'routing_hint');
+        description.setAttribute('data-i18n', context ? 'provider_routing_readonly' : 'routing_hint_mobile');
+        description.textContent = t(context ? 'provider_routing_readonly' : 'routing_hint_mobile');
     }
 
     Object.keys(zones).forEach(key => { 
@@ -1664,6 +1881,8 @@ function renderRouting() {
     localStorage.setItem('karin_routing', JSON.stringify(routingState));
     updateDefaultOutboundUI();
     renderProviderRoutingView();
+    renderZoneCards();
+    if (openZone) renderZoneSubpage();
 }
 
 function renderRoutingProfiles() {
@@ -1772,15 +1991,17 @@ function renderAboutPage() {
     }
 
     if (patchPanel) {
+        const total = changelogReleaseCount(projectChangelog);
         patchPanel.innerHTML = `
-            <h3 style="margin-top: 0; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+            <h3 class="patch-panel-title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                ${t('patch_notes')}
+                ${escapeHtml(t('patch_notes'))}
             </h3>
-            
-            <div class="patch-scroll-area">${renderProjectChangelog(projectChangelog)}</div>
+            <div class="patch-latest">${renderProjectChangelog(projectChangelog, 1)}</div>
+            ${total > 1 ? `<button type="button" class="outline-btn patch-view-all" data-open-patches>${escapeHtml(t('patches_view_all'))}${svgIcon('<path d="m9 6 6 6-6 6"/>', 16)}</button>` : ''}
         `;
     }
+    renderPatchesSubpage();
 }
 
 function renderSearchResults(tags: string[]) { 
@@ -2270,6 +2491,7 @@ async function init() {
 
     document.documentElement.classList.toggle('platform-android', runtimeInfo.platform === 'android');
     await initAndroidBackNavigation();
+    initSwipeNavigation();
     document.getElementById('btn-close-search-modal')?.addEventListener('click', () => searchModal?.close());
     document.getElementById('btn-close-route-action-modal')?.addEventListener('click', () => {
         (document.getElementById('route-action-modal') as HTMLDialogElement | null)?.close();
@@ -2764,7 +2986,32 @@ async function init() {
 // **********************************
 document.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;
-  
+
+    const zoneCard = target.closest<HTMLElement>('[data-zone-open]');
+    if (zoneCard) { openZonePage(zoneCard.dataset.zoneOpen as ZoneKey); return; }
+    if (target.closest('[data-subpage-close]')) { closeSubpages(); return; }
+    if (target.closest('[data-open-patches]')) { openSubpage('subpage-patches'); return; }
+    const makeDefault = target.closest<HTMLElement>('[data-zone-default]');
+    if (makeDefault && !getProviderRoutingContext()) {
+        defaultOutbound = makeDefault.dataset.zoneDefault as ZoneKey;
+        localStorage.setItem('karin_default_outbound', defaultOutbound);
+        updateDefaultOutboundUI();
+        renderRouting();
+        return;
+    }
+    const moveZone = target.closest<HTMLElement>('[data-zone-move]');
+    if (moveZone && openZone && !getProviderRoutingContext()) {
+        const from = zonePriority.indexOf(openZone);
+        const to = from + Number(moveZone.dataset.zoneMove);
+        if (to >= 0 && to < zonePriority.length) {
+            zonePriority.splice(to, 0, zonePriority.splice(from, 1)[0]);
+            localStorage.setItem('karin_zone_priority', JSON.stringify(zonePriority));
+            applyColumnOrder();
+            renderRouting();
+        }
+        return;
+    }
+
     const col = target.closest('.route-column');
     if (col
         && !document.getElementById('routing-grid')?.classList.contains('provider-routing-mode')

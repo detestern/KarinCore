@@ -22,16 +22,18 @@ export function resolveRuntimeInfo(
     };
 }
 
-export type AndroidBackAction = 'close-dialog' | 'close-profiles' | 'close-menu' | 'go-main' | 'arm-exit' | 'exit';
+export type AndroidBackAction = 'close-dialog' | 'close-subpage' | 'close-profiles' | 'close-menu' | 'go-main' | 'arm-exit' | 'exit';
 
 export function resolveAndroidBackAction(state: {
     dialogOpen: boolean;
+    subpageOpen?: boolean;
     profilesOpen: boolean;
     menuOpen: boolean;
     activePageId: string;
     exitArmed: boolean;
 }): AndroidBackAction {
     if (state.dialogOpen) return 'close-dialog';
+    if (state.subpageOpen) return 'close-subpage';
     if (state.profilesOpen) return 'close-profiles';
     if (state.menuOpen) return 'close-menu';
     if (state.activePageId !== 'page-main') return 'go-main';
@@ -65,9 +67,10 @@ export function renderPatchNotes(text: string): string {
     `).join('');
 }
 
-export function renderProjectChangelog(markdown: string): string {
-    interface ReleaseSection { title: string; items: string[] }
-    interface Release { title: string; summary: string[]; sections: ReleaseSection[] }
+interface ReleaseSection { title: string; items: string[] }
+interface Release { title: string; summary: string[]; sections: ReleaseSection[] }
+
+function parseChangelog(markdown: string): Release[] {
 
     const releases: Release[] = [];
     let release: Release | null = null;
@@ -108,6 +111,18 @@ export function renderProjectChangelog(markdown: string): string {
 
         if (!line.startsWith('[')) release.summary.push(line);
     }
+
+    return releases;
+}
+
+export function changelogReleaseCount(markdown: string): number {
+    return parseChangelog(markdown).length;
+}
+
+/** `limit` keeps only the newest releases (the changelog lists newest first). */
+export function renderProjectChangelog(markdown: string, limit?: number): string {
+    const parsed = parseChangelog(markdown);
+    const releases = limit === undefined ? parsed : parsed.slice(0, Math.max(0, limit));
 
     return releases.map(item => `
         <section class="patch-release">

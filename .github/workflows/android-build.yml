@@ -99,8 +99,34 @@ jobs:
       - name: Initialize Tauri Android project
         run: npm run tauri -- android init --ci --skip-targets-install
 
+      # `tauri android init` fills the generated project with the default Tauri
+      # launcher icon and does not use src-tauri/icons/android, so the KarinCore
+      # icon has to be copied over it before building.
+      - name: Apply KarinCore launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          RES="src-tauri/gen/android/app/src/main/res"
+          test -d "$RES"
+          find "$RES" -path '*/mipmap-*' -name 'ic_launcher*.webp' -delete
+          rm -f "$RES"/drawable*/ic_launcher_foreground.xml "$RES"/drawable*/ic_launcher_background.xml
+          cp -r src-tauri/icons/android/. "$RES/"
+          for f in mipmap-xxxhdpi/ic_launcher.png mipmap-xxxhdpi/ic_launcher_foreground.png mipmap-xxxhdpi/ic_launcher_monochrome.png mipmap-anydpi-v26/ic_launcher.xml values/ic_launcher_background.xml; do
+            cmp "src-tauri/icons/android/$f" "$RES/$f"
+          done
+
       - name: Build split debug APKs for every ABI
         run: npm run tauri -- android build --apk --target aarch64 armv7 i686 x86_64 --split-per-abi --debug --ci
+
+      - name: Verify the launcher icon is packaged
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKS="$(find src-tauri/gen/android/app/build/outputs -type f -name '*.apk')"
+          test -n "$APKS"
+          for apk in $APKS; do
+            unzip -l "$apk" | grep -q 'ic_launcher_monochrome' || { echo "::error::KarinCore launcher icon is missing from $apk"; exit 1; }
+          done
 
       # ***************************************
       # PERMANENT SIGNING KEY

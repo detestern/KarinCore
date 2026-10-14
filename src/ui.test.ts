@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DISCONNECTED_CORE_LABEL, renderPatchNotes, renderProjectChangelog, resolveAndroidBackAction, resolveRuntimeInfo } from './ui';
+import { changelogReleaseCount, DISCONNECTED_CORE_LABEL, renderPatchNotes, renderProjectChangelog, resolveAndroidBackAction, resolveRuntimeInfo } from './ui';
 
 describe('runtime metadata fallback', () => {
     it('keeps Android layout and the build version when the native command fails', () => {
@@ -49,6 +49,9 @@ describe('Android back navigation', () => {
 
     it('closes overlays before navigating or exiting', () => {
         expect(resolveAndroidBackAction({ ...baseState, dialogOpen: true })).toBe('close-dialog');
+        expect(resolveAndroidBackAction({ ...baseState, subpageOpen: true })).toBe('close-subpage');
+        expect(resolveAndroidBackAction({ ...baseState, subpageOpen: true, profilesOpen: true, menuOpen: true })).toBe('close-subpage');
+        expect(resolveAndroidBackAction({ ...baseState, dialogOpen: true, subpageOpen: true })).toBe('close-dialog');
         expect(resolveAndroidBackAction({ ...baseState, profilesOpen: true })).toBe('close-profiles');
         expect(resolveAndroidBackAction({ ...baseState, menuOpen: true })).toBe('close-menu');
     });
@@ -63,6 +66,15 @@ describe('project changelog presentation', () => {
         expect(html).toContain('Added');
         expect(html.match(/class="patch-release-item"/g)).toHaveLength(2);
         expect(html).not.toContain('Unreleased');
+    });
+
+    it('can limit the output to the newest releases', () => {
+        const md = '## [3.0.0]\n- c\n## [2.0.0]\n- b\n## [1.0.0]\n- a';
+        expect(changelogReleaseCount(md)).toBe(3);
+        const html = renderProjectChangelog(md, 1);
+        expect(html).toContain('v 3.0.0');
+        expect(html).not.toContain('v 2.0.0');
+        expect(renderProjectChangelog(md).match(/class="patch-release"/g)).toHaveLength(3);
     });
 
     it('escapes changelog content', () => {
