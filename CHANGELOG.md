@@ -22,6 +22,7 @@ Visual pass after testing on a real phone.
 - App launcher icon is the KarinCore core again (the build used to fall back to the default Tauri icon); the build now checks the APK for it.
 - Dark circle around the core while connecting is gone.
 - Ping is no longer highlighted after a tap.
+- Updated rustls to 0.23.46 (security advisories RUSTSEC-2026-0346..0349).
 
 ## [0.1.0-alpha.35] - 2026-10-12
 
