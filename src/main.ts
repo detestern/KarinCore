@@ -1875,10 +1875,10 @@ function renderLinkItem(item: ProxyLink) {
     const checkboxHtml = isEditMode ? `<input type="checkbox" class="edit-checkbox" data-id="${safeId}" ${selectedLinks.has(item.id) ? 'checked' : ''}>` : '';
     const actionsHtml = isEditMode ? '' : `
         <button class="btn-menu-dots" data-index="${safeId}">⋮</button>
-        <div class="dropdown-menu" id="menu-${safeId}" style="display:none;">
+        <div class="dropdown-menu" id="menu-${safeId}">
           <button class="btn-share" data-url="${safeUrl}">${escapeHtml(t('btn_share'))}</button>
           <button class="btn-pin" data-id="${safeId}">${escapeHtml(item.pinned ? t('btn_unpin') : t('btn_pin'))}</button>
-          <button class="btn-delete-link danger" style="background: transparent; color: var(--danger);" data-id="${safeId}">${escapeHtml(t('btn_delete'))}</button>
+          <button class="btn-delete-link danger" data-id="${safeId}">${escapeHtml(t('btn_delete'))}</button>
         </div>
     `;
 
@@ -1898,8 +1898,15 @@ function renderLinkItem(item: ProxyLink) {
     `;
 }
 
+function resetListInteractionState(container: HTMLElement | null) {
+    document.querySelectorAll<HTMLElement>('.dropdown-menu').forEach(menu => { menu.style.display = 'none'; });
+    const active = document.activeElement as HTMLElement | null;
+    if (active && container?.contains(active)) active.blur();
+}
+
 function renderLinks() {
     syncEditBar();
+    resetListInteractionState(linksContainer);
     const countEl = document.getElementById('links-count');
     if (countEl) countEl.textContent = appLinks.length > 0 ? String(appLinks.length) : '';
     document.querySelector<HTMLElement>('.drawer-section-label')?.classList.toggle('is-empty', appLinks.length === 0);
@@ -2158,6 +2165,7 @@ function updateRoutingProfileName() {
 function renderRoutingProfiles() {
     const list = document.getElementById('routing-profiles-list');
     if (!list) return;
+    resetListInteractionState(list);
     list.replaceChildren();
     routeProfiles.forEach(p => {
         const wrapper = document.createElement('div');
@@ -2167,10 +2175,10 @@ function renderRoutingProfiles() {
                 <div class="link-actions">
                     <button class="secondary btn-load-profile" data-id="${escapeHtml(p.id)}" style="padding: 6px 12px; font-size: 13px;">${escapeHtml(t('btn_select'))}</button>
                     <button class="btn-menu-dots btn-route-menu-dots" data-index="${escapeHtml(p.id)}">⋮</button>
-                    <div class="dropdown-menu" id="route-menu-${escapeHtml(p.id)}" style="display:none;">
+                    <div class="dropdown-menu" id="route-menu-${escapeHtml(p.id)}">
                         <button class="btn-edit-profile" data-id="${escapeHtml(p.id)}">${escapeHtml(t('btn_rename'))}</button>
                         <button class="btn-export-profile" data-id="${escapeHtml(p.id)}">${escapeHtml(t('btn_share'))}</button>
-                        <button class="btn-del-profile danger" style="background: transparent; color: var(--danger);" data-id="${escapeHtml(p.id)}">${escapeHtml(t('btn_delete'))}</button>
+                        <button class="btn-del-profile danger" data-id="${escapeHtml(p.id)}">${escapeHtml(t('btn_delete'))}</button>
                     </div>
                 </div>
             </div>
@@ -2460,10 +2468,10 @@ function renderAndroidSystemVpnStatus() {
         return;
     }
 
-    if (section) section.style.display = 'block';
+    if (section) section.style.display = 'flex';
     if (desktopSection) desktopSection.style.display = 'none';
     const tileSection = document.getElementById('android-tile-section');
-    if (tileSection) tileSection.style.display = 'block';
+    if (tileSection) tileSection.style.display = 'flex';
 
     if (status) {
         status.textContent = nativeVpnLockdown
@@ -2625,7 +2633,7 @@ async function initAndroidAppRouting() {
         if (!Array.isArray(apps) || apps.length === 0) return;
 
         installedApps = apps;
-        if (androidAppRoutingSection) androidAppRoutingSection.style.display = 'block';
+        if (androidAppRoutingSection) androidAppRoutingSection.style.display = 'flex';
         if (appRoutingModeSelect) appRoutingModeSelect.value = appRoutingMode;
 
         const installedPackageNames = new Set(installedApps.map(app => app.packageName));

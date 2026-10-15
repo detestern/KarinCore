@@ -82,7 +82,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.40</div>
+      <div class="app-version-text">v 0.1.0-alpha.41</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -371,7 +371,7 @@
             <span id="lang-select-label">English</span>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
           </div>
-          <div class="dropdown-menu" id="lang-menu" style="display: none; width: 100%; top: 100%; margin-top: 5px; z-index: 1000;">
+          <div class="dropdown-menu" id="lang-menu">
             <button class="lang-option" data-value="en">English</button>
             <button class="lang-option" data-value="ru">Русский</button>
             <button class="lang-option" data-value="fr">Français</button>
@@ -408,14 +408,14 @@
       <div id="android-system-vpn-section" class="setting-card settings-detail-card" style="display:none;">
         <div class="setting-card-title" data-i18n="settings_android_kill_switch">Android Kill Switch</div>
         <div class="setting-card-description" data-i18n="settings_android_kill_switch_note">Use Android Always-on VPN and Block connections without VPN for system-level protection.</div>
-        <div id="android-system-vpn-status" style="margin-top:8px; font-size:11px; color:var(--text-dim);"></div>
-        <button id="android-vpn-settings-btn" class="small-btn" type="button" style="margin-top:10px;" data-i18n="settings_android_open_vpn">Open VPN settings</button>
+        <div id="android-system-vpn-status" class="setting-card-note"></div>
+        <button id="android-vpn-settings-btn" class="small-btn setting-card-action" type="button" data-i18n="settings_android_open_vpn">Open VPN settings</button>
       </div>
       <div id="android-tile-section" class="setting-card settings-detail-card" style="display:none;">
         <div class="setting-card-title" data-i18n="settings_tile_title">Quick settings tile</div>
         <div class="setting-card-description" data-i18n="settings_tile_desc">Connect and disconnect from the notification shade without opening the app.</div>
-        <button id="android-tile-btn" class="small-btn" type="button" style="margin-top:10px;" data-i18n="settings_tile_add">Add tile</button>
-        <div id="android-tile-note" style="margin-top:8px; font-size:11px; color:var(--text-dim);"></div>
+        <button id="android-tile-btn" class="small-btn setting-card-action" type="button" data-i18n="settings_tile_add">Add tile</button>
+        <div id="android-tile-note" class="setting-card-note"></div>
       </div>
       <div id="android-stability-section" class="setting-card settings-detail-card android-stability-card" style="display:none;">
         <div class="setting-card-title" data-i18n="settings_stability_title">Permissions and stability</div>
@@ -427,15 +427,15 @@
       <div id="android-app-routing-section" class="setting-card settings-detail-card" style="display:none;">
         <div class="setting-card-title" data-i18n="settings_app_routing_title">Per-app VPN</div>
         <div class="setting-card-description" data-i18n="settings_app_routing_desc">Choose which Android applications use the VPN tunnel.</div>
-        <div class="app-routing-controls" style="display:flex; gap:10px; align-items:center; margin-top:12px;">
-          <select id="android-app-routing-mode" style="flex:1;">
+        <div class="app-routing-controls">
+          <select id="android-app-routing-mode">
             <option value="all" data-i18n="settings_app_routing_all">All apps</option>
             <option value="allowlist" data-i18n="settings_app_routing_allowlist">Only selected</option>
             <option value="denylist" data-i18n="settings_app_routing_denylist">Bypass selected</option>
           </select>
           <button id="android-app-routing-choose" class="small-btn" type="button" data-i18n="settings_app_routing_choose">Select apps</button>
         </div>
-        <div id="android-app-routing-summary" style="margin-top:7px;font-size:11px;color:var(--text-dim);"></div>
+        <div id="android-app-routing-summary" class="setting-card-note"></div>
       </div>
     </div>
   </div>

@@ -4,6 +4,13 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.41] - 2026-10-15
+
+### Fixed
+- Configurations panel: the dropdown menus (share, pin, delete) no longer pop open on every server after adding or removing one; the "Delete" item is red again.
+- Settings: buttons and status lines no longer stick to the text above them; the Kill Switch, quick tile, stability and per-app VPN cards have proper spacing, and the "Select apps" button sits next to the mode list with a gap.
+- The app now keeps inline styles enabled in the WebView (they were being blocked by the security policy), so hidden elements and spacing behave the same on every device.
+
 ## [0.1.0-alpha.40] - 2026-10-15
 
 ### Fixed

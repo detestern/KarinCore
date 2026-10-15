@@ -721,7 +721,9 @@ button.danger {
     border: 1px solid var(--input-bg);
     border-radius: 8px;
     z-index: 1000;
-    display: flex;
+    /* Hidden by default in CSS: inline style attributes can be blocked by the
+       app CSP, so the script opens a menu by setting display:flex from JS. */
+    display: none;
     flex-direction: column;
     width: 130px;
     box-shadow: 0 8px 16px rgba(0,0,0,0.4);
@@ -3487,4 +3489,62 @@ html.qr-scanning .qr-overlay {
     overflow: visible;
     overscroll-behavior: auto;
     touch-action: auto;
+}
+
+
+/* alpha.41: spacing and visibility live in CSS, not in inline style attributes
+   (the WebView CSP may ignore those). */
+.dropdown-menu button.danger {
+    background: transparent;
+    color: var(--danger);
+}
+
+#lang-menu {
+    width: 100%;
+    top: 100%;
+    margin-top: 5px;
+}
+
+.settings-detail-card .setting-card-note {
+    margin-top: 10px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--text-dim);
+}
+
+.settings-detail-card .setting-card-note:empty {
+    display: none;
+}
+
+.settings-detail-card .setting-card-action {
+    align-self: flex-start;
+    margin-top: 14px;
+}
+
+.settings-detail-card .setting-card-note + .setting-card-action {
+    margin-top: 12px;
+}
+
+.settings-detail-card .app-routing-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.settings-detail-card .app-routing-controls > select {
+    flex: 1;
+}
+
+.settings-detail-card .app-routing-controls + .setting-card-note {
+    margin-top: 12px;
+}
+
+.settings-detail-card .stability-refresh {
+    align-self: flex-start;
+    margin-top: 14px;
+}
+
+.settings-detail-card {
+    gap: 0;
 }
