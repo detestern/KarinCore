@@ -3575,9 +3575,15 @@ pub fn run() {
         let _ = ensure_geo_files().await;
     });
 
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_karin_vpn::init())
+        .plugin(tauri_plugin_karin_vpn::init());
+
+    // QR scanner for subscriptions and links (camera permission is declared by the plugin).
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+
+    let app = builder
         .manage(ProxyState {
             auth_token: Mutex::new(None),
         })

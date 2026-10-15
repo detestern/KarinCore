@@ -1,7 +1,7 @@
 {
   "name": "karin-proxy",
   "private": true,
-  "version": "0.1.0-alpha.38",
+  "version": "0.1.0-alpha.39",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/plugin-barcode-scanner": "^2.5.3",
     "@tauri-apps/plugin-opener": "^2.7.0"
   },
   "devDependencies": {

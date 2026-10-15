@@ -82,7 +82,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.38</div>
+      <div class="app-version-text">v 0.1.0-alpha.39</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -158,23 +158,20 @@
     <div id="profiles-drawer-overlay" class="profiles-drawer-overlay"></div>
     <div id="profiles-drawer" class="profiles-drawer">
       <div class="links-wrapper" style="height: 100%; margin: 0;">
-        <div class="profiles-drawer-header" style="display: flex; justify-content: space-between; align-items: center;">
-          <h3 data-i18n="config_title" style="margin: 0;">Конфигурации</h3>
-          <div style="display: flex; gap: 15px; align-items: center;">
-            <button id="btn-import-file" class="icon-btn" title="Импорт конфигурации (.ovpn, .conf)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download-icon lucide-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
-            </button>
-            <button id="btn-edit-mode" class="icon-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
-            </button>
-            <button id="btn-close-profiles" class="icon-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-            </button>
+        <div class="profiles-drawer-header">
+          <h3 data-i18n="config_title">Конфигурации</h3>
+          <div class="drawer-actions">
+            <button id="btn-import-file" class="drawer-btn" type="button" title="Import (.ovpn, .conf)" aria-label="Import"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
+            <button id="btn-scan-qr" class="drawer-btn" type="button" title="QR" aria-label="QR"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 12h8"/></svg></button>
+            <button id="btn-edit-mode" class="drawer-btn" type="button" title="Edit" aria-label="Edit"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
           </div>
         </div>
-        
-        <div class="input-group" id="import-bar">
-          <input type="text" id="link-input" data-i18n-placeholder="input_placeholder" placeholder="vless:// или URL подписки...">
+
+        <div class="import-card" id="import-bar">
+          <div class="import-field">
+            <input type="text" id="link-input" data-i18n-placeholder="input_placeholder" placeholder="vless:// или URL подписки..." autocomplete="off" autocapitalize="off" spellcheck="false">
+            <button id="btn-paste" class="import-paste" type="button" title="Paste" aria-label="Paste"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button>
+          </div>
           <button id="btn-save" data-i18n="btn_save">Сохранить</button>
         </div>
 
@@ -200,6 +197,10 @@
           <button id="btn-edit-cancel" class="icon-btn" title="Отмена">
             <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
+        </div>
+
+        <div class="drawer-section-label">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01"/><path d="M7 16.5h.01"/></svg><span data-i18n="config_servers">Мои серверы</span><span id="links-count" class="drawer-count"></span>
         </div>
 
         <div id="links-container" class="links-list"></div>
@@ -450,6 +451,12 @@
 
   <div id="subpage-zone" class="subpage" aria-hidden="true"></div>
   <div id="subpage-patches" class="subpage" aria-hidden="true"></div>
+
+  <div id="qr-overlay" class="qr-overlay" aria-hidden="true">
+    <div class="qr-frame"><i></i><i></i><i></i><i></i></div>
+    <div id="qr-hint" class="qr-hint" data-i18n="qr_hint">Наведите камеру на QR-код</div>
+    <button id="qr-cancel" class="qr-cancel" type="button" data-i18n="btn_cancel">Отмена</button>
+  </div>
 
   <div id="back-exit-toast" class="back-exit-toast" role="status" aria-live="polite"></div>
 

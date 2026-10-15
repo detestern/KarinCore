@@ -11,6 +11,34 @@ export const translations: Record<string, Record<string, string>> = {
 
 
 
+    config_servers: "My servers",
+
+
+
+    qr_hint: "Point the camera at a QR code",
+
+
+
+    qr_permission_denied: "Camera access is needed to scan. Allow it in the app settings.",
+
+
+
+    qr_unsupported: "This QR code is not a link or a subscription.",
+
+
+
+    qr_failed: "Could not open the camera.",
+
+
+
+    paste_failed: "Could not read the clipboard. Long-press the field and choose Paste.",
+
+
+
+    qr_open_settings: "Open settings",
+
+
+
 
     routing_profile_none: "None",
     zone_desc_direct: "Straight to the internet, outside the VPN",
@@ -260,6 +288,34 @@ export const translations: Record<string, Record<string, string>> = {
 
 
     about_web: "Web",
+
+
+
+    config_servers: "Мои серверы",
+
+
+
+    qr_hint: "Наведите камеру на QR-код",
+
+
+
+    qr_permission_denied: "Для сканирования нужен доступ к камере. Разрешите его в настройках приложения.",
+
+
+
+    qr_unsupported: "Этот QR-код не содержит ссылку или подписку.",
+
+
+
+    qr_failed: "Не удалось открыть камеру.",
+
+
+
+    paste_failed: "Не удалось прочитать буфер обмена. Удерживайте поле и выберите «Вставить».",
+
+
+
+    qr_open_settings: "Открыть настройки",
 
 
 
@@ -515,6 +571,34 @@ export const translations: Record<string, Record<string, string>> = {
 
 
 
+    config_servers: "Mes serveurs",
+
+
+
+    qr_hint: "Pointez la caméra vers un code QR",
+
+
+
+    qr_permission_denied: "L’accès à la caméra est nécessaire pour scanner. Autorisez-le dans les paramètres de l’application.",
+
+
+
+    qr_unsupported: "Ce code QR ne contient ni lien ni abonnement.",
+
+
+
+    qr_failed: "Impossible d’ouvrir la caméra.",
+
+
+
+    paste_failed: "Impossible de lire le presse-papiers. Appuyez longuement sur le champ puis choisissez Coller.",
+
+
+
+    qr_open_settings: "Ouvrir les paramètres",
+
+
+
 
     routing_profile_none: "Aucun",
     zone_desc_direct: "Directement vers Internet, hors VPN",
@@ -618,6 +702,34 @@ logs_export_diagnostics: "Exporter le diagnostic", logs_exporting: "Exportation.
 
 
 
+    config_servers: "我的服务器",
+
+
+
+    qr_hint: "将摄像头对准二维码",
+
+
+
+    qr_permission_denied: "扫描需要相机权限，请在应用设置中允许。",
+
+
+
+    qr_unsupported: "该二维码不是链接或订阅。",
+
+
+
+    qr_failed: "无法打开相机。",
+
+
+
+    paste_failed: "无法读取剪贴板。请长按输入框并选择粘贴。",
+
+
+
+    qr_open_settings: "打开设置",
+
+
+
 
     routing_profile_none: "未选择",
     zone_desc_direct: "直连互联网，不经过 VPN",
@@ -718,6 +830,34 @@ logs_export_diagnostics: "导出诊断", logs_exporting: "正在导出...", logs
 
 
     about_web: "Web",
+
+
+
+    config_servers: "Sunucularım",
+
+
+
+    qr_hint: "Kamerayı bir QR koduna doğrultun",
+
+
+
+    qr_permission_denied: "Taramak için kamera izni gerekli. Uygulama ayarlarından izin verin.",
+
+
+
+    qr_unsupported: "Bu QR kodu bir bağlantı veya abonelik değil.",
+
+
+
+    qr_failed: "Kamera açılamadı.",
+
+
+
+    paste_failed: "Panoya erişilemedi. Alana uzun basıp Yapıştır’ı seçin.",
+
+
+
+    qr_open_settings: "Ayarları aç",
 
 
 

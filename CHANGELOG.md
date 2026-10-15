@@ -4,6 +4,15 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.39] - 2026-10-15
+
+### Added
+- Scan a QR code with a subscription or a link: new button next to "Import" in the configurations panel. The camera opens with a frame; a valid code is added right away. Back or "Cancel" closes the camera. The camera permission is asked on first use.
+- A paste button inside the link field.
+
+### Changed
+- Configurations panel: the add block is a separate card with a "My servers" list below it; the title and the three icon buttons (import, QR, edit) share one line; the edit button lights up while edit mode is on. The close cross is gone (swipe right or Back closes the panel).
+
 ## [0.1.0-alpha.38] - 2026-10-15
 
 ### Changed

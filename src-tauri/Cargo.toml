@@ -1,6 +1,6 @@
 [package]
 name = "karin-proxy"
-version = "0.1.0-alpha.38"
+version = "0.1.0-alpha.39"
 description = "KarinCore Android - Android port of the KarinCore proxy client"
 authors = ["detestern <detestern@proton.me>", "VivaGushter"]
 edition = "2021"
@@ -27,6 +27,7 @@ percent-encoding = "2.3"
 
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls", "charset", "http2"] }
+tauri-plugin-barcode-scanner = "2"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "native-tls", "charset", "http2", "system-proxy"] }

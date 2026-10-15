@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { exit, onBackButtonPress } from "@tauri-apps/api/app";
+import { cancel as cancelBarcodeScan, checkPermissions as checkCameraPermission, Format as BarcodeFormat, openAppSettings as openCameraSettings, requestPermissions as requestCameraPermission, scan as scanBarcode } from "@tauri-apps/plugin-barcode-scanner";
 import projectChangelog from "../CHANGELOG.md?raw";
 import packageMetadata from "../package.json";
 import { translations } from "./i18n";
@@ -584,6 +585,7 @@ function syncEditBar() {
         editBar.style.display = isEditMode ? 'flex' : 'none';
     }
     if (importBar) importBar.style.display = isEditMode ? 'none' : 'flex';
+    document.getElementById('btn-edit-mode')?.classList.toggle('is-active', isEditMode);
 }
 
 /** Edit mode must never survive closing or opening the configurations panel. */
@@ -1083,6 +1085,107 @@ function toggleMenu(show?: boolean) {
 
 
 // **********************************
+// PASTE & QR SCANNER
+// **********************************
+let infoToastTimer: number | null = null;
+
+function showInfoToast(message: string) {
+    if (!backExitToast) return;
+    resetBackExitConfirmation();
+    backExitToast.textContent = message;
+    backExitToast.classList.add('visible');
+    if (infoToastTimer !== null) window.clearTimeout(infoToastTimer);
+    infoToastTimer = window.setTimeout(() => {
+        backExitToast.classList.remove('visible');
+        infoToastTimer = null;
+    }, 3200);
+}
+
+function isImportableText(text: string): boolean {
+    return /^(vless|vmess|trojan|ss|wg):\/\//i.test(text) || /^https:\/\//i.test(text);
+}
+
+async function pasteFromClipboard() {
+    try {
+        const text = (await navigator.clipboard.readText()).trim();
+        if (!text) throw new Error('empty clipboard');
+        if (linkInput) {
+            linkInput.value = text;
+            linkInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    } catch (error) {
+        console.debug('Clipboard read failed:', error);
+        showInfoToast(t('paste_failed'));
+        linkInput?.focus();
+    }
+}
+
+let qrScanning = false;
+let qrCancelled = false;
+
+function setQrOverlay(active: boolean) {
+    document.documentElement.classList.toggle('qr-scanning', active);
+    document.getElementById('qr-overlay')?.setAttribute('aria-hidden', active ? 'false' : 'true');
+}
+
+async function cancelQrScan() {
+    if (!qrScanning) return;
+    qrCancelled = true;
+    try { await cancelBarcodeScan(); } catch (error) { console.debug('QR cancel failed:', error); }
+}
+
+async function scanQrCode() {
+    if (qrScanning) return;
+
+    try {
+        let state = await checkCameraPermission();
+        if (state !== 'granted') state = await requestCameraPermission();
+        if (state !== 'granted') {
+            showInfoToast(t('qr_permission_denied'));
+            if (state === 'denied') {
+                window.setTimeout(() => { void openCameraSettings().catch(() => undefined); }, 1600);
+            }
+            return;
+        }
+    } catch (error) {
+        console.error('Camera permission check failed:', error);
+        showInfoToast(t('qr_failed'));
+        return;
+    }
+
+    qrScanning = true;
+    qrCancelled = false;
+    setQrOverlay(true);
+    let text = '';
+    try {
+        const result = await scanBarcode({ windowed: true, formats: [BarcodeFormat.QRCode] });
+        text = (result.content || '').trim();
+    } catch (error) {
+        if (!qrCancelled) {
+            console.error('QR scan failed:', error);
+            showInfoToast(t('qr_failed'));
+        }
+    } finally {
+        qrScanning = false;
+        setQrOverlay(false);
+    }
+
+    if (!text) return;
+    if (!isImportableText(text)) {
+        showInfoToast(t('qr_unsupported'));
+        return;
+    }
+    if (linkInput) linkInput.value = text;
+    await saveNewLink();
+}
+
+function initPasteAndQr() {
+    document.getElementById('btn-paste')?.addEventListener('click', () => { void pasteFromClipboard(); });
+    document.getElementById('btn-scan-qr')?.addEventListener('click', () => { void scanQrCode(); });
+    document.getElementById('qr-cancel')?.addEventListener('click', () => { void cancelQrScan(); });
+}
+
+// **********************************
 // SUBPAGES (routing zone, patch notes) & SWIPES
 // **********************************
 type SubpageId = 'subpage-zone' | 'subpage-patches';
@@ -1434,6 +1537,10 @@ function armBackExitConfirmation() {
 }
 
 async function handleAndroidBackPress() {
+    if (qrScanning) {
+        await cancelQrScan();
+        return;
+    }
     const openDialog = document.querySelector<HTMLDialogElement>('dialog[open]');
     const profiles = document.getElementById('profiles-drawer');
     const action = resolveAndroidBackAction({
@@ -1784,6 +1891,9 @@ function renderLinkItem(item: ProxyLink) {
 
 function renderLinks() {
     syncEditBar();
+    const countEl = document.getElementById('links-count');
+    if (countEl) countEl.textContent = appLinks.length > 0 ? String(appLinks.length) : '';
+    document.querySelector<HTMLElement>('.drawer-section-label')?.classList.toggle('is-empty', appLinks.length === 0);
     if(!linksContainer) return;
     linksContainer.innerHTML = '';
     renderProviderRoutingView();
@@ -2642,6 +2752,7 @@ async function init() {
     await initAndroidBackNavigation();
     initSwipeNavigation();
     initZoneCardDragAndDrop();
+    initPasteAndQr();
     isEditMode = false;
     syncEditBar();
     document.getElementById('btn-close-search-modal')?.addEventListener('click', () => searchModal?.close());
