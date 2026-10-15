@@ -3478,3 +3478,13 @@ html.qr-scanning .qr-overlay {
 .qr-cancel:active { border-color: var(--accent); color: var(--accent); }
 
 .edit-bar { margin-bottom: 14px; }
+
+/* ALPHA.40: the routing settings block is a plain part of the page, never a scroller of its own.
+   As a nested overflow:auto + overscroll contain + pan-y box it swallowed vertical swipes
+   on newer Android WebViews, so the page could only be scrolled by its scrollbar. */
+.platform-android #page-routing .routing-content,
+.platform-android #page-routing .routing-panel {
+    overflow: visible;
+    overscroll-behavior: auto;
+    touch-action: auto;
+}

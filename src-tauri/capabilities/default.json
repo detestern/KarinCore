@@ -12,6 +12,7 @@
     "core:default",
     "opener:default",
     "karin-vpn:default",
-    "barcode-scanner:default"
+    "barcode-scanner:default",
+    "clipboard-manager:allow-read-text"
   ]
 }

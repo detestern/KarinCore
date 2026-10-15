@@ -4,6 +4,12 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.40] - 2026-10-15
+
+### Fixed
+- The paste button in the link field now reads the clipboard through the native Android clipboard plugin; the WebView blocked the browser clipboard API and showed "could not read the clipboard".
+- Routing page: swiping up and down did not scroll on some devices (Samsung Galaxy S23 Ultra) and only dragging the scrollbar worked. The settings block was an extra scroll container that swallowed touch swipes; the page itself scrolls now.
+
 ## [0.1.0-alpha.39] - 2026-10-15
 
 ### Added

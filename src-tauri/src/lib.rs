@@ -3579,9 +3579,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_karin_vpn::init());
 
-    // QR scanner for subscriptions and links (camera permission is declared by the plugin).
+    // QR scanner for subscriptions and links (camera permission is declared by the plugin)
+    // and native clipboard access for the paste button (the WebView clipboard API is unreliable).
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    let builder = builder
+        .plugin(tauri_plugin_barcode_scanner::init())
+        .plugin(tauri_plugin_clipboard_manager::init());
 
     let app = builder
         .manage(ProxyState {

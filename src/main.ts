@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { exit, onBackButtonPress } from "@tauri-apps/api/app";
+import { readText as readClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { cancel as cancelBarcodeScan, checkPermissions as checkCameraPermission, Format as BarcodeFormat, openAppSettings as openCameraSettings, requestPermissions as requestCameraPermission, scan as scanBarcode } from "@tauri-apps/plugin-barcode-scanner";
 import projectChangelog from "../CHANGELOG.md?raw";
 import packageMetadata from "../package.json";
@@ -1107,7 +1108,15 @@ function isImportableText(text: string): boolean {
 
 async function pasteFromClipboard() {
     try {
-        const text = (await navigator.clipboard.readText()).trim();
+        let raw: string | null = null;
+        try {
+            raw = await readClipboardText();
+        } catch (nativeError) {
+            // Native clipboard unavailable: fall back to the WebView API.
+            console.debug('Native clipboard read failed:', nativeError);
+            raw = await navigator.clipboard.readText();
+        }
+        const text = (raw || '').trim();
         if (!text) throw new Error('empty clipboard');
         if (linkInput) {
             linkInput.value = text;
