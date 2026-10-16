@@ -71,6 +71,11 @@
       <span data-i18n="menu_logs">Логи</span>
     </div>
     
+    <div class="sidebar-item" data-target="page-diagnostics">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>
+      <span data-i18n="menu_diagnostics">Диагностика</span>
+    </div>
+    
     <div class="sidebar-item" data-target="page-settings">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
       <span data-i18n="menu_settings">Настройки</span>
@@ -82,7 +87,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.41</div>
+      <div class="app-version-text">v 0.1.0-alpha.42</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -357,6 +362,20 @@
         <button id="btn-clear-native-logs" class="small-btn" type="button" data-i18n="logs_clear">Clear logs</button>
       </div>
       <pre id="vpn-self-test-output" style="display:none; margin-top:10px; background:var(--base-crust); border:1px solid var(--border-color); padding:12px; border-radius:8px; font-size:12px; color:var(--console-text); white-space:pre-wrap; word-break:break-word;"></pre>
+    </div>
+  </div>
+
+  <div id="page-diagnostics" class="page-view">
+    <div class="panel diag-panel">
+      <div class="diag-head">
+        <h3 data-i18n="diag_title">Диагностика</h3>
+        <button id="diag-run" type="button" data-i18n="diag_run">Проверить</button>
+      </div>
+      <div class="diag-card">
+        <div id="diag-server" class="diag-server"></div>
+        <div id="diag-steps" class="diag-steps"></div>
+      </div>
+      <div id="diag-result"></div>
     </div>
   </div>
 

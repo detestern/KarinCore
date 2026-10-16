@@ -4,6 +4,16 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.42] - 2026-10-16
+
+### Added
+- New "Diagnostics" tab ("Why isn't it working?"). One tap checks the network without VPN, DNS, the server port, the handshake and a real request through the tunnel to cp.cloudflare.com, then names the cause in plain words with a button that fixes it: switch server, update the subscription (it refreshes the subscription of the selected server), restart the core, open routing. "Details" shows the tail of the core log.
+- Android-specific causes: no VPN permission ("Grant permission"), the system stopping the core in the background because of battery optimization or a background restriction ("Open Android settings"), and Android blocking connections without VPN while the tunnel is down ("Open VPN settings").
+- Diagnostics texts in English, Russian, French, Chinese and Turkish.
+
+### Changed
+- The WebView security policy now allows inline styles through a dedicated `style-src-attr` directive instead of switching off Tauri's style handling.
+
 ## [0.1.0-alpha.41] - 2026-10-15
 
 ### Fixed

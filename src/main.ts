@@ -4,6 +4,7 @@ import { readText as readClipboardText } from "@tauri-apps/plugin-clipboard-mana
 import { cancel as cancelBarcodeScan, checkPermissions as checkCameraPermission, Format as BarcodeFormat, openAppSettings as openCameraSettings, requestPermissions as requestCameraPermission, scan as scanBarcode } from "@tauri-apps/plugin-barcode-scanner";
 import projectChangelog from "../CHANGELOG.md?raw";
 import packageMetadata from "../package.json";
+import { initDiagnostics } from "./diagnostics";
 import { translations } from "./i18n";
 import { escapeHtml } from "./security";
 import { changelogReleaseCount, DISCONNECTED_CORE_LABEL, renderProjectChangelog, resolveAndroidBackAction, resolveRuntimeInfo } from "./ui";
@@ -524,6 +525,8 @@ function t(key: string): string {
     return translations[currentLang]?.[key] || translations.en?.[key] || key;
 }
 
+let diagnostics: { refreshText: () => void } | null = null;
+
 function updateUIStrings() {
     document.querySelectorAll('[data-i18n]').forEach(el => { 
         const key = el.getAttribute('data-i18n'); 
@@ -533,6 +536,7 @@ function updateUIStrings() {
         const key = el.getAttribute('data-i18n-placeholder'); 
         if (key) (el as HTMLInputElement).placeholder = t(key); 
     });
+    diagnostics?.refreshText();
 }
 
 // **********************************
@@ -665,6 +669,60 @@ function initHeroCircle() {
     });
 }
 initHeroCircle();
+
+diagnostics = initDiagnostics({
+    t,
+    getLink: () => activeLink || selectedProfileUrl,
+    isConnected: () => heroPhase === 'on',
+    getAndroidState: async () => {
+        if (runtimeInfo.platform !== 'android') return null;
+        try {
+            const [state, status] = await Promise.all([
+                invoke<AndroidStabilityDiagnostics>('get_android_stability_diagnostics'),
+                invoke<VpnRuntimeStatus>('get_vpn_runtime_status')
+            ]);
+            return {
+                vpnPermissionGranted: state.vpnPermissionGranted,
+                batteryOptimizationExempt: state.batteryOptimizationExempt,
+                backgroundRestricted: state.backgroundRestricted,
+                lockdown: !!(state.lockdown || status.lockdown)
+            };
+        } catch {
+            return null;
+        }
+    },
+    goTo: (pageId: string) => switchPage(pageId),
+    openProfiles: () => profilesDrawer?.open(),
+    connect: () => {
+        if (heroPhase === 'connecting' || heroPhase === 'on') return;
+        if (selectedProfileUrl) connectProxy(selectedProfileUrl); else profilesDrawer?.open();
+    },
+    restartCore: () => {
+        const link = activeLink || selectedProfileUrl;
+        void (async () => {
+            if (heroPhase === 'on') await disconnectProxy();
+            if (link) connectProxy(link);
+        })();
+    },
+    updateSubscription: async () => {
+        const link = activeLink || selectedProfileUrl;
+        const entry = link ? appLinks.find(item => item.url === link) : undefined;
+        const group = entry?.groupId ? appGroups.find(item => item.id === entry.groupId) : undefined;
+        if (!group?.sourceUrl) return false;
+        await refreshSubscriptionGroup(group.id);
+        return true;
+    },
+    requestVpnPermission: async () => {
+        try {
+            return await invoke<boolean>('request_android_vpn_permission');
+        } catch {
+            return false;
+        }
+    },
+    openAndroidSettings: (target: 'vpn' | 'battery' | 'background') => {
+        void invoke<boolean>('open_android_stability_settings', { target }).catch(() => false);
+    },
+});
 
 // **********************************
 // CORE PROXY & DNS LOGIC
