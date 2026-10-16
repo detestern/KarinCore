@@ -28,7 +28,11 @@ KarinCore exists to end the ritual of hand-editing JSON configs, wrestling with 
 
 No Electron. No sandbox fighting your routing table. A Rust core, native `systemd` integration, and a UI built specifically for this app, not a generic template with a proxy client bolted on.
 
-<p align="center">[Features](#features) · [Screenshots](#screenshots) · [Install](#installation) · [Steam Deck](#karincore-on-steam-deck) · [Android](#karincore-on-android-alpha) · [Architecture](#architecture) · [Releases](#recent-releases) · [Roadmap](#roadmap) · [Support](#support-contributing-and-feedback)</p>
+<div align="center">
+
+[Features](#features) · [Screenshots](#screenshots) · [Install](#installation) · [Steam Deck](#karincore-on-steam-deck) · [Android](#karincore-on-android-alpha) · [Architecture](#architecture) · [Releases](#recent-releases) · [Roadmap](#roadmap) · [Support](#support-contributing-and-feedback)
+
+</div>
 
 <br/>
 
