@@ -1398,3 +1398,156 @@ dialog::backdrop {
 .hero-circle:focus-visible::before {
     opacity: 0.45;
 }
+
+/* **********************************
+   DIAGNOSTICS PAGE
+   ********************************** */
+.diag-panel {
+    --diag-warn: #df8e1d;
+}
+
+:root[data-theme="dark"] .diag-panel,
+:root:not([data-theme="light"]) .diag-panel {
+    --diag-warn: #f9e2af;
+}
+
+.diag-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.diag-head h3 {
+    margin: 0;
+}
+
+.diag-card {
+    background: var(--base-crust);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+
+.diag-server {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    overflow-wrap: anywhere;
+}
+
+.diag-hint {
+    margin: 4px 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--text-dim);
+}
+
+.diag-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    font-size: 13.5px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.diag-step:last-child {
+    border-bottom: 0;
+}
+
+.diag-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+    background: var(--input-bg);
+    color: var(--text-dim);
+}
+
+.diag-name {
+    flex: 1;
+    min-width: 0;
+}
+
+.diag-res {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: right;
+}
+
+.diag-step.ok .diag-icon {
+    background: color-mix(in srgb, var(--success) 18%, transparent);
+    color: var(--success);
+}
+
+.diag-step.failed .diag-icon {
+    background: color-mix(in srgb, var(--danger) 18%, transparent);
+    color: var(--danger);
+}
+
+.diag-step.skipped .diag-name,
+.diag-step.pending .diag-res {
+    color: var(--text-dim);
+}
+
+.diag-result {
+    margin-top: 12px;
+    border: 1px solid;
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+
+.diag-result.good {
+    background: color-mix(in srgb, var(--success) 8%, transparent);
+    border-color: color-mix(in srgb, var(--success) 40%, transparent);
+}
+
+.diag-result.warn {
+    background: color-mix(in srgb, var(--diag-warn) 8%, transparent);
+    border-color: color-mix(in srgb, var(--diag-warn) 40%, transparent);
+}
+
+.diag-result.fail {
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.diag-title {
+    margin: 0;
+    font-size: 14.5px;
+    line-height: 1.5;
+}
+
+.diag-why {
+    margin: 6px 0 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-dim);
+}
+
+.diag-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.diag-details {
+    margin: 12px 0 0;
+    padding: 12px;
+    max-height: 240px;
+    overflow: auto;
+    background: var(--base-crust);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}

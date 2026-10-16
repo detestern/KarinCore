@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { translations } from "./i18n";
+import { initDiagnostics } from "./diagnostics";
 
 // **********************************
 // TYPES & INTERFACES
@@ -348,6 +349,8 @@ function t(key: string): string {
     return translations[currentLang]?.[key] || key; 
 }
 
+let diagnostics: { refreshText: () => void } | null = null;
+
 function updateUIStrings() {
     document.querySelectorAll('[data-i18n]').forEach(el => { 
         const key = el.getAttribute('data-i18n'); 
@@ -357,6 +360,7 @@ function updateUIStrings() {
         const key = el.getAttribute('data-i18n-placeholder'); 
         if (key) (el as HTMLInputElement).placeholder = t(key); 
     });
+    diagnostics?.refreshText();
 }
 
 // **********************************
@@ -542,6 +546,31 @@ function initHeroCircle() {
     });
 }
 initHeroCircle();
+
+diagnostics = initDiagnostics({
+    t,
+    getLink: () => activeLink || selectedProfileUrl,
+    isConnected: () => heroPhase === 'on',
+    killSwitchOn: () => localStorage.getItem('karin_kill_switch') === 'true',
+    goTo: (pageId: string) => switchPage(pageId),
+    openProfiles: () => profilesDrawer?.open(),
+    connect: () => {
+        if (heroPhase === 'connecting' || heroPhase === 'on') return;
+        if (selectedProfileUrl) connectProxy(selectedProfileUrl); else profilesDrawer?.open();
+    },
+    restartCore: () => {
+        const link = activeLink || selectedProfileUrl;
+        void (async () => {
+            if (heroPhase === 'on') await disconnectProxy();
+            if (link) connectProxy(link);
+        })();
+    },
+    disableKillSwitch: () => {
+        localStorage.setItem('karin_kill_switch', 'false');
+        const toggle = document.getElementById('kill-switch-toggle') as HTMLInputElement | null;
+        if (toggle) toggle.checked = false;
+    },
+});
 
 // **********************************
 // CORE PROXY & DNS LOGIC
@@ -1272,7 +1301,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.5.1";
+        const CURRENT_VERSION = "1.5.2";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;

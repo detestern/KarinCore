@@ -4,6 +4,7 @@
 // IMPORTS
 // **********************************
 mod bridge;
+mod diag;
 mod helper_client;
 mod subjson;
 mod token;
@@ -1273,6 +1274,123 @@ async fn check_ping(_state: State<'_, ProxyState>) -> Result<String, String> {
     Ok(format!("{} ms", start.elapsed().as_millis()))
 }
 
+// **********************************
+// ДИАГНОСТИКА
+// Пробы возвращают короткие строки; решение «что сломано» принимает diag::verdict.
+// **********************************
+#[tauri::command]
+async fn diag_internet() -> Result<String, String> {
+    // Любой из двух публичных адресов достаточно: так одиночная блокировка не даёт ложного отказа.
+    for addr in ["1.1.1.1:443", "8.8.8.8:443"] {
+        let attempt = tokio::time::timeout(std::time::Duration::from_secs(3), tokio::net::TcpStream::connect(addr)).await;
+        if let Ok(Ok(_)) = attempt { return Ok("ok".to_string()); }
+    }
+    Ok("fail".to_string())
+}
+
+#[tauri::command]
+async fn diag_resolve(host: String) -> Result<String, String> {
+    let lookup = tokio::time::timeout(std::time::Duration::from_secs(4), tokio::net::lookup_host((host.as_str(), 443u16))).await;
+    match lookup {
+        Ok(Ok(mut addrs)) => {
+            let found = addrs.next().is_some();
+            Ok((if found { "ok" } else { "fail" }).to_string())
+        }
+        _ => Ok("fail".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn diag_tcp(host: String, port: u16) -> Result<String, String> {
+    let started = std::time::Instant::now();
+    let attempt = tokio::time::timeout(std::time::Duration::from_secs(5), tokio::net::TcpStream::connect((host.as_str(), port))).await;
+    Ok(match attempt {
+        Ok(Ok(_)) => format!("open:{}", started.elapsed().as_millis()),
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused => "refused".to_string(),
+        Ok(Err(_)) => "unreachable".to_string(),
+        Err(_) => "timeout".to_string(),
+    })
+}
+
+#[tauri::command]
+fn diag_core() -> String {
+    match std::process::Command::new("pgrep").args(["-x", "xray"]).status() {
+        Ok(status) if status.success() => "yes".to_string(),
+        Ok(_) => "no".to_string(),
+        Err(_) => "na".to_string(),
+    }
+}
+
+/// Строки журнала Xray, появившиеся после позиции `from` (если файл сменился — с начала).
+fn read_log_since(path: &str, from: u64) -> Vec<String> {
+    let Ok(mut file) = std::fs::File::open(path) else { return Vec::new() };
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let start = if len >= from { from } else { 0 };
+    if std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(start)).is_err() { return Vec::new(); }
+    let mut bytes = Vec::new();
+    if std::io::Read::read_to_end(&mut file, &mut bytes).is_err() { return Vec::new(); }
+    diag::tail_lines(&String::from_utf8_lossy(&bytes))
+}
+
+#[tauri::command]
+async fn diag_tunnel(_state: State<'_, ProxyState>) -> Result<Value, String> {
+    let proxy_url = {
+        let guard = _state.auth_token.lock().unwrap();
+        if let Some(token) = guard.as_ref() { format!("http://karin:{}@127.0.0.1:2082", token) } else { "http://127.0.0.1:2082".to_string() }
+    };
+    let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder().proxy(proxy).timeout(std::time::Duration::from_secs(8)).build().map_err(|e| e.to_string())?;
+
+    let (log_path, _) = get_log_paths();
+    let log_start = std::fs::metadata(&log_path).map(|m| m.len()).unwrap_or(0);
+
+    let started = std::time::Instant::now();
+    let response = client.get("http://cp.cloudflare.com/generate_204").send().await;
+    let ms = started.elapsed().as_millis() as u64;
+    let (ok, error) = match &response {
+        Ok(r) if r.status().is_success() => (true, String::new()),
+        Ok(r) => (false, format!("status {}", r.status().as_u16())),
+        Err(e) if e.is_timeout() => (false, "timeout".to_string()),
+        Err(e) if e.is_connect() => (false, "connect".to_string()),
+        Err(_) => (false, "request".to_string()),
+    };
+
+    // Xray дописывает журнал с небольшой задержкой.
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    let log = read_log_since(&log_path, log_start);
+    let state = if ok { "ok" } else { "fail" };
+    Ok(json!({ "state": state, "ms": ms, "error": error, "log": log }))
+}
+
+#[tauri::command]
+fn diag_verdict(
+    vpn_on: bool,
+    transport: String,
+    internet: String,
+    dns: String,
+    tcp: String,
+    tunnel: String,
+    tunnel_ms: u64,
+    tunnel_log: Vec<String>,
+    core: String,
+    kill_switch: bool,
+) -> Value {
+    let outcome = diag::verdict(&diag::Inputs {
+        vpn_on,
+        transport: &transport,
+        internet: &internet,
+        dns: &dns,
+        tcp: &tcp,
+        tunnel: &tunnel,
+        tunnel_ms,
+        tunnel_log: &tunnel_log,
+        core: &core,
+        kill_switch,
+    });
+    let steps: Vec<&str> = outcome.steps.iter().map(|s| s.as_str()).collect();
+    json!({ "code": outcome.code, "detail": outcome.detail, "steps": steps })
+}
+
 #[tauri::command]
 fn open_browser(url: String) { std::process::Command::new("xdg-open").arg(url).spawn().ok(); }
 
@@ -1465,7 +1583,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            start_proxy, stop_proxy, fetch_subscription, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update
+            start_proxy, stop_proxy, fetch_subscription, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, diag_internet, diag_resolve, diag_tcp, diag_core, diag_tunnel, diag_verdict, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update
         ]).build(tauri::generate_context!()).expect("error while building tauri application");
     app.run(|app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {

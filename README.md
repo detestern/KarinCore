@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.5.1-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.5.2-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -36,6 +36,13 @@ This release is a full visual and functional overhaul, not just a patch.
 * **Profiles moved out of the way.** Your saved configs now live in a slide-out side panel instead of eating vertical space on the main screen. Pick one, it lights up with a soft accent glow, and you're back on the connect screen — the big glowing core is the only thing competing for your attention.
 * **A light theme worth using.** The old light mode was a near-inversion of the dark one. It's been rebuilt from scratch with warm, low-contrast neutrals — readable without feeling like a different app.
 * **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
+
+<br/>
+
+### v1.5.2 — Check Engine
+
+* **Added:** a **Diagnostics** tab that answers "why isn't it working?". One button runs the chain: internet, DNS, the server's port, and a request through the tunnel to `cp.cloudflare.com`. Each step shows its own result, and under them Karin says in plain words what is wrong and offers one next step (switch the server, update the subscription, open routing, restart the core). "Details" shows every step, the raw probe results and the last lines of the Xray log.
+* **Added:** the check tells a closed or blocked server port (refused, timed out or no route), a server that is reachable but rejects the handshake (usually outdated subscription data), a tunnel that connects but carries no traffic, a stopped Xray core, and a Kill Switch that blocks traffic because the tunnel is down. The verdict logic is a separate module with unit tests.
 
 <br/>
 
@@ -288,7 +295,7 @@ yay -S karincore-git
 Grab the latest `.deb` from [Releases](../../releases). It installs the privileged helper, a one-line `sudoers` rule and the `systemd` unit, creates the `karincore` group and adds the installing user (log out and back in afterwards). Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)). The binary has to be at `/usr/bin/xray`; if the installer puts it in `/usr/local/bin/xray`, the package creates the link for you.
 
 ```bash
-sudo dpkg -i KarinCore_1.5.1_amd64.deb
+sudo dpkg -i KarinCore_1.5.2_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 
