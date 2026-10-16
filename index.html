@@ -87,7 +87,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 1.5.2</div>
+      <div class="app-version-text">v 1.5.3</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -170,23 +170,17 @@
     <div id="profiles-drawer-overlay" class="profiles-drawer-overlay"></div>
     <div id="profiles-drawer" class="profiles-drawer">
       <div class="links-wrapper" style="height: 100%; margin: 0;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h3 data-i18n="config_title" style="margin: 0;">Конфигурации</h3>
-          <div style="display: flex; gap: 15px; align-items: center;">
-            <button id="btn-import-file" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);" title="Импорт конфигурации (.ovpn, .conf)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download-icon lucide-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
-            </button>
-            <button id="btn-edit-mode" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil-icon lucide-pencil"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
-            </button>
-            <button id="btn-close-profiles" style="background: transparent; border: none; cursor: pointer; padding: 0; color: var(--text-color);">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-            </button>
+        <div class="profiles-drawer-header">
+          <h3 data-i18n="config_title">Конфигурации</h3>
+          <div class="drawer-actions">
+            <button id="btn-import-file" class="drawer-btn" type="button" title="Импорт конфигурации (.ovpn, .conf)" aria-label="Import"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
+            <button id="btn-edit-mode" class="drawer-btn" type="button" aria-label="Edit"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+            <button id="btn-close-profiles" class="drawer-btn" type="button" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
           </div>
         </div>
-        
-        <div class="input-group" id="import-bar">
-          <input type="text" id="link-input" data-i18n-placeholder="input_placeholder" placeholder="vless:// или URL подписки...">
+
+        <div class="import-card" id="import-bar">
+          <input type="text" id="link-input" data-i18n-placeholder="input_placeholder" placeholder="vless:// или URL подписки..." autocomplete="off" autocapitalize="off" spellcheck="false">
           <button id="btn-save" data-i18n="btn_save">Сохранить</button>
         </div>
 
@@ -213,6 +207,12 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
         </div>
+
+        <div class="drawer-section-label">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01"/><path d="M7 16.5h.01"/></svg><span data-i18n="config_servers">Мои серверы</span><span id="links-count" class="drawer-count"></span>
+          <button id="btn-ping-all" class="drawer-ping" type="button"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span id="btn-ping-label" data-i18n="ping_btn">Пинг</span></button>
+        </div>
+        <p id="ping-hint" class="ping-hint" data-i18n="ping_tunnel_hint" hidden></p>
 
         <div id="links-container" class="links-list"></div>
       </div>

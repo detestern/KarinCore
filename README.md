@@ -2,18 +2,21 @@
 <img src="public/karincore-icon-main.png" alt="KarinCore Logo" width="180"/>
 <h1>KarinCore</h1>
 <p><strong>A modern, aesthetic, and secure proxy client for Linux</strong></p>
-<p>
-<a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a>
-</p>
+<p><a href="https://karincore.ru">Website</a> · <a href="https://github.com/detestern/KarinCore/releases">Releases</a> · <a href="#karincore-on-android-alpha">Android</a> · <a href="https://github.com/detestern/KarinCore/issues">Issues</a></p>
+<p><a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a></p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.5.2-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.5.3-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
-<img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
+<img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
 <img src="https://img.shields.io/badge/license-MIT-dc8add?style=flat-square&labelColor=11111b" alt="License"/>
 </p>
+<p><a href="https://karincore.ru"><img src="https://img.shields.io/badge/website-karincore.ru-dc8add?style=flat-square&labelColor=11111b&logo=firefox-browser&logoColor=dc8add" alt="karincore.ru"/></a></p>
 </div>
+
+> 🌐 **Everything in one place: [karincore.ru](https://karincore.ru)**
+> Step-by-step install guides for Arch, Debian/Ubuntu and Steam Deck, downloads, the Android alpha, and a live routing demo: type a domain and see whether it goes to Proxy, Direct or Block. The site speaks Russian and English.
 
 <br/>
 
@@ -23,147 +26,35 @@ The internet should be free, and the tools that protect it shouldn't feel like a
 
 KarinCore exists to end the ritual of hand-editing JSON configs, wrestling with `iptables`, and babysitting systemd units just to get a working tunnel on Linux. It's the bridge between a genuinely powerful anti-censorship core (Xray, OpenVPN, WireGuard) and an interface that respects your time and your eyes.
 
-No Electron. No sandbox fighting your routing table. A Rust core, native `systemd` integration, and a UI built specifically for this app — not a generic template with a proxy client bolted on.
+No Electron. No sandbox fighting your routing table. A Rust core, native `systemd` integration, and a UI built specifically for this app, not a generic template with a proxy client bolted on.
+
+<p align="center">[Features](#features) · [Screenshots](#screenshots) · [Install](#installation) · [Steam Deck](#karincore-on-steam-deck) · [Android](#karincore-on-android-alpha) · [Architecture](#architecture) · [Releases](#recent-releases) · [Roadmap](#roadmap) · [Support](#support-contributing-and-feedback)</p>
 
 <br/>
 
-## What's new in 1.3
+## Features
 
-This release is a full visual and functional overhaul, not just a patch.
+**Multi-level routing.** Native OpenVPN and WireGuard alongside Xray. Wrap VLESS/VMess traffic inside an encrypted OVPN or WireGuard tunnel via policy-based routing, or run Xray directly. Your call.
 
-* **A new connection core.** The connect button is gone — replaced by an animated graph-core visual: a bracket cursor that types itself open on connect, radiating nodes that light up in sequence, and a breathing pulse while the tunnel is live. Disconnecting runs the exact same animation in reverse.
-* **A real kill switch.** Enable it in Settings and KarinCore drops all outbound traffic at the firewall level the moment the tunnel disappears unexpectedly — not just when you disconnect on purpose. Rules persist through a daemon crash-and-restart cycle, which is the entire point of a kill switch.
-* **Profiles moved out of the way.** Your saved configs now live in a slide-out side panel instead of eating vertical space on the main screen. Pick one, it lights up with a soft accent glow, and you're back on the connect screen — the big glowing core is the only thing competing for your attention.
-* **A light theme worth using.** The old light mode was a near-inversion of the dark one. It's been rebuilt from scratch with warm, low-contrast neutrals — readable without feeling like a different app.
-* **A calmer routing tab.** Same drag-and-drop priority system, same DNS controls, thinner borders and a bit of restraint.
+**Visual routing priority.** Drag columns (Proxy, Direct, Block) to set the exact order Xray evaluates rules. No editing JSON rule arrays by hand.
 
-<br/>
+**Subscriptions and profiles.** Add a subscription URL or a single `vless://`, `vmess://`, `trojan://`, `ss://`, `wg://` link, or drop in `.ovpn` and `.conf` files. Routing rules from the subscription are imported too. Save full setups (rules, column order, DNS) as named profiles.
 
-### v1.5.2 — Check Engine
+**Ping of every server.** One button in the servers panel measures the response time of the whole list and colours it: green up to 250 ms, yellow up to 500 ms, red above.
 
-* **Added:** a **Diagnostics** tab that answers "why isn't it working?". One button runs the chain: internet, DNS, the server's port, and a request through the tunnel to `cp.cloudflare.com`. Each step shows its own result, and under them Karin says in plain words what is wrong and offers one next step (switch the server, update the subscription, open routing, restart the core). "Details" shows every step, the raw probe results and the last lines of the Xray log.
-* **Added:** the check tells a closed or blocked server port (refused, timed out or no route), a server that is reachable but rejects the handshake (usually outdated subscription data), a tunnel that connects but carries no traffic, a stopped Xray core, and a Kill Switch that blocks traffic because the tunnel is down. The verdict logic is a separate module with unit tests.
+**Diagnostics.** A dedicated tab answers "why isn't it working?": internet, DNS, the server's port and a request through the tunnel, with a plain-language verdict and the fix.
 
-<br/>
+**Real kill switch.** Firewall-level enforcement: if the tunnel drops unexpectedly, outbound traffic stops, and the rules survive a daemon restart.
 
-### v1.5.1 — Dual Stack
+**IPv6 and DNS control.** The tunnel carries IPv4 and IPv6 together. Independent Domestic and Remote DNS resolvers with DoH/DoU support, and one switch for proxying the VPN server's own IP.
 
-* **Added:** IPv6. The tunnel carries IPv6 next to IPv4 (`ip -6` rules and table 100, a private /126 on `tun0`), local IPv6 ranges (`fc00::/7`, `fe80::/10`) and the server's own address of either family stay outside the tunnel, "proxy the server itself" works for IPv6 addresses, and the kill switch now also installs `ip6tables` rules (loopback, tunnel, server, Xray's own marked traffic, then DROP).
-* **Fixed:** DNS routing follows the Xray documentation: every DNS server gets a `tag` and a routing rule with `inboundTag` sends its queries to `direct` or `proxy` (the non-existent `outboundTag` on DNS servers is gone). The local DNS inbound answers over `tcp,udp`.
-* **Fixed:** a subscription header `routing-enable: 0` (also `false`/`off`/`no`) really disables routing import, and a `happ://routing/…` line inside the subscription body is imported when there is no `Routing` header.
-* **Fixed:** Xray is checked when you press Connect and the error is shown in the app (missing, cannot start, version output unreadable, older than 25.6.8) instead of being swallowed at startup. The one supported path is `/usr/bin/xray`: the systemd unit, the app and the docs all use it, and the `.deb` creates a link there if Xray is only in `/usr/local/bin`.
-* **Fixed:** JSON subscriptions with Trojan, Shadowsocks, VMess and other transports (TLS, XHTTP) are converted to links instead of being skipped; `route.sh` reads the server address from `vnext[0]` or `servers[0]`; IPv6 hosts such as `[2001:db8::1]` are parsed in links, WireGuard endpoints and `ss://`.
-* **Changed:** installing or upgrading removes leftovers of older versions from `/etc/karin-proxy` (`resolv.conf.vpn`, old logs, OpenVPN/WireGuard configs when no tunnel is up) and sets `0600` on configs; the `.deb` no longer contains a second copy of the helper in `/usr/bin`.
+**Narrow privilege boundary.** The GUI never runs as root. Everything privileged goes through a single root-owned helper that validates each request. See [Architecture](#architecture).
 
-<br/>
+**Shell Bridge.** A status file and `--connect` / `--disconnect` flags let external panels and shells (karin-shell, Brain Shell) show and control the connection. Details in the [changelog](CHANGELOG.md#v140--shell-bridge).
 
-### v1.5.0 — Privilege Boundary
+**Karin.** The built-in terminal assistant narrates what the core is doing: connection status, DNS checks, the occasional dry joke about your ISP. Can be turned off in Settings.
 
-* **Security:** the long list of `sudo` rules is gone. Members of the `karincore` group can now run exactly one root-owned program, `/usr/libexec/karincore/karincore-helper`, and only with no arguments. The app sends a request over stdin and the helper validates it as root: operations come from a fixed list, parameters use a strict character set, and Xray / OpenVPN / WireGuard configs are re-built from an allowlist of options. Scripts, hooks, plugins, arbitrary file paths and log paths are rejected. Previously the raw `cp`, `openvpn`, `wg-quick`, `ip` and `iptables` rules could be turned into root by any group member.
-* **Security:** HTML injection through profile, group and rule names (subscriptions, imports) is fixed, and a strict Content-Security-Policy is now set.
-* **Security:** the local proxy password is generated from the system CSPRNG instead of the clock.
-* **Changed:** logs are written to `/var/log/karin-proxy` and cleared via the helper; the package creates the `karincore` group and adds the installing user.
-* **Added:** CI (tests, clippy, build, shellcheck, sudoers check, `.deb` smoke test).
-
-<br/>
-
-### v1.4.0 — Shell Bridge
-
-* **Added:** a bridge for external shells and panels (karin-shell / Brain Shell). While the app runs it keeps a status file, `${XDG_STATE_HOME:-~/.local/state}/karincore/shell.json`, written atomically (`shell.json.tmp` → rename) whenever the connection state, the selected profile, the profile list or the public IP changes, at start and on exit (closing the window included):
-
-  ```json
-  {
-    "bridge": 1,
-    "app_version": "1.4.0",
-    "pid": 4242,
-    "state": "connected",
-    "selected": "ba7816bf8f01",
-    "profile_name": "Netherlands (nl.example.com)",
-    "ip": "203.0.113.5",
-    "profiles": [
-      { "id": "ba7816bf8f01", "name": "Netherlands (nl.example.com)", "type": "vless", "group": "provider.example" }
-    ],
-    "updated": 1760000000
-  }
-  ```
-
-  `state` is `disconnected`, `connecting` or `connected`; `pid` is `0` after exit (together with `state: "disconnected"` and an empty `ip`). `type` is `vless`, `vmess`, `trojan`, `shadowsocks`, `wireguard` or `openvpn`. A profile `id` is stable and not secret: the first 12 hex characters of `sha256(link)`. Links, keys, UUIDs and passwords never reach the file.
-* **Added:** command-line flags. `karincore --connect [id]` selects the profile (if given) and connects, starting the app with its window if it is not running; `karincore --disconnect` disconnects (does nothing if the app is not running); `karincore --select id` selects a profile without connecting. Launching the app again hands the flags to the running instance (`tauri-plugin-single-instance`) and no second window opens. In the running app the flags do exactly what the buttons on the main screen do, core animation included. Flags can be combined: `karincore --select <id> --connect`.
-* **Unchanged:** closing the window still turns the VPN off.
-
-### v1.3.10 — Living Core
-
-* **Changed:** the connection core now plays out the whole sequence. While connecting, the network spins up fast, the lines and nodes light up in pink and waves run out from the ring. Once connected, it settles into a slow turn, the nodes turn green and the ring breathes. On disconnect the rotation slows to a stop and the ring sends out one last wave.
-* **Changed:** the core is lifted by 30 px, so its lower lines no longer touch the status text.
-
-### v1.3.9 — Rotating Core
-
-* **Changed:** the core on the main screen now keeps turning while connected. The network of lines and nodes rotates slowly around the ring, which stays in place and breathes as before; when you disconnect, the rotation pauses where it is instead of snapping back.
-* **Changed:** the core drawing is slightly smaller inside its block, so the turning nodes never touch the status text.
-
-### v1.3.8 — Subscription Routing Import
-
-* **Fixed:** routing and DNS delivered by a subscription in the `routing` HTTP response header (Happ format — how mobile clients receive it) were ignored, because only the response body was read. They are now saved as a dedicated routing profile named after the subscription — rules for direct / proxy / block and the default-route mode (`GlobalProxy`). Pick it with the Select button when you want to use it: your current routing and DNS are never replaced automatically, and DNS from the subscription is not imported (those endpoints are tuned for mobile clients). Re-adding the same subscription refreshes its profile. Rule order and domain strategy have no equivalent in KarinCore's UI and are intentionally not imported.
-* **Fixed:** with Kill Switch enabled, traffic routed to the Direct zone was dropped by the firewall together with everything else, so Direct rules silently stopped working. Traffic Xray sends to its direct outbound (marked `255`) is now allowed through the Kill Switch; everything else is still blocked if the tunnel drops.
-* **Fixed:** a zone with both domain and IP rules (e.g. `domain:.pro` plus `geoip:ru` in Direct) was compiled into one Xray rule whose conditions are AND-ed, so a domain only matched if its IP matched too and such Direct rules silently did nothing. Domains and IPs now become separate rules.
-
-### v1.3.7 — Dead Code & Window Dragging Fix
-
-* **Fixed:** dragging the window by its custom titlebar silently did nothing on some systems — Tauri v2 requires the `core:window:allow-start-dragging` permission for a frameless window's `data-tauri-drag-region` to actually work, and it was missing from the app's capabilities file.
-* **Removed:** the dead `karin-proxy-daemon` Cargo binary target — a leftover HTTP server (port 9090) from an earlier architecture that applied config over HTTP and restarted the service. Nothing calls it: the actual `karin-proxy-daemon.service` systemd unit runs Xray directly. It, and its unused `axum` dependency, were only adding unnecessary build time.
-
-### v1.3.6 — Routing Cleanup & Subscription Import
-
-* **Fixed:** `route.sh` left stale `ip rule` entries for local-subnet bypasses (loopback, private ranges) behind after disconnecting, and zeroed out the `rp_filter` sysctl on connect without ever restoring it. Both are now cleaned up on disconnect, mirroring the existing `resolv.conf` backup/restore pattern.
-* **Fixed:** importing a full JSON subscription (one with its own `routing`/`dns` blocks, rather than plain proxy links) silently discarded that routing and DNS configuration. It's now translated into KarinCore's own routing zones and DNS settings and merged additively into your existing configuration. The subscription's `policy` block (buffer sizes, timeouts) has no equivalent in KarinCore's UI and is intentionally not imported.
-
-### v1.3.5 — Protocol & Ping Fixes
-
-* **Fixed:** importing a VMess, Trojan, or Shadowsocks link silently built a broken VLESS outbound instead — every protocol other than VLESS/OpenVPN/WireGuard was treated as VLESS without any error. All four protocols (VLESS, VMess, Trojan, Shadowsocks) are now parsed and proxied correctly.
-* **Fixed:** the Ping button and the IP display measured latency through the app's general-purpose local proxy port, which obeys the same routing rules as the rest of your traffic — if your test target happened to match a "direct" rule, the result silently reflected your direct connection instead of the tunnel. Ping and IP checks now go through a dedicated path that's always forced through the proxy.
-
-### v1.3.4 — TUN Config Schema Fix
-
-* **Fixed:** the TUN inbound config shipped an `autoRoute: true` field that doesn't exist in Xray-core's actual schema (the real field is `autoSystemRoutingTable`, an array, not a boolean) — Xray silently ignored it, so it never did anything. Removed it; routing was always correctly handled by KarinCore's own `route.sh`, not by Xray.
-
-### v1.3.3 — DNS / systemd-resolved Fix
-
-* **Fixed:** on systems using `systemd-resolved` (CachyOS, Fedora, and most modern distros), DNS lookups could silently fail inside the tunnel — `systemd-resolved`'s NSS module bypasses `/etc/resolv.conf` entirely, so the app's previous approach of rewriting that file had no effect. `route.sh` now drives DNS through `resolvectl` when it's available, falling back to the old `resolv.conf` method otherwise.
-* **Fixed:** domestic and remote DNS resolution now happens inside Xray itself, split by the same direct/proxy routing rules as your traffic — each resolver (DoH or plain DNS) is dispatched through its own outbound, so domestic DNS never gets needlessly tunneled and remote DNS never leaks in plaintext.
-
-### v1.3.2 — Sudoers Hardening
-
-* **Fixed:** a set of sudoers rules let the app copy an arbitrary file into `/usr/local/bin/xray` and mark it executable — Xray is now used exclusively from the package-managed binary, and the app only checks its version instead of ever downloading or replacing it.
-* **Fixed:** every privileged rule the app installs is now scoped to a dedicated `karincore` group instead of every account on the machine (a new post-install hook creates it and adds you to it).
-* **Fixed:** an imported OpenVPN or WireGuard profile could contain directives (`up`, `PostUp`, etc.) that execute external commands — these are now stripped before the tunnel starts, since these configs run with root privileges.
-
-### v1.3.1 — Handheld Mode
-
-* **Fixed:** every sudo call from the GUI silently required a password on systems where the user is in the `wheel` group (the default on Arch/SteamOS) — the app's own sudoers rules were being shadowed by the system's password-requiring wheel rule due to alphabetical file ordering. This was the real root cause behind the recurring "permission denied" errors on Steam Deck.
-* **Fixed:** the connection core and its surrounding UI now scale proportionally on smaller or unusual screen resolutions (like Steam Deck's) instead of overlapping.
-* See [KarinCore on Steam Deck](#karincore-on-steam-deck) below — full install guide for handheld users.
-
-<br/>
-
-## Key features
-
-**Multi-level routing.** Native OpenVPN and WireGuard integration alongside Xray. Wrap VLESS/VMess traffic inside an encrypted OVPN or WireGuard tunnel via policy-based routing, or run Xray directly — your call.
-
-**Visual routing priority.** Drag columns — Proxy, Direct, Block — to set the exact order Xray evaluates rules. No editing JSON rule arrays by hand.
-
-**Kill switch.** Real firewall-level enforcement, not a checkbox that only remembers your preference. See [What's new in 1.3](#whats-new-in-13) above.
-
-**Bypass and DNS control.** Toggle proxying of the VPN server's own IP with one switch. Independent Domestic and Remote DNS resolvers with DoH/DoU support.
-
-**Universal parser and profiles.** Drop in `.ovpn` and `.conf` files, or paste `vless://`/`wg://` links straight from the clipboard. Save full setups — rules, column order, DNS — as named profiles.
-
-**Native system integration.** The core runs as a background daemon (`karin-proxy-daemon.service`), with MTU handling and automatic tunnel teardown before every new connection to avoid leaks.
-
-**Zero-prompt privilege model.** A tightly scoped `/etc/sudoers.d` rule set means the GUI can manage interfaces, routing, and the daemon without a single root password prompt during normal use.
-
-**Karin.** The built-in terminal assistant narrates what the core is doing — connection status, DNS checks, the occasional dry joke about your ISP. Twenty lines and counting. Can be turned off in Settings if you'd rather have silence.
-
-**Zero telemetry.** Everything runs locally. No trackers, no analytics, no phone-home. Your keys, IPs, and routing profiles never leave your machine. MIT licensed, source fully open.
+**Zero telemetry.** Everything runs locally. No trackers, no analytics, no phone-home. Your keys, IPs and routing profiles never leave your machine. MIT licensed, source fully open.
 
 <br/>
 
@@ -176,6 +67,31 @@ This release is a full visual and functional overhaul, not just a patch.
 <img src=".github/assets/screenshot-routing.jpg" alt="Routing tab" width="45%"/>
 <img src=".github/assets/screenshot-settings.jpg" alt="Settings" width="45%"/>
 </div>
+
+<br/>
+
+## Installation
+
+### Arch Linux (AUR)
+
+The recommended path for Arch-based systems (Manjaro, EndeavourOS, and the rest). Builds the core, pulls dependencies, and wires up system services automatically.
+
+```bash
+yay -S karincore-git
+```
+
+### Ubuntu / Debian / Linux Mint
+
+Grab the latest `.deb` from [Releases](https://github.com/detestern/KarinCore/releases). It installs the privileged helper, a one-line `sudoers` rule and the `systemd` unit, creates the `karincore` group and adds the installing user (log out and back in afterwards). Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)). The binary has to be at `/usr/bin/xray`; if the installer puts it in `/usr/local/bin/xray`, the package creates the link for you.
+
+```bash
+sudo dpkg -i KarinCore_1.5.3_amd64.deb
+sudo apt install -f # only if dependencies are missing
+```
+
+### First launch
+
+The daemon should **not** be enabled at boot: that would let it start routing traffic before the GUI has generated a valid config. Don't run `systemctl enable` on it. Just launch KarinCore from your application menu; the GUI starts, monitors and stops the daemon on its own.
 
 <br/>
 
@@ -219,7 +135,8 @@ KarinCore appears in your application menu like any other desktop app. Paste in 
 
 When you're done, return to Game Mode from the desktop: **Return to Gaming Mode**.
 
-### Troubleshooting
+<details>
+<summary><b>Troubleshooting</b></summary>
 
 A couple of issues have shown up on some SteamOS images that the package itself can't fix automatically — both are one-time system fixes, not KarinCore-specific.
 
@@ -263,82 +180,55 @@ Run whichever the message names, then retry `yay -S karincore-git`. (The build d
 
 If you hit something else entirely, open an issue on GitHub — SteamOS images seem to vary more than expected in what's stripped out of them, and it helps to know.
 
+</details>
+
 <br/>
 
 ## KarinCore on Android (alpha)
 
-KarinCore also has an **experimental Android version** — the same interface and routing model on top of Android's `VpnService` and Xray-core. It lives on the [`android` branch](https://github.com/detestern/KarinCore/tree/android) of this repository and is developed independently from the Linux client, with its own version stream (`0.x.y-alpha.n`).
+KarinCore also has an **experimental Android version**: the same interface and routing model on top of Android's `VpnService` and Xray-core. It lives on the [`android` branch](https://github.com/detestern/KarinCore/tree/android) of this repository and is developed independently from the Linux client, with its own version stream (`0.x.y-alpha.n`).
 
-**What works:** VLESS/Reality, VMess, Trojan and Shadowsocks links, subscriptions with routing import, Direct / Proxy / Block zones, per-app split tunneling, DNS settings, and a home-screen widget.
+**What works:** VLESS/Reality, VMess, Trojan and Shadowsocks links, subscriptions with routing import, Direct / Proxy / Block zones, per-app split tunneling, DNS settings, a diagnostics tab, and a home-screen widget.
 
 **Install:**
-1. Open [Releases](https://github.com/detestern/KarinCore/releases) and pick the newest entry tagged `android-v…` (they are marked *Pre-release*; the Linux releases stay the "Latest").
-2. Download the APK that matches your phone — `arm64-v8a` for almost every modern device, `armeabi-v7a` for older 32-bit ones.
-3. Allow installing from your browser/file manager when Android asks, then open the APK.
+1. Open [Releases](https://github.com/detestern/KarinCore/releases) and pick the newest entry tagged `android-v…` (they are marked *Pre-release*; the Linux releases stay the "Latest"). The same APKs are linked from [karincore.ru](https://karincore.ru).
+2. Download the APK that matches your phone: `arm64-v8a` for almost every modern device, `armeabi-v7a` for older 32-bit ones.
+3. Allow installing from your browser or file manager when Android asks, then open the APK.
 
-**Heads-up:** these are alpha builds signed with a debug key, so Android may warn about them and updates are manual (the About page tells you when a newer version exists). Treat it as a test build, and please report problems in [Issues](https://github.com/detestern/KarinCore/issues). Build instructions are in the [`android` branch README](https://github.com/detestern/KarinCore/blob/android/README.md).
-
-<br/>
-
-## Installation
-
-### Arch Linux (AUR)
-
-The recommended path for Arch-based systems (Manjaro, EndeavourOS, and the rest). Builds the core, pulls dependencies, and wires up system services automatically.
-
-```bash
-yay -S karincore-git
-```
-
-### Ubuntu / Debian / Linux Mint
-
-Grab the latest `.deb` from [Releases](../../releases). It installs the privileged helper, a one-line `sudoers` rule and the `systemd` unit, creates the `karincore` group and adds the installing user (log out and back in afterwards). Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)). The binary has to be at `/usr/bin/xray`; if the installer puts it in `/usr/local/bin/xray`, the package creates the link for you.
-
-```bash
-sudo dpkg -i KarinCore_1.5.2_amd64.deb
-sudo apt install -f # only if dependencies are missing
-```
-
-### First launch
-
-The daemon should **not** be enabled at boot — that would let it start routing traffic before the GUI has generated a valid config.
-
-Don't run `systemctl enable` on it. Just launch KarinCore from your application menu; the GUI starts, monitors, and stops the daemon on its own using the pre-configured sudo rules.
+**Heads-up:** these are alpha builds and updates are manual (the About page tells you when a newer version exists). Treat it as a test build, and please report problems in [Issues](https://github.com/detestern/KarinCore/issues). Build instructions are in the [`android` branch README](https://github.com/detestern/KarinCore/blob/android/README.md).
 
 <br/>
 
 ## Architecture
 
-Privileges are split between a single unprivileged app and a small set of root-side helpers:
+Privileges are split between a single unprivileged app and a small set of root-side helpers.
 
-**Frontend (`karincore`)** — a Tauri GUI running entirely in user-space. It never runs as root itself. Privileged actions go through a single root-owned helper (`/usr/libexec/karincore/karincore-helper`), the only program the `karincore` group may run via `sudo`. It reads a request on stdin, validates it as root and performs the operation.
+**Frontend (`karincore`).** A Tauri GUI running entirely in user-space. It never runs as root itself. Privileged actions go through a single root-owned helper (`/usr/libexec/karincore/karincore-helper`), the only program the `karincore` group may run via `sudo`. It reads a request on stdin, validates it as root and performs the operation.
 
-**Root side** — the `karin-proxy-daemon` systemd service runs Xray (or OpenVPN/WireGuard) with the generated config, and `route.sh` sets up the TUN interface, policy routing and DNS (`resolvectl`), then restores everything on disconnect.
+**Root side.** The `karin-proxy-daemon` systemd service runs Xray (or OpenVPN/WireGuard) with the generated config, and `route.sh` sets up the TUN interface, policy routing and DNS (`resolvectl`), then restores everything on disconnect.
 
-This split means the entire graphical stack — webview, rendering, everything — runs unprivileged. Only the narrow slice that actually needs root does.
+This split means the entire graphical stack (webview, rendering, everything) runs unprivileged. Only the narrow slice that actually needs root does.
 
 <br/>
 
-## Changelog
+## Recent releases
 
-<details>
-<summary>1.2.x and earlier</summary>
+| Version | Name | What changed |
+|---|---|---|
+| [v1.5.3](CHANGELOG.md#v153--sonar) | Sonar | Ping of every server, two-block servers panel |
+| [v1.5.2](CHANGELOG.md#v152--check-engine) | Check Engine | Diagnostics tab |
+| [v1.5.1](CHANGELOG.md#v151--dual-stack) | Dual Stack | IPv6, DNS routing fixes, stricter Xray check |
+| [v1.5.0](CHANGELOG.md#v150--privilege-boundary) | Privilege Boundary | Single root helper instead of many sudo rules, CSP |
+| [v1.4.0](CHANGELOG.md#v140--shell-bridge) | Shell Bridge | Status file and CLI flags for external shells |
+| 1.3.x | — | Handheld mode, hardening, subscription routing import |
 
-**1.2.8** — Fixed the app redundantly re-downloading Xray on every launch when it was already present as a system package (Arch/AUR/SteamOS), which also caused a spurious sudo prompt at startup.
-
-**1.2.7** — Fixed a set of privileged commands being invoked without a fully-qualified path, which could silently fail with a permission error depending on shell PATH resolution.
-
-**1.2.6** — Shipped the daemon's systemd unit and routing script inside the `.deb` package itself (previously missing on clean installs). Fixed the update checker reporting stale versions. Fixed the need to click Connect twice on a cold start. Clearer daemon-failure error messages.
-
-</details>
-
-Full history on the [Releases](../../releases) page.
+Every release since 1.0.0, with dates, is in the **[full changelog →](CHANGELOG.md)**
 
 <br/>
 
 ## Roadmap
 
-KarinCore was built for Linux first, but the free internet doesn't stop at the OS boundary. Native **Windows** and **macOS** ports are the next major milestone — Karin isn't staying put.
+KarinCore was built for Linux first, but the free internet doesn't stop at the OS boundary. Native **Windows** and **macOS** ports are the next major milestone. Next on the Linux and Android side: automatic switching to the next-best server when the connection drops, context profiles, per-app traffic stats and encrypted settings transfer.
 
 <br/>
 
@@ -350,9 +240,9 @@ Special thanks to **Maxim Gushter** ([VivaGushter](https://github.com/VivaGushte
 
 ## Support, contributing, and feedback
 
-Built and maintained by a single independent developer. Bug reports, pull requests, and UI/UX ideas are genuinely welcome.
+Built and maintained by a single independent developer. Bug reports, pull requests, and UI/UX ideas are genuinely welcome: open an [issue](https://github.com/detestern/KarinCore/issues), or find the project at **[karincore.ru](https://karincore.ru)**.
 
-If KarinCore keeps you connected and you'd like to support development — including the upcoming Windows/macOS ports — you can send a tip:
+If KarinCore keeps you connected and you'd like to support development, including the upcoming Windows/macOS ports, you can send a tip:
 
 **USDT (TRC20):** `TQCQhGQD6xgaDxwqAVcTiapS6rdcPyf24X`
 

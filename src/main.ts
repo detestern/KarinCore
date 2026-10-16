@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { translations } from "./i18n";
-import { initDiagnostics } from "./diagnostics";
+import { extractEndpoint, initDiagnostics } from "./diagnostics";
 
 // **********************************
 // TYPES & INTERFACES
@@ -1037,12 +1037,99 @@ function renderLinkItem(item: ProxyLink) {
             ${esc(formattedProtocol)}
           </div>
         </div>
+        ${pingChipHtml(item.url)}
         <div class="link-actions">${actionsHtml}</div>
       </div>
     `;
 }
 
+// **********************************
+// PING OF ALL SERVERS
+// Время TCP-соединения с портом сервера (как шаг «Порт сервера» в диагностике).
+// Пока VPN включён, замер идёт через туннель, поэтому такие значения приглушены.
+// **********************************
+type PingResult =
+    | { state: 'pending' }
+    | { state: 'na' }
+    | { state: 'fail' }
+    | { state: 'ok'; ms: number; viaTunnel: boolean };
+
+const PING_GOOD_MS = 250;
+const PING_MID_MS = 500;
+const PING_CONCURRENCY = 6;
+const serverPings = new Map<string, PingResult>();
+let pingInFlight = false;
+
+function pingChipHtml(url: string): string {
+    const result = serverPings.get(url);
+    if (!result) return '';
+    if (result.state === 'pending') return '<span class="ping-chip none">…</span>';
+    if (result.state === 'na') return '<span class="ping-chip none">—</span>';
+    if (result.state === 'fail') return `<span class="ping-chip none">${esc(t('ping_no_answer'))}</span>`;
+    const level = result.ms <= PING_GOOD_MS ? 'good' : result.ms <= PING_MID_MS ? 'mid' : 'bad';
+    const text = t('diag_ms').replace('{ms}', String(result.ms));
+    return `<span class="ping-chip ${level}${result.viaTunnel ? ' dim' : ''}">${esc(text)}</span>`;
+}
+
+function paintPing(url: string) {
+    document.querySelectorAll<HTMLElement>('.link-item').forEach(item => {
+        if (item.dataset.selectUrl !== url) return;
+        item.querySelector('.ping-chip')?.remove();
+        const html = pingChipHtml(url);
+        if (html) item.querySelector('.link-actions')?.insertAdjacentHTML('beforebegin', html);
+    });
+}
+
+async function pingServer(url: string, viaTunnel: boolean): Promise<PingResult> {
+    const endpoint = extractEndpoint(url);
+    if (!endpoint || endpoint.transport !== 'tcp') return { state: 'na' };
+    try {
+        const raw = await invoke<string>('diag_tcp', { host: endpoint.host, port: endpoint.port });
+        if (raw.startsWith('open:')) return { state: 'ok', ms: Math.max(1, Number(raw.slice(5)) || 1), viaTunnel };
+        return { state: 'fail' };
+    } catch {
+        return { state: 'fail' };
+    }
+}
+
+async function pingAllServers() {
+    if (pingInFlight || appLinks.length === 0) return;
+    pingInFlight = true;
+    const button = document.getElementById('btn-ping-all') as HTMLButtonElement | null;
+    const label = document.getElementById('btn-ping-label');
+    const hint = document.getElementById('ping-hint');
+    const viaTunnel = heroPhase === 'on';
+    if (button) button.disabled = true;
+    if (label) label.textContent = t('ping_running');
+    if (hint) hint.hidden = true;
+
+    const urls = Array.from(new Set(appLinks.map(link => link.url)));
+    urls.forEach(url => serverPings.set(url, { state: 'pending' }));
+    renderLinks();
+
+    try {
+        let next = 0;
+        const worker = async () => {
+            while (next < urls.length) {
+                const url = urls[next++];
+                serverPings.set(url, await pingServer(url, viaTunnel));
+                paintPing(url);
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(PING_CONCURRENCY, urls.length) }, worker));
+    } finally {
+        pingInFlight = false;
+        if (button) button.disabled = false;
+        if (label) label.textContent = t('ping_btn');
+        if (hint) hint.hidden = !viaTunnel;
+    }
+}
+
 function renderLinks() {
+    const countEl = document.getElementById('links-count');
+    if (countEl) countEl.textContent = appLinks.length > 0 ? String(appLinks.length) : '';
+    document.querySelector<HTMLElement>('.drawer-section-label')?.classList.toggle('is-empty', appLinks.length === 0);
+    btnEditMode?.classList.toggle('is-active', isEditMode);
     if(!linksContainer) return;
     linksContainer.innerHTML = '';
     
@@ -1301,7 +1388,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.5.2";
+        const CURRENT_VERSION = "1.5.3";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -1470,6 +1557,7 @@ function init() {
     
     btnSave?.addEventListener('click', saveNewLink);
     btnImportFile?.addEventListener('click', () => { importFileInput?.click(); });
+    document.getElementById('btn-ping-all')?.addEventListener('click', () => { void pingAllServers(); });
 
     importFileInput?.addEventListener('change', (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
