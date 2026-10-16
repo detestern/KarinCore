@@ -4,7 +4,7 @@ import { readText as readClipboardText } from "@tauri-apps/plugin-clipboard-mana
 import { cancel as cancelBarcodeScan, checkPermissions as checkCameraPermission, Format as BarcodeFormat, openAppSettings as openCameraSettings, requestPermissions as requestCameraPermission, scan as scanBarcode } from "@tauri-apps/plugin-barcode-scanner";
 import projectChangelog from "../CHANGELOG.md?raw";
 import packageMetadata from "../package.json";
-import { initDiagnostics } from "./diagnostics";
+import { extractEndpoint, initDiagnostics } from "./diagnostics";
 import { translations } from "./i18n";
 import { escapeHtml } from "./security";
 import { changelogReleaseCount, DISCONNECTED_CORE_LABEL, renderProjectChangelog, resolveAndroidBackAction, resolveRuntimeInfo } from "./ui";
@@ -1951,9 +1951,87 @@ function renderLinkItem(item: ProxyLink) {
             ${safeProtocol}
           </div>
         </div>
+        ${pingChipHtml(item.url)}
         <div class="link-actions">${actionsHtml}</div>
       </div>
     `;
+}
+
+// **********************************
+// PING OF ALL SERVERS
+// TCP connect time to the server port (same probe as the "Server port" diagnostics step).
+// The app itself is excluded from the VPN, so the numbers are real even while connected.
+// **********************************
+type PingResult =
+    | { state: 'pending' }
+    | { state: 'na' }
+    | { state: 'fail' }
+    | { state: 'ok'; ms: number };
+
+const PING_GOOD_MS = 250;
+const PING_MID_MS = 500;
+const PING_CONCURRENCY = 6;
+const serverPings = new Map<string, PingResult>();
+let pingInFlight = false;
+
+function pingChipHtml(url: string): string {
+    const result = serverPings.get(url);
+    if (!result) return '';
+    if (result.state === 'pending') return '<span class="ping-chip none">…</span>';
+    if (result.state === 'na') return '<span class="ping-chip none">—</span>';
+    if (result.state === 'fail') return `<span class="ping-chip none">${escapeHtml(t('ping_no_answer'))}</span>`;
+    const level = result.ms <= PING_GOOD_MS ? 'good' : result.ms <= PING_MID_MS ? 'mid' : 'bad';
+    return `<span class="ping-chip ${level}">${escapeHtml(t('diag_ms').replace('{ms}', String(result.ms)))}</span>`;
+}
+
+function paintPing(url: string) {
+    document.querySelectorAll<HTMLElement>('.link-item').forEach(item => {
+        if (item.dataset.selectUrl !== url) return;
+        item.querySelector('.ping-chip')?.remove();
+        const html = pingChipHtml(url);
+        if (html) item.querySelector('.link-actions')?.insertAdjacentHTML('beforebegin', html);
+    });
+}
+
+async function pingServer(url: string): Promise<PingResult> {
+    const endpoint = extractEndpoint(url);
+    if (!endpoint || endpoint.transport !== 'tcp') return { state: 'na' };
+    try {
+        const raw = await invoke<string>('diag_tcp', { host: endpoint.host, port: endpoint.port });
+        if (raw.startsWith('open:')) return { state: 'ok', ms: Math.max(1, Number(raw.slice(5)) || 1) };
+        return { state: 'fail' };
+    } catch {
+        return { state: 'fail' };
+    }
+}
+
+async function pingAllServers() {
+    if (pingInFlight || appLinks.length === 0) return;
+    pingInFlight = true;
+    const button = document.getElementById('btn-ping-all') as HTMLButtonElement | null;
+    const label = document.getElementById('btn-ping-label');
+    if (button) button.disabled = true;
+    if (label) label.textContent = t('ping_running');
+
+    const urls = Array.from(new Set(appLinks.map(link => link.url)));
+    urls.forEach(url => serverPings.set(url, { state: 'pending' }));
+    renderLinks();
+
+    try {
+        let next = 0;
+        const worker = async () => {
+            while (next < urls.length) {
+                const url = urls[next++];
+                serverPings.set(url, await pingServer(url));
+                paintPing(url);
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(PING_CONCURRENCY, urls.length) }, worker));
+    } finally {
+        pingInFlight = false;
+        if (button) button.disabled = false;
+        if (label) label.textContent = t('ping_btn');
+    }
 }
 
 function resetListInteractionState(container: HTMLElement | null) {
@@ -3063,6 +3141,7 @@ async function init() {
     
     btnSave?.addEventListener('click', saveNewLink);
     btnImportFile?.addEventListener('click', () => { importFileInput?.click(); });
+    document.getElementById('btn-ping-all')?.addEventListener('click', () => { void pingAllServers(); });
 
     importFileInput?.addEventListener('change', (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];

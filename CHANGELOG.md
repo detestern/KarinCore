@@ -4,6 +4,12 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.43] - 2026-10-16
+
+### Added
+- A "Ping" button in the configurations panel, next to the server counter. One tap measures the response time of every server in the list and shows it as a badge: green up to 250 ms, yellow up to 500 ms, red above that, grey when there is no answer, a dash for OpenVPN and WireGuard links. The app is excluded from the VPN, so the numbers are real even while connected. The order of the list does not change.
+- The button and the badges are translated into English, Russian, French, Chinese and Turkish.
+
 ## [0.1.0-alpha.42] - 2026-10-16
 
 ### Added

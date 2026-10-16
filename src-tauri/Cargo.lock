@@ -2232,7 +2232,7 @@ dependencies = [
 
 [[package]]
 name = "karin-proxy"
-version = "0.1.0-alpha.42"
+version = "0.1.0-alpha.43"
 dependencies = [
  "base64 0.21.7",
  "getrandom 0.3.4",
@@ -4325,7 +4325,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-karin-vpn"
-version = "0.1.0-alpha.42"
+version = "0.1.0-alpha.43"
 dependencies = [
  "serde",
  "serde_json",
