@@ -688,20 +688,21 @@ class KarinVpnPlugin(private val activity: Activity) : Plugin(activity) {
             try {
                 val wifi = activity.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
                     as? android.net.wifi.WifiManager
-                @Suppress("MissingPermission")
-                wifi?.scanResults
-                    ?.sortedByDescending { it.level }
-                    ?.forEach { r ->
-                        @Suppress("DEPRECATION")
-                        val name = r.SSID?.trim().orEmpty()
-                        if (name.isNotEmpty()) result.add(name)
-                    }
+                val found = wifi?.scanResults ?: emptyList<android.net.wifi.ScanResult>()
+                for (r in found.sortedByDescending { it.level }) {
+                    @Suppress("DEPRECATION")
+                    val name = (r.SSID ?: "").trim()
+                    if (name.isNotEmpty()) result.add(name)
+                }
+            } catch (_: SecurityException) {
             } catch (_: Exception) {
             }
         }
         result.addAll(store.seenSsids())
         store.scenarios().forEach { if (it.ssid.isNotBlank()) result.add(it.ssid) }
-        return JSArray.from(result.take(40))
+        val array = JSArray()
+        for (name in result.take(40)) array.put(name)
+        return array
     }
 
     @Command

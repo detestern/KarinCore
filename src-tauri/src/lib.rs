@@ -2805,16 +2805,20 @@ fn stop_proxy(_state: State<'_, ProxyState>) -> Result<String, String> {
 /// service is asked first and the remembered value is only a fallback.
 fn probe_token(app: &tauri::AppHandle, state: &State<'_, ProxyState>) -> Result<String, String> {
     #[cfg(target_os = "android")]
-    if let Ok(status) = app.karin_vpn().status() {
-        if let Some(token) = status.ping_token.filter(|t| !t.is_empty()) {
-            if let Ok(mut guard) = state.auth_token.lock() {
-                *guard = Some(token.clone());
+    {
+        if let Ok(status) = app.karin_vpn().status() {
+            if let Some(token) = status.ping_token.filter(|t| !t.is_empty()) {
+                if let Ok(mut guard) = state.auth_token.lock() {
+                    *guard = Some(token.clone());
+                }
+                return Ok(token);
             }
-            return Ok(token);
         }
     }
     #[cfg(not(target_os = "android"))]
-    let _ = app;
+    {
+        let _ = app;
+    }
     let guard = state
         .auth_token
         .lock()
