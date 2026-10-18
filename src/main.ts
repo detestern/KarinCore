@@ -3621,14 +3621,13 @@ function renderScenariosPage() {
     const permRows = scenarioPermissionRows();
     const missingRows = permRows.filter(r => !r.ok);
     const firstMissing = missingRows[0];
-    const permCard = permRows.length === 0 ? '' : `
-        <div class="scn-perm${missingRows.length ? ' needs' : ''}">
-            <div class="scn-perm-title">${escapeHtml(t('scn_perm_title'))}</div>
-            ${scenarioNeedsWifiAccess() ? `<div class="scn-perm-desc">${escapeHtml(t('scn_perm_desc'))}</div>` : ''}
-            <div class="scn-perm-list">
-                ${permRows.map(r => `<div class="scn-perm-row"><span>${escapeHtml(r.label)}</span><span class="scn-perm-state ${r.ok ? 'ok' : 'bad'}">${escapeHtml(r.ok ? t('scn_perm_ok') : t('scn_perm_missing'))}</span></div>`).join('')}
+    const permCard = missingRows.length === 0 ? '' : `
+        <div class="scn-perm">
+            <div class="scn-perm-text">
+                <div class="scn-perm-title">${escapeHtml(t('scn_perm_title'))}</div>
+                <div class="scn-perm-list">${escapeHtml(missingRows.map(r => r.label).join(', '))}</div>
             </div>
-            ${firstMissing ? `<button type="button" class="small-btn scn-perm-btn" data-scn-perm="${escapeHtml(firstMissing.action)}">${escapeHtml(firstMissing.action === 'settings' ? t('scn_perm_open_settings') : t('scn_perm_allow'))}</button>` : ''}
+            <button type="button" class="small-btn scn-perm-btn" data-scn-perm="${escapeHtml(firstMissing.action)}">${escapeHtml(firstMissing.action === 'settings' ? t('scn_perm_open_settings') : t('scn_perm_allow'))}</button>
         </div>`;
 
     const levels: ScenarioNotify[] = ['off', 'quiet', 'button'];
@@ -3826,23 +3825,23 @@ function initScenarios() {
         if (level === 'off' || level === 'quiet' || level === 'button') {
             scenarioNotify = level;
             try { localStorage.setItem('karin_scenario_notify', level); } catch { /* storage unavailable */ }
-            renderScenariosPage();
+            refreshScenariosIfOpen();
             scheduleScenarioSync(100);
             return;
         }
         const perm = pick('data-scn-perm');
         if (perm) { void invoke('scenarios_request_permission', { kind: perm }).then(() => window.setTimeout(() => { void refreshScenarioStatus(); }, 800)).catch(() => { /* ignored */ }); return; }
         const menu = pick('data-scn-menu');
-        if (menu) { scenarioMenuId = scenarioMenuId === menu ? null : menu; renderScenariosPage(); return; }
+        if (menu) { scenarioMenuId = scenarioMenuId === menu ? null : menu; refreshScenariosIfOpen(); return; }
         const edit = pick('data-scn-edit');
-        if (edit) { scenarioMenuId = null; renderScenariosPage(); openScenarioDialog(edit); return; }
+        if (edit) { scenarioMenuId = null; refreshScenariosIfOpen(); openScenarioDialog(edit); return; }
         const up = pick('data-scn-up');
-        if (up) { moveScenario(up, -1); scenarioMenuId = null; renderScenariosPage(); return; }
+        if (up) { moveScenario(up, -1); scenarioMenuId = null; refreshScenariosIfOpen(); return; }
         const down = pick('data-scn-down');
-        if (down) { moveScenario(down, 1); scenarioMenuId = null; renderScenariosPage(); return; }
+        if (down) { moveScenario(down, 1); scenarioMenuId = null; refreshScenariosIfOpen(); return; }
         const del = pick('data-scn-del');
-        if (del) { scenarios = scenarios.filter(s => s.id !== del); saveScenarios(); scenarioMenuId = null; renderScenariosPage(); scheduleScenarioSync(100); return; }
-        if (scenarioMenuId && !target.closest('.scn-menu')) { scenarioMenuId = null; renderScenariosPage(); }
+        if (del) { scenarios = scenarios.filter(s => s.id !== del); saveScenarios(); scenarioMenuId = null; refreshScenariosIfOpen(); scheduleScenarioSync(100); return; }
+        if (scenarioMenuId && !target.closest('.scn-menu')) { scenarioMenuId = null; refreshScenariosIfOpen(); }
     });
     page?.addEventListener('change', (e) => {
         const box = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-scn-toggle]');
@@ -3851,7 +3850,7 @@ function initScenarios() {
         if (!s) return;
         s.enabled = box.checked;
         saveScenarios();
-        renderScenariosPage();
+        refreshScenariosIfOpen();
         scheduleScenarioSync(100, s.enabled && s.action === 'connect');
     });
     // Start (or stop) the native watcher and rebuild the prepared connections when needed.

@@ -4,6 +4,15 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.46] - 2026-10-19
+
+### Changed
+- The scenarios screen opens with a one-line description instead of a long paragraph.
+- The access card is compact and shows only what is still missing; once everything needed is granted it disappears completely.
+
+### Fixed
+- Switching the notification level (Off / Quiet / With Undo) no longer throws the screen back to the top; the same applies to enabling, moving and deleting scenarios.
+
 ## [0.1.0-alpha.45] - 2026-10-19
 
 ### Added
