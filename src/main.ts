@@ -1335,9 +1335,11 @@ function renderZoneSubpage() {
                     </div>
                 </div>
             </div>
-            <h4 class="subpage-section-title">${esc(t('zone_rules_title'))}</h4>
+            <div class="zone-rules-head">
+                <h4 class="subpage-section-title">${esc(t('zone_rules_title'))}${rules.length > 0 ? `<span class="zone-rules-count">${rules.length}</span>` : ''}</h4>
+                <button type="button" class="btn-add" data-zone="${zone}">${esc(t('zone_add_rule'))}</button>
+            </div>
             <div class="zone-rules">${rulesHtml}</div>
-            <button type="button" class="btn-add" data-zone="${zone}">${esc(t('zone_add_rule'))}</button>
         </div>
     `;
 }
@@ -1640,7 +1642,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.5.4";
+        const CURRENT_VERSION = "1.5.5";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;

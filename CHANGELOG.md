@@ -5,6 +5,13 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.5.5 — Afterglow
+
+<sub>2026-10-18</sub>
+
+* **Changed:** the zone page uses the full width of the window. The default-route and priority settings sit side by side in one row, and the rules are laid out as a grid that fills the width and adapts to it (a rule counter and the "Add rule" button share the row above it).
+* **Fixed:** hovering a zone card on the Routing tab no longer floods it with the button colour. The card keeps its look and gets a soft glow in the colour of its zone instead. Rule cards in a zone get a quieter glow too.
+
 ## v1.5.4 — Compass
 
 <sub>2026-10-18</sub>
