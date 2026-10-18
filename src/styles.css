@@ -2166,3 +2166,112 @@ dialog::backdrop {
     outline: none;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--zone-color) 60%, transparent);
 }
+
+/* **********************************
+   SETTINGS LINK ROW & CONNECTION SCENARIOS
+   ********************************** */
+.settings-panel { position: relative; min-height: 520px; }
+
+.settings-link-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    margin-top: 22px;
+    padding: 14px 16px;
+    text-align: left;
+    background: var(--input-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    cursor: pointer;
+}
+.settings-link-row:hover:not(:active) {
+    background: var(--input-bg);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 18px -4px var(--accent);
+}
+.settings-link-icon { display: grid; place-items: center; color: var(--accent); }
+.settings-link-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.settings-link-title { font-size: 14px; font-weight: 600; }
+.settings-link-desc { font-size: 12px; color: var(--text-dim); font-weight: 400; }
+.settings-link-chevron { display: grid; place-items: center; color: var(--text-dim); }
+.settings-link-row .drawer-count { margin-left: auto; }
+
+.scn-list { display: flex; flex-direction: column; gap: 10px; }
+.scn-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.scn-card.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 16px -6px var(--accent); }
+.scn-card.is-off .scn-card-main { opacity: 0.5; }
+.scn-card.scn-fallback { border-style: dashed; background: transparent; }
+.scn-card-main { flex: 1; min-width: 0; }
+.scn-card-head { display: flex; align-items: center; gap: 8px; }
+.scn-card-name { font-size: 14px; font-weight: 600; color: var(--text-color); }
+.scn-card-rule { margin-top: 4px; font-size: 13px; color: var(--text-dim); line-height: 1.45; overflow-wrap: anywhere; }
+.scn-card-rule b { color: var(--text-color); font-weight: 600; }
+.scn-pill { padding: 1px 8px; font-size: 11px; border-radius: 999px; color: var(--accent); border: 1px solid var(--accent); }
+.scn-warn { color: #f38ba8; }
+.scn-note { margin-bottom: 14px; padding: 10px 12px; font-size: 13px; color: var(--text-dim); border: 1px dashed var(--border-hover); border-radius: 10px; }
+.scn-footer { display: flex; align-items: center; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
+.scn-last { font-size: 12px; color: var(--text-dim); }
+
+.scn-menu-wrap { position: relative; }
+.scn-dots {
+    width: 32px; height: 32px; padding: 0;
+    display: grid; place-items: center;
+    background: transparent; color: var(--text-dim);
+    border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+}
+.scn-dots:hover { background: var(--panel-bg); color: var(--text-color); }
+.scn-menu {
+    position: absolute; right: 0; top: 36px; z-index: 5;
+    min-width: 150px; padding: 4px;
+    display: flex; flex-direction: column;
+    background: var(--panel-bg); border: 1px solid var(--border-hover);
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.scn-menu button {
+    padding: 8px 10px; text-align: left; font-size: 13px;
+    background: transparent; color: var(--text-color);
+    border: 0; border-radius: 7px; cursor: pointer;
+}
+.scn-menu button:hover:not(:disabled) { background: var(--input-bg); }
+.scn-menu button:disabled { opacity: 0.35; cursor: default; }
+.scn-menu button.danger { color: #f38ba8; }
+
+dialog.scenario-modal { width: 420px; max-width: calc(100vw - 32px); }
+.scn-field { margin-bottom: 14px; }
+.scn-field label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-dim); }
+.scn-field input[type="text"], .scn-field select { width: 100%; box-sizing: border-box; }
+.scn-hint { margin-top: 6px; font-size: 12px; color: var(--text-dim); }
+.scn-seg { display: flex; gap: 6px; padding: 4px; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 10px; }
+.scn-seg .scn-seg-btn {
+    flex: 1; padding: 8px 10px; font-size: 13px;
+    background: transparent; color: var(--text-dim);
+    border: 0; border-radius: 7px; cursor: pointer; box-shadow: none;
+}
+.scn-seg .scn-seg-btn:hover:not(:active):not(.active) { background: var(--panel-bg); color: var(--text-color); }
+.scn-seg .scn-seg-btn.active, .scn-seg .scn-seg-btn.active:hover { background: var(--accent); color: var(--bg-color); font-weight: 600; }
+.scn-error { margin-top: 4px; font-size: 13px; color: #f38ba8; }
+
+.subpage .scn-add {
+    margin: 0;
+    width: auto;
+    min-height: 42px;
+    padding: 0 18px;
+    background: transparent;
+    color: var(--accent);
+    border: 1px dashed var(--accent);
+    border-radius: 10px;
+    font-size: 14px;
+    cursor: pointer;
+}
+.subpage .scn-add:hover:not(:active) { background: var(--input-bg); box-shadow: 0 0 14px -4px var(--accent); }

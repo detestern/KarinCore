@@ -8,6 +8,7 @@ mod diag;
 mod helper_client;
 mod subjson;
 mod token;
+mod wifi;
 
 use tauri::{State, RunEvent, Emitter, Manager};
 use url::Url;
@@ -1312,6 +1313,28 @@ async fn diag_tcp(host: String, port: u16) -> Result<String, String> {
     })
 }
 
+/// Видимые и сохранённые Wi‑Fi сети (NetworkManager). Ошибка значит «список недоступен».
+#[tauri::command]
+async fn wifi_scan() -> Result<Value, String> {
+    let networks = tauri::async_runtime::spawn_blocking(wifi::read_networks)
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(Value::Array(
+        networks
+            .into_iter()
+            .map(|n| json!({ "ssid": n.ssid, "signal": n.signal, "secure": n.secure, "inUse": n.in_use, "known": n.known }))
+            .collect(),
+    ))
+}
+
+/// Имя Wi‑Fi сети, к которой подключён компьютер (None — не подключён к Wi‑Fi).
+#[tauri::command]
+async fn wifi_current() -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(wifi::read_current_ssid)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 fn diag_core() -> String {
     match std::process::Command::new("pgrep").args(["-x", "xray"]).status() {
@@ -1583,7 +1606,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            start_proxy, stop_proxy, fetch_subscription, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, diag_internet, diag_resolve, diag_tcp, diag_core, diag_tunnel, diag_verdict, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update
+            start_proxy, stop_proxy, fetch_subscription, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, diag_internet, diag_resolve, diag_tcp, diag_core, diag_tunnel, wifi_scan, wifi_current, diag_verdict, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update
         ]).build(tauri::generate_context!()).expect("error while building tauri application");
     app.run(|app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {

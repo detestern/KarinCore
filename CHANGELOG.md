@@ -5,6 +5,13 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.6.0 — Waypoint
+
+<sub>2026-10-18</sub>
+
+* **Added:** connection scenarios. Open Settings → "Connection scenarios" and create rules like "if Wi‑Fi *Home* → turn the VPN off" or "if Wi‑Fi *Cafe* → connect to this server". Scenarios can be named, enabled and disabled, edited, reordered and deleted. The first matching scenario from the top wins; if none matches, nothing changes.
+* **Added:** the Wi‑Fi name is read through NetworkManager (`nmcli`), and the editor suggests the networks your computer can see. A scenario is applied once when you join the network, so a manual connect or disconnect afterwards is not overridden.
+
 ## v1.5.5 — Afterglow
 
 <sub>2026-10-18</sub>

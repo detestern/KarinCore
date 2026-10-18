@@ -336,7 +336,7 @@ const preventNativeZoom = (e: Event) => {
 
 window.addEventListener('keydown', preventNativeZoom, { capture: true });
 window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !document.querySelector('dialog[open]') && closeZonePage()) e.preventDefault();
+    if (e.key === 'Escape' && !document.querySelector('dialog[open]') && closeAnySubpage()) e.preventDefault();
 });
 window.addEventListener('wheel', preventNativeZoom, { passive: false, capture: true });
 window.addEventListener('mousewheel', preventNativeZoom, { passive: false, capture: true });
@@ -366,6 +366,8 @@ function updateUIStrings() {
         if (key) (el as HTMLInputElement).placeholder = t(key); 
     });
     diagnostics?.refreshText();
+    refreshScenariosIfOpen();
+    updateScenarioCount();
 }
 
 // **********************************
@@ -793,7 +795,7 @@ function toggleMenu(show?: boolean) {
 }
 
 function switchPage(pageId: string) { 
-    closeZonePage();
+    closeAnySubpage();
     pages.forEach(page => page.classList.toggle('active', page.id === pageId)); 
     toggleMenu(false); 
     
@@ -1364,6 +1366,12 @@ function closeZonePage(): boolean {
     return true;
 }
 
+function closeAnySubpage(): boolean {
+    const zone = closeZonePage();
+    const scn = closeScenariosPage();
+    return zone || scn;
+}
+
 function setActiveRouteProfile(id: string | null) {
     activeRouteProfileId = id;
     try {
@@ -1642,7 +1650,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.5.5";
+        const CURRENT_VERSION = "1.6.0";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -2036,7 +2044,297 @@ function init() {
         }
     });
     void initBridge();
+    initScenarios();
     checkApplicationUpdates();
+}
+
+// **********************************
+// CONNECTION SCENARIOS (Wi-Fi)
+// **********************************
+interface Scenario { id: string; name: string; ssid: string; action: 'off' | 'connect'; serverUrl: string | null; enabled: boolean; }
+
+function loadScenarios(): Scenario[] {
+    const raw = safeParse('karin_scenarios', []);
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .filter((s: any) => s && typeof s.id === 'string' && typeof s.ssid === 'string' && s.ssid !== '')
+        .map((s: any): Scenario => ({
+            id: s.id,
+            name: typeof s.name === 'string' ? s.name : '',
+            ssid: s.ssid,
+            action: s.action === 'connect' ? 'connect' : 'off',
+            serverUrl: typeof s.serverUrl === 'string' ? s.serverUrl : null,
+            enabled: s.enabled !== false,
+        }));
+}
+
+let scenarios: Scenario[] = loadScenarios();
+let scnEditId: string | null = null;
+let scnDraftAction: 'off' | 'connect' = 'off';
+let scnCurrentSsid: string | null = null;
+let scnWifiAvailable = true;
+let scnLastText = '';
+let scnMenuOpenId: string | null = null;
+
+function saveScenarios() {
+    try { localStorage.setItem('karin_scenarios', JSON.stringify(scenarios)); } catch { /* storage unavailable */ }
+    updateScenarioCount();
+}
+
+function scenarioTitle(s: Scenario): string { return s.name.trim() || s.ssid; }
+
+// Первый подходящий включённый сценарий сверху.
+function matchScenario(ssid: string | null): Scenario | null {
+    if (!ssid) return null;
+    return scenarios.find(s => s.enabled && s.ssid === ssid) || null;
+}
+
+function updateScenarioCount() {
+    const el = document.getElementById('scn-settings-count');
+    if (!el) return;
+    const on = scenarios.filter(s => s.enabled).length;
+    el.textContent = scenarios.length ? String(on) : '';
+}
+
+function scenarioActionText(s: Scenario): string {
+    if (s.action === 'off') return t('scn_act_off');
+    const link = s.serverUrl ? appLinks.find(l => l.url === s.serverUrl) : null;
+    return t('scn_act_connect').replace('{server}', link ? getLinkDisplayName(link.url) : '?');
+}
+
+function renderScenarios() {
+    const host = document.getElementById('subpage-scenarios');
+    if (!host) return;
+    const active = matchScenario(scnCurrentSsid);
+    const cards = scenarios.map((s, i) => {
+        const link = s.action === 'connect' && s.serverUrl ? appLinks.find(l => l.url === s.serverUrl) : null;
+        const missing = s.action === 'connect' && !link;
+        const menu = scnMenuOpenId === s.id ? `
+            <div class="scn-menu" role="menu">
+                <button type="button" role="menuitem" data-scn-edit="${esc(s.id)}">${esc(t('scn_edit'))}</button>
+                <button type="button" role="menuitem" data-scn-up="${esc(s.id)}" ${i === 0 ? 'disabled' : ''}>${esc(t('scn_move_up'))}</button>
+                <button type="button" role="menuitem" data-scn-down="${esc(s.id)}" ${i === scenarios.length - 1 ? 'disabled' : ''}>${esc(t('scn_move_down'))}</button>
+                <button type="button" role="menuitem" class="danger" data-scn-del="${esc(s.id)}">${esc(t('btn_delete'))}</button>
+            </div>` : '';
+        return `
+        <div class="scn-card${s.enabled ? '' : ' is-off'}${active && active.id === s.id ? ' is-active' : ''}">
+            <div class="scn-card-main">
+                <div class="scn-card-head">
+                    <span class="scn-card-name">${esc(scenarioTitle(s))}</span>
+                    ${active && active.id === s.id ? `<span class="scn-pill">${esc(t('scn_now'))}</span>` : ''}
+                </div>
+                <div class="scn-card-rule">${esc(t('scn_if_wifi'))} <b>${esc(s.ssid)}</b> → ${esc(scenarioActionText(s))}${missing ? ` <span class="scn-warn">${esc(t('scn_missing_server'))}</span>` : ''}</div>
+            </div>
+            <label class="switch"><input type="checkbox" data-scn-toggle="${esc(s.id)}" ${s.enabled ? 'checked' : ''}><span class="slider"></span></label>
+            <div class="scn-menu-wrap">
+                <button type="button" class="scn-dots" data-scn-menu="${esc(s.id)}" aria-label="${esc(t('scn_edit'))}">${svgIcon('<circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/>', 18)}</button>
+                ${menu}
+            </div>
+        </div>`;
+    }).join('');
+
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${esc(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 20)}</button>
+            <div class="subpage-title">${esc(t('scn_title'))}</div>
+        </div>
+        <div class="subpage-body">
+            <p class="subpage-lead">${esc(t('scn_intro'))}</p>
+            ${scnWifiAvailable ? '' : `<div class="scn-note">${esc(t('scn_status_na'))}</div>`}
+            <div class="scn-list">
+                ${cards || `<div class="zone-empty">${esc(t('scn_empty'))}</div>`}
+                <div class="scn-card scn-fallback">
+                    <div class="scn-card-main">
+                        <div class="scn-card-name">${esc(t('scn_fallback_title'))}</div>
+                        <div class="scn-card-rule">${esc(t('scn_fallback_desc'))}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="scn-footer">
+                <button type="button" class="scn-add" id="btn-scn-new">+ ${esc(t('scn_new'))}</button>
+                ${scnLastText ? `<span class="scn-last">${esc(t('scn_last').replace('{text}', scnLastText))}</span>` : ''}
+            </div>
+        </div>`;
+}
+
+function openScenariosPage() {
+    renderScenarios();
+    const el = document.getElementById('subpage-scenarios');
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+    void pollWifi(true);
+}
+
+function closeScenariosPage(): boolean {
+    const el = document.getElementById('subpage-scenarios');
+    if (!el || !el.classList.contains('open')) return false;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+    scnMenuOpenId = null;
+    return true;
+}
+
+function setScnAction(action: 'off' | 'connect') {
+    scnDraftAction = action;
+    document.querySelectorAll<HTMLElement>('#scn-action .scn-seg-btn').forEach(b => b.classList.toggle('active', b.dataset.action === action));
+    const field = document.getElementById('scn-server-field');
+    if (field) field.hidden = action !== 'connect';
+}
+
+async function openScenarioDialog(id: string | null) {
+    const modal = document.getElementById('scenario-modal') as HTMLDialogElement | null;
+    if (!modal) return;
+    scnEditId = id;
+    const s = id ? scenarios.find(x => x.id === id) : null;
+    (document.getElementById('scn-dlg-title') as HTMLElement).textContent = t(s ? 'scn_dlg_edit' : 'scn_dlg_new');
+    (document.getElementById('scn-name') as HTMLInputElement).value = s ? s.name : '';
+    (document.getElementById('scn-ssid') as HTMLInputElement).value = s ? s.ssid : '';
+    const select = document.getElementById('scn-server') as HTMLSelectElement;
+    select.innerHTML = appLinks.length
+        ? appLinks.map(l => `<option value="${esc(l.url)}">${esc(getLinkDisplayName(l.url))}</option>`).join('')
+        : `<option value="">${esc(t('scn_servers_none'))}</option>`;
+    const wanted = s?.serverUrl || selectedProfileUrl;
+    if (wanted && appLinks.some(l => l.url === wanted)) select.value = wanted;
+    setScnAction(s ? s.action : 'off');
+    const err = document.getElementById('scn-error') as HTMLElement;
+    err.hidden = true;
+    const hint = document.getElementById('scn-ssid-hint') as HTMLElement;
+    hint.textContent = t('scn_f_wifi_hint');
+    const list = document.getElementById('scn-ssid-list') as HTMLDataListElement;
+    list.innerHTML = '';
+    modal.showModal();
+    try {
+        const nets = await invoke<{ ssid: string }[]>('wifi_scan');
+        list.innerHTML = nets.map(n => `<option value="${esc(n.ssid)}"></option>`).join('');
+    } catch {
+        hint.textContent = t('scn_f_wifi_na');
+    }
+}
+
+function saveScenarioDialog() {
+    const name = (document.getElementById('scn-name') as HTMLInputElement).value.trim();
+    const ssid = (document.getElementById('scn-ssid') as HTMLInputElement).value.trim();
+    const serverUrl = (document.getElementById('scn-server') as HTMLSelectElement).value;
+    const err = document.getElementById('scn-error') as HTMLElement;
+    const fail = (key: string) => { err.textContent = t(key); err.hidden = false; };
+    if (!ssid) return fail('scn_err_ssid');
+    if (scnDraftAction === 'connect' && !appLinks.some(l => l.url === serverUrl)) return fail('scn_err_server');
+    const url = scnDraftAction === 'connect' ? serverUrl : null;
+    const existing = scnEditId ? scenarios.find(x => x.id === scnEditId) : null;
+    if (existing) {
+        Object.assign(existing, { name, ssid, action: scnDraftAction, serverUrl: url });
+    } else {
+        scenarios.push({ id: 'scn_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, ssid, action: scnDraftAction, serverUrl: url, enabled: true });
+    }
+    saveScenarios();
+    (document.getElementById('scenario-modal') as HTMLDialogElement).close();
+    renderScenarios();
+    scnApplied = null; // изменённое правило применится заново к текущей сети
+    void pollWifi(true);
+}
+
+function moveScenario(id: string, delta: number) {
+    const i = scenarios.findIndex(s => s.id === id);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= scenarios.length) return;
+    [scenarios[i], scenarios[j]] = [scenarios[j], scenarios[i]];
+    saveScenarios();
+}
+
+// Применяем сценарий один раз при входе в сеть: ручное подключение потом не перебиваем.
+let scnApplied: string | null = null; // ключ «сеть + сценарий», для которого действие уже выполнено
+let scnCandidate: string | null = null;
+let scnCandidateCount = 0;
+let scnPolling = false;
+
+function applyScenario(s: Scenario) {
+    if (s.action === 'off') {
+        handleBridgeAction({ action: 'disconnect' } as BridgeAction);
+        scnLastText = t('scn_applied_off').replace('{name}', scenarioTitle(s));
+    } else if (s.serverUrl) {
+        handleBridgeAction({ action: 'connect', url: s.serverUrl } as BridgeAction);
+        const link = appLinks.find(l => l.url === s.serverUrl);
+        scnLastText = t('scn_applied_connect').replace('{name}', scenarioTitle(s)).replace('{server}', link ? getLinkDisplayName(link.url) : '');
+    }
+}
+
+async function pollWifi(force = false) {
+    if (scnPolling) return;
+    if (!force && !scenarios.some(s => s.enabled)) return;
+    scnPolling = true;
+    try {
+        const reading = (await invoke<string | null>('wifi_current')) || null;
+        const wasAvailable = scnWifiAvailable;
+        scnWifiAvailable = true;
+        // Сеть считаем сменившейся после двух одинаковых чтений подряд (чтобы не дёргаться на переподключении).
+        if (reading === scnCandidate) scnCandidateCount++;
+        else { scnCandidate = reading; scnCandidateCount = 1; }
+        let dirty = !wasAvailable;
+        if (force || scnCandidateCount >= 2) {
+            if (reading !== scnCurrentSsid) { scnCurrentSsid = reading; dirty = true; }
+            const s = matchScenario(reading);
+            if (!s) {
+                scnApplied = null;
+            } else {
+                const key = `${reading}|${s.id}|${s.action}|${s.serverUrl}`;
+                if (key !== scnApplied && heroPhase !== 'connecting') {
+                    scnApplied = key;
+                    applyScenario(s);
+                    dirty = true;
+                }
+            }
+        }
+        if (dirty) refreshScenariosIfOpen();
+    } catch {
+        if (scnWifiAvailable) { scnWifiAvailable = false; refreshScenariosIfOpen(); }
+    } finally {
+        scnPolling = false;
+    }
+}
+
+function refreshScenariosIfOpen() {
+    if (document.getElementById('subpage-scenarios')?.classList.contains('open')) renderScenarios();
+}
+
+function initScenarios() {
+    updateScenarioCount();
+    document.getElementById('btn-open-scenarios')?.addEventListener('click', openScenariosPage);
+    document.getElementById('scn-cancel')?.addEventListener('click', () => (document.getElementById('scenario-modal') as HTMLDialogElement).close());
+    document.getElementById('scn-save')?.addEventListener('click', saveScenarioDialog);
+    document.getElementById('scn-action')?.addEventListener('click', (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>('.scn-seg-btn');
+        if (b) setScnAction(b.dataset.action === 'connect' ? 'connect' : 'off');
+    });
+    document.getElementById('subpage-scenarios')?.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const pick = (attr: string) => target.closest<HTMLElement>(`[${attr}]`)?.getAttribute(attr) || null;
+        if (target.closest('#btn-scn-new')) { void openScenarioDialog(null); return; }
+        const menu = pick('data-scn-menu');
+        if (menu) { scnMenuOpenId = scnMenuOpenId === menu ? null : menu; renderScenarios(); return; }
+        const edit = pick('data-scn-edit');
+        if (edit) { scnMenuOpenId = null; renderScenarios(); void openScenarioDialog(edit); return; }
+        const up = pick('data-scn-up');
+        if (up) { moveScenario(up, -1); scnMenuOpenId = null; renderScenarios(); return; }
+        const down = pick('data-scn-down');
+        if (down) { moveScenario(down, 1); scnMenuOpenId = null; renderScenarios(); return; }
+        const del = pick('data-scn-del');
+        if (del) { scenarios = scenarios.filter(s => s.id !== del); saveScenarios(); scnMenuOpenId = null; renderScenarios(); return; }
+        if (scnMenuOpenId && !target.closest('.scn-menu')) { scnMenuOpenId = null; renderScenarios(); }
+    });
+    document.getElementById('subpage-scenarios')?.addEventListener('change', (e) => {
+        const box = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-scn-toggle]');
+        if (!box) return;
+        const s = scenarios.find(x => x.id === box.dataset.scnToggle);
+        if (!s) return;
+        s.enabled = box.checked;
+        saveScenarios();
+        scnApplied = null;
+        renderScenarios();
+        void pollWifi(true);
+    });
+    window.setInterval(() => { void pollWifi(); }, 3000);
+    void pollWifi();
 }
 
 // **********************************
@@ -2045,7 +2343,7 @@ function init() {
 document.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;
 
-    if (target.closest('[data-subpage-close]')) { closeZonePage(); return; }
+    if (target.closest('[data-subpage-close]')) { closeAnySubpage(); return; }
     const zoneCard = target.closest<HTMLElement>('[data-zone-open]');
     if (zoneCard) {
         if (Date.now() >= suppressZoneClickUntil) openZonePage(zoneCard.dataset.zoneOpen as ZoneKey);
