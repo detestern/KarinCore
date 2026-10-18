@@ -48,7 +48,7 @@ Profiles can be removed in the application. Diagnostic logs can be cleared from 
 
 ## Permissions
 
-KarinCore uses Internet and network-state permissions to provide VPN connectivity. The foreground-service and `BIND_VPN_SERVICE` declarations are used for the Android VPN service. Package visibility is limited to launchable applications needed by the per-app routing selector.
+KarinCore uses Internet and network-state permissions to provide VPN connectivity. The foreground-service and `BIND_VPN_SERVICE` declarations are used for the Android VPN service. Package visibility is limited to launchable applications needed by the per-app routing selector. Optional connection scenarios use location access (including background access) only so Android reveals the name of the Wi-Fi network you are connected to; the device location is never read, stored or sent, and the Wi-Fi name is compared on the device and never leaves it. The boot-completed declaration restarts the scenario watcher after a reboot, and Wi-Fi state access is used to read that network name.
 
 ## Changes and contact
 

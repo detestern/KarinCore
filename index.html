@@ -87,7 +87,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.43</div>
+      <div class="app-version-text">v 0.1.0-alpha.44</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -415,6 +415,15 @@
           <span class="slider"></span>
         </label>
       </div>
+      <button id="btn-open-scenarios" class="setting-card settings-link-row" type="button">
+        <span class="settings-link-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg></span>
+        <span class="settings-link-text">
+          <span class="settings-link-title" data-i18n="scn_title">Connection scenarios</span>
+          <span class="settings-link-desc" data-i18n="scn_settings_desc">Switch the VPN automatically by Wi‑Fi or mobile network</span>
+        </span>
+        <span id="scn-settings-count" class="drawer-count"></span>
+        <span class="settings-link-chevron"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
+      </button>
       <div id="desktop-kill-switch-section" class="setting-card settings-detail-card">
         <div class="settings-row">
           <label class="setting-card-title" data-i18n="settings_kill_switch">Kill Switch:</label>
@@ -471,6 +480,7 @@
 
   <div id="subpage-zone" class="subpage" aria-hidden="true"></div>
   <div id="subpage-patches" class="subpage" aria-hidden="true"></div>
+  <div id="subpage-scenarios" class="subpage" aria-hidden="true"></div>
 
   <div id="qr-overlay" class="qr-overlay" aria-hidden="true">
     <div class="qr-frame"><i></i><i></i><i></i><i></i></div>
@@ -503,6 +513,43 @@
       <button id="btn-manual-add" data-i18n="btn_add">Добавить</button>
     </div>
     <button id="btn-close-search-modal" class="secondary" style="margin-top: 20px; width: 100%;" data-i18n="btn_close">Закрыть</button>
+  </dialog>
+
+  <dialog id="scenario-modal" class="panel scenario-modal">
+    <h3 id="scn-dlg-title" class="scn-dlg-title">New scenario</h3>
+    <div class="scn-field">
+      <label for="scn-name" data-i18n="scn_f_name">Name</label>
+      <input type="text" id="scn-name" maxlength="40" autocomplete="off" data-i18n-placeholder="scn_f_name_ph" placeholder="For example: Home">
+    </div>
+    <div class="scn-field">
+      <label data-i18n="scn_f_when">When</label>
+      <div class="scn-seg" id="scn-kind">
+        <button type="button" class="scn-seg-btn" data-kind="wifi" data-i18n="scn_when_wifi">Wi‑Fi</button>
+        <button type="button" class="scn-seg-btn" data-kind="mobile" data-i18n="scn_when_mobile">Mobile network</button>
+      </div>
+    </div>
+    <div class="scn-field" id="scn-ssid-field">
+      <label for="scn-ssid" data-i18n="scn_f_wifi">Wi‑Fi network name</label>
+      <input type="text" id="scn-ssid" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-placeholder="scn_f_wifi_ph" placeholder="Network name (SSID)">
+      <button type="button" id="scn-use-current" class="small-btn scn-use-current" data-i18n="scn_use_current">Use current network</button>
+      <div id="scn-ssid-hint" class="scn-hint"></div>
+    </div>
+    <div class="scn-field">
+      <label data-i18n="scn_f_then">Then</label>
+      <div class="scn-seg" id="scn-action">
+        <button type="button" class="scn-seg-btn" data-action="off" data-i18n="scn_act_off_short">Turn VPN off</button>
+        <button type="button" class="scn-seg-btn" data-action="connect" data-i18n="scn_act_connect_short">Connect to a server</button>
+      </div>
+    </div>
+    <div class="scn-field" id="scn-server-field">
+      <label for="scn-server" data-i18n="scn_f_server">Server</label>
+      <select id="scn-server"></select>
+    </div>
+    <div id="scn-error" class="scn-error" hidden></div>
+    <div class="scn-dlg-actions">
+      <button id="scn-cancel" class="secondary" type="button" data-i18n="btn_cancel">Cancel</button>
+      <button id="scn-save" type="button" data-i18n="btn_save">Save</button>
+    </div>
   </dialog>
 
   <dialog id="prompt-modal" class="panel">

@@ -21,4 +21,21 @@
     <string name="tile_connected">Подключено</string>
     <string name="tile_connecting">Подключение…</string>
     <string name="tile_disconnected">Выкл</string>
+    <string name="scenario_channel_watch">Слежение за сетью</string>
+    <string name="scenario_channel_events">Сценарии</string>
+    <string name="scenario_channel_errors">Проблемы сценариев</string>
+    <string name="scenario_watching">Слежу за сетью · включено: %1$d</string>
+    <string name="scenario_condition_wifi">Wi‑Fi %1$s</string>
+    <string name="scenario_condition_mobile">Мобильная сеть</string>
+    <string name="scenario_result_off">VPN выключен</string>
+    <string name="scenario_result_connect">подключаю %1$s</string>
+    <string name="scenario_line">%1$s → %2$s</string>
+    <string name="scenario_undo">Отменить</string>
+    <string name="scenario_err_title">Сценарий «%1$s» не сработал</string>
+    <string name="scenario_err_wifi_title">Сценарии Wi‑Fi не видят имя сети</string>
+    <string name="scenario_err_location">Разрешите доступ к местоположению «всегда», чтобы KarinCore мог читать имя Wi‑Fi. Нажмите, чтобы открыть настройки.</string>
+    <string name="scenario_err_no_config">Откройте KarinCore один раз, чтобы он подготовил подключение.</string>
+    <string name="scenario_err_vpn_permission">Сначала откройте KarinCore и разрешите VPN-подключение.</string>
+    <string name="scenario_err_always_on">В настройках Android включён Always-on VPN, поэтому отсюда его не выключить.</string>
+    <string name="scenario_err_start">Android не разрешил запуск из фона. Откройте KarinCore.</string>
 </resources>

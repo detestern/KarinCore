@@ -1255,7 +1255,7 @@ function initPasteAndQr() {
 // **********************************
 // SUBPAGES (routing zone, patch notes) & SWIPES
 // **********************************
-type SubpageId = 'subpage-zone' | 'subpage-patches';
+type SubpageId = 'subpage-zone' | 'subpage-patches' | 'subpage-scenarios';
 let openZone: ZoneKey | null = null;
 
 const ZONE_META: Record<ZoneKey, { label: string, color: string, descKey: string, icon: string }> = {
@@ -2960,6 +2960,7 @@ async function init() {
     loadDnsState(); 
     renderRoutingProfiles();
     void initAndroidAppRouting();
+    initScenarios();
     
     if (currentTheme === 'light') {
         document.documentElement.setAttribute('data-theme', 'light');
@@ -3116,7 +3117,13 @@ async function init() {
     document.addEventListener('visibilitychange', () => {
         if (runtimeInfo.platform !== 'android') return;
 
+        if (document.visibilityState === 'hidden') {
+            // Settings may have changed while the app was open: refresh what the native engine uses.
+            scheduleScenarioSync(0);
+        }
+
         if (document.visibilityState === 'visible') {
+            void refreshScenarioStatus();
             void restoreAndroidVpnState().then(() => {
                 updateStatusUI();
                 renderRouting();
@@ -3398,6 +3405,424 @@ async function init() {
         }
     });
     checkApplicationUpdates();
+}
+
+// **********************************
+// CONNECTION SCENARIOS (Wi-Fi / mobile network)
+// **********************************
+// The scenario engine runs natively so it keeps working while the app is closed.
+// This module is the editor: it keeps the list in localStorage, bakes the Xray
+// connection of every "connect" scenario ahead of time (the native side cannot
+// build one itself) and pushes everything to the native engine.
+type ScenarioKind = 'wifi' | 'mobile';
+type ScenarioAction = 'off' | 'connect';
+type ScenarioNotify = 'off' | 'quiet' | 'button';
+interface Scenario { id: string; name: string; kind: ScenarioKind; ssid: string; action: ScenarioAction; serverUrl: string | null; enabled: boolean; }
+interface ScenarioStatus {
+    watcherRunning?: boolean; netKind?: string; ssid?: string | null; activeId?: string | null; lastText?: string | null;
+    fineLocation?: boolean; backgroundLocation?: boolean; locationEnabled?: boolean; notifications?: boolean; sdkInt?: number;
+}
+
+function loadScenarios(): Scenario[] {
+    const raw = safeParse('karin_scenarios', []);
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .filter((s: any) => s && typeof s.id === 'string' && (s.kind === 'mobile' || (typeof s.ssid === 'string' && s.ssid !== '')))
+        .map((s: any): Scenario => ({
+            id: s.id,
+            name: typeof s.name === 'string' ? s.name : '',
+            kind: s.kind === 'mobile' ? 'mobile' : 'wifi',
+            ssid: s.kind === 'mobile' ? '' : s.ssid,
+            action: s.action === 'connect' ? 'connect' : 'off',
+            serverUrl: typeof s.serverUrl === 'string' ? s.serverUrl : null,
+            enabled: s.enabled !== false,
+        }));
+}
+
+let scenarios: Scenario[] = loadScenarios();
+let scenarioNotify: ScenarioNotify = (['off', 'quiet', 'button'] as const).find(v => v === localStorage.getItem('karin_scenario_notify')) || 'quiet';
+let scenarioStatus: ScenarioStatus = {};
+let scenarioMenuId: string | null = null;
+let scenarioEditId: string | null = null;
+let scenarioDraftKind: ScenarioKind = 'wifi';
+let scenarioDraftAction: ScenarioAction = 'off';
+let scenarioPrepareErrors = new Set<string>();
+let scenarioStatusTimer: number | null = null;
+let scenarioSyncTimer: number | null = null;
+let scenarioSyncRunning = false;
+let scenarioSyncAgain = false;
+
+function saveScenarios() {
+    try { localStorage.setItem('karin_scenarios', JSON.stringify(scenarios)); } catch { /* storage unavailable */ }
+    updateScenarioCount();
+}
+
+function scenarioTitle(s: Scenario): string {
+    return s.name.trim() || (s.kind === 'mobile' ? t('scn_default_mobile') : s.ssid);
+}
+
+function updateScenarioCount() {
+    const el = document.getElementById('scn-settings-count');
+    if (!el) return;
+    const enabled = scenarios.filter(s => s.enabled).length;
+    el.textContent = scenarios.length ? String(enabled) : '';
+}
+
+function scenarioServerLabel(s: Scenario): string {
+    const link = s.serverUrl ? appLinks.find(l => l.url === s.serverUrl) : null;
+    return link ? getLinkDisplayName(link.url) : '';
+}
+
+function scenarioActionText(s: Scenario): string {
+    if (s.action === 'off') return t('scn_act_off');
+    return t('scn_act_connect').replace('{server}', scenarioServerLabel(s) || '?');
+}
+
+// Everything a baked connection depends on. When it changes the connections are rebuilt.
+function scenarioBakeSignature(): string {
+    return JSON.stringify({
+        servers: scenarios.filter(s => s.enabled && s.action === 'connect').map(s => [s.id, s.serverUrl]),
+        links: appLinks.map(l => [l.url, l.groupId]),
+        groups: appGroups.map(g => [g.id, (g as any).providerRouting || null]),
+        routing: routingState, defaultOutbound, zonePriority, allowProxyLan, appRoutingMode,
+        packages: Array.from(selectedAppPackages).sort(),
+        dns: [localStorage.getItem('karin_dns_dom'), localStorage.getItem('karin_dns_rem')],
+    });
+}
+
+async function bakeScenarioConnection(s: Scenario): Promise<void> {
+    const link = s.serverUrl ? appLinks.find(l => l.url === s.serverUrl) : null;
+    if (!link) throw new Error('server missing');
+    if (appRoutingMode === 'allowlist' && selectedAppPackages.size === 0) throw new Error('app routing empty');
+    const dDns = safeParse('karin_dns_dom', { type: 'doh', url: 'https://dns.yandex.ru/dns-query', ip: '77.88.8.8' });
+    const rDns = safeParse('karin_dns_rem', { type: 'doh', url: 'https://1.1.1.1/dns-query', ip: '1.1.1.1' });
+    const group = link.groupId ? appGroups.find(item => item.id === link.groupId) : undefined;
+    await invoke('scenarios_prepare_connection', {
+        scenarioId: s.id,
+        vlessLink: link.url,
+        routingState: group?.providerRouting || routingState,
+        defaultOutbound: group?.providerRouting ? 'proxy' : defaultOutbound,
+        dnsParams: { domestic: dDns, remote: rDns },
+        zonePriority,
+        proxyLan: allowProxyLan,
+        appRoutingMode,
+        appPackages: Array.from(selectedAppPackages),
+    });
+}
+
+async function runScenarioSync(forceBake: boolean) {
+    if (runtimeInfo.platform !== 'android') return;
+    if (scenarioSyncRunning) { scenarioSyncAgain = true; return; }
+    scenarioSyncRunning = true;
+    try {
+        const signature = scenarioBakeSignature();
+        let storedSignature: string | null = null;
+        try { storedSignature = localStorage.getItem('karin_scenario_bake_sig'); } catch { /* storage unavailable */ }
+        const needBake = forceBake || signature !== storedSignature;
+        if (needBake) {
+            scenarioPrepareErrors = new Set<string>();
+            for (const s of scenarios.filter(x => x.enabled && x.action === 'connect')) {
+                try { await bakeScenarioConnection(s); } catch { scenarioPrepareErrors.add(s.id); }
+            }
+            if (scenarioPrepareErrors.size === 0) {
+                try { localStorage.setItem('karin_scenario_bake_sig', signature); } catch { /* storage unavailable */ }
+            }
+        }
+        const payload = scenarios.map(s => ({
+            id: s.id, name: s.name, kind: s.kind, ssid: s.ssid, action: s.action,
+            serverLabel: scenarioServerLabel(s), enabled: s.enabled,
+        }));
+        await invoke('scenarios_sync', { scenariosJson: JSON.stringify(payload), notifyLevel: scenarioNotify });
+    } catch (error) {
+        console.warn('scenarios sync failed', error);
+    } finally {
+        scenarioSyncRunning = false;
+        if (scenarioSyncAgain) { scenarioSyncAgain = false; scheduleScenarioSync(); }
+        refreshScenariosIfOpen();
+    }
+}
+
+function scheduleScenarioSync(delay = 400, forceBake = false) {
+    if (scenarioSyncTimer !== null) window.clearTimeout(scenarioSyncTimer);
+    scenarioSyncTimer = window.setTimeout(() => { scenarioSyncTimer = null; void runScenarioSync(forceBake); }, delay);
+}
+
+async function refreshScenarioStatus() {
+    if (runtimeInfo.platform !== 'android') return;
+    try {
+        const next = await invoke<ScenarioStatus>('scenarios_status');
+        const changed = JSON.stringify(next) !== JSON.stringify(scenarioStatus);
+        scenarioStatus = next || {};
+        if (changed) refreshScenariosIfOpen();
+    } catch { /* plugin not ready */ }
+}
+
+function scenarioNeedsWifiAccess(): boolean {
+    return scenarios.some(s => s.enabled && s.kind === 'wifi');
+}
+
+function scenarioPermissionRows(): { key: string; label: string; ok: boolean; action: string }[] {
+    const st = scenarioStatus;
+    const rows: { key: string; label: string; ok: boolean; action: string }[] = [];
+    if (scenarioNeedsWifiAccess()) {
+        rows.push({ key: 'location', label: t('scn_perm_location'), ok: !!st.fineLocation, action: 'location' });
+        rows.push({ key: 'background', label: t('scn_perm_background'), ok: !!st.backgroundLocation, action: 'background' });
+        rows.push({ key: 'services', label: t('scn_perm_services'), ok: !!st.locationEnabled, action: 'settings' });
+    }
+    if (scenarioNotify !== 'off' && scenarios.some(s => s.enabled)) {
+        rows.push({ key: 'notifications', label: t('scn_perm_notifications'), ok: st.notifications !== false, action: 'notifications' });
+    }
+    return rows;
+}
+
+function renderScenariosPage() {
+    const host = document.getElementById('subpage-scenarios');
+    if (!host) return;
+    const active = scenarioStatus.activeId || null;
+
+    const cards = scenarios.map((s, i) => {
+        const link = s.action === 'connect' && s.serverUrl ? appLinks.find(l => l.url === s.serverUrl) : null;
+        const missing = s.action === 'connect' && !link;
+        const failed = !missing && scenarioPrepareErrors.has(s.id);
+        const condition = s.kind === 'mobile'
+            ? t('scn_if_mobile')
+            : `${t('scn_if_wifi')} <b>${escapeHtml(s.ssid)}</b>`;
+        const menu = scenarioMenuId === s.id ? `
+            <div class="scn-menu" role="menu">
+                <button type="button" role="menuitem" data-scn-edit="${escapeHtml(s.id)}">${escapeHtml(t('scn_edit'))}</button>
+                <button type="button" role="menuitem" data-scn-up="${escapeHtml(s.id)}" ${i === 0 ? 'disabled' : ''}>${escapeHtml(t('scn_move_up'))}</button>
+                <button type="button" role="menuitem" data-scn-down="${escapeHtml(s.id)}" ${i === scenarios.length - 1 ? 'disabled' : ''}>${escapeHtml(t('scn_move_down'))}</button>
+                <button type="button" role="menuitem" class="danger" data-scn-del="${escapeHtml(s.id)}">${escapeHtml(t('btn_delete'))}</button>
+            </div>` : '';
+        const warn = missing ? t('scn_missing_server') : (failed ? t('scn_prepare_failed') : '');
+        return `
+        <div class="scn-card${s.enabled ? '' : ' is-off'}${active === s.id && s.enabled ? ' is-active' : ''}">
+            <div class="scn-card-main">
+                <div class="scn-card-head">
+                    <span class="scn-card-name">${escapeHtml(scenarioTitle(s))}</span>
+                    ${active === s.id && s.enabled ? `<span class="scn-pill">${escapeHtml(t('scn_now'))}</span>` : ''}
+                </div>
+                <div class="scn-card-rule">${condition} → ${escapeHtml(scenarioActionText(s))}${warn ? ` <span class="scn-warn">(${escapeHtml(warn)})</span>` : ''}</div>
+            </div>
+            <label class="switch"><input type="checkbox" data-scn-toggle="${escapeHtml(s.id)}" ${s.enabled ? 'checked' : ''}><span class="slider"></span></label>
+            <div class="scn-menu-wrap">
+                <button type="button" class="scn-dots" data-scn-menu="${escapeHtml(s.id)}" aria-label="${escapeHtml(t('scn_edit'))}">${svgIcon('<circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/>', 18)}</button>
+                ${menu}
+            </div>
+        </div>`;
+    }).join('');
+
+    const permRows = scenarioPermissionRows();
+    const missingRows = permRows.filter(r => !r.ok);
+    const firstMissing = missingRows[0];
+    const permCard = permRows.length === 0 ? '' : `
+        <div class="scn-perm${missingRows.length ? ' needs' : ''}">
+            <div class="scn-perm-title">${escapeHtml(t('scn_perm_title'))}</div>
+            ${scenarioNeedsWifiAccess() ? `<div class="scn-perm-desc">${escapeHtml(t('scn_perm_desc'))}</div>` : ''}
+            <div class="scn-perm-list">
+                ${permRows.map(r => `<div class="scn-perm-row"><span>${escapeHtml(r.label)}</span><span class="scn-perm-state ${r.ok ? 'ok' : 'bad'}">${escapeHtml(r.ok ? t('scn_perm_ok') : t('scn_perm_missing'))}</span></div>`).join('')}
+            </div>
+            ${firstMissing ? `<button type="button" class="small-btn scn-perm-btn" data-scn-perm="${escapeHtml(firstMissing.action)}">${escapeHtml(firstMissing.action === 'settings' ? t('scn_perm_open_settings') : t('scn_perm_allow'))}</button>` : ''}
+        </div>`;
+
+    const levels: ScenarioNotify[] = ['off', 'quiet', 'button'];
+    const netText = scenarioStatus.netKind === 'wifi'
+        ? (scenarioStatus.ssid ? `Wi‑Fi ${scenarioStatus.ssid}` : 'Wi‑Fi')
+        : scenarioStatus.netKind === 'mobile' ? t('scn_net_mobile') : t('scn_net_none');
+    const statusLine = scenarioStatus.watcherRunning
+        ? `${t('scn_net_now').replace('{net}', netText)}`
+        : '';
+
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${escapeHtml(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 22)}</button>
+            <div class="subpage-title">${escapeHtml(t('scn_title'))}</div>
+        </div>
+        <div class="subpage-body">
+            <p class="subpage-lead">${escapeHtml(t('scn_intro'))}</p>
+            ${statusLine ? `<div class="scn-status">${escapeHtml(statusLine)}</div>` : ''}
+            ${permCard}
+            <div class="scn-list">
+                ${cards || `<div class="zone-empty">${escapeHtml(t('scn_empty'))}</div>`}
+                <div class="scn-card scn-fallback">
+                    <div class="scn-card-main">
+                        <div class="scn-card-name">${escapeHtml(t('scn_fallback_title'))}</div>
+                        <div class="scn-card-rule">${escapeHtml(t('scn_fallback_desc'))}</div>
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="scn-add" id="btn-scn-new">+ ${escapeHtml(t('scn_new'))}</button>
+            <div class="scn-notify">
+                <div class="scn-notify-title">${escapeHtml(t('scn_notify_title'))}</div>
+                <div class="scn-notify-desc">${escapeHtml(t('scn_notify_desc'))}</div>
+                <div class="scn-seg" id="scn-notify">
+                    ${levels.map(l => `<button type="button" class="scn-seg-btn${scenarioNotify === l ? ' active' : ''}" data-scn-notify="${l}">${escapeHtml(t('scn_notify_' + l))}</button>`).join('')}
+                </div>
+            </div>
+            ${scenarioStatus.lastText ? `<div class="scn-last">${escapeHtml(t('scn_last').replace('{text}', scenarioStatus.lastText))}</div>` : ''}
+        </div>`;
+}
+
+function refreshScenariosIfOpen() {
+    if (document.getElementById('subpage-scenarios')?.classList.contains('open')) {
+        const body = document.querySelector<HTMLElement>('#subpage-scenarios .subpage-body');
+        const top = body ? body.scrollTop : 0;
+        renderScenariosPage();
+        const next = document.querySelector<HTMLElement>('#subpage-scenarios .subpage-body');
+        if (next) next.scrollTop = top;
+    }
+}
+
+function openScenariosPage() {
+    renderScenariosPage();
+    openSubpage('subpage-scenarios');
+    void refreshScenarioStatus();
+    if (scenarioStatusTimer !== null) window.clearInterval(scenarioStatusTimer);
+    scenarioStatusTimer = window.setInterval(() => {
+        if (!document.getElementById('subpage-scenarios')?.classList.contains('open')) {
+            if (scenarioStatusTimer !== null) window.clearInterval(scenarioStatusTimer);
+            scenarioStatusTimer = null;
+            return;
+        }
+        void refreshScenarioStatus();
+    }, 2000);
+}
+
+function setScenarioDraftKind(kind: ScenarioKind) {
+    scenarioDraftKind = kind;
+    document.querySelectorAll<HTMLElement>('#scn-kind .scn-seg-btn').forEach(b => b.classList.toggle('active', b.dataset.kind === kind));
+    const field = document.getElementById('scn-ssid-field');
+    if (field) field.hidden = kind !== 'wifi';
+}
+
+function setScenarioDraftAction(action: ScenarioAction) {
+    scenarioDraftAction = action;
+    document.querySelectorAll<HTMLElement>('#scn-action .scn-seg-btn').forEach(b => b.classList.toggle('active', b.dataset.action === action));
+    const field = document.getElementById('scn-server-field');
+    if (field) field.hidden = action !== 'connect';
+}
+
+function openScenarioDialog(id: string | null) {
+    const modal = document.getElementById('scenario-modal') as HTMLDialogElement | null;
+    if (!modal) return;
+    scenarioEditId = id;
+    const s = id ? scenarios.find(x => x.id === id) : null;
+    (document.getElementById('scn-dlg-title') as HTMLElement).textContent = t(s ? 'scn_dlg_edit' : 'scn_dlg_new');
+    (document.getElementById('scn-name') as HTMLInputElement).value = s ? s.name : '';
+    (document.getElementById('scn-ssid') as HTMLInputElement).value = s ? s.ssid : '';
+    const select = document.getElementById('scn-server') as HTMLSelectElement;
+    const usable = appLinks.filter(l => !l.url.startsWith('ovpn://'));
+    select.innerHTML = usable.length
+        ? usable.map(l => `<option value="${escapeHtml(l.url)}">${escapeHtml(getLinkDisplayName(l.url))}</option>`).join('')
+        : `<option value="">${escapeHtml(t('scn_servers_none'))}</option>`;
+    const wanted = s?.serverUrl || selectedProfileUrl;
+    if (wanted && usable.some(l => l.url === wanted)) select.value = wanted;
+    setScenarioDraftKind(s ? s.kind : 'wifi');
+    setScenarioDraftAction(s ? s.action : 'off');
+    (document.getElementById('scn-error') as HTMLElement).hidden = true;
+    (document.getElementById('scn-ssid-hint') as HTMLElement).textContent = '';
+    modal.showModal();
+    void refreshScenarioStatus();
+}
+
+function saveScenarioDialog() {
+    const name = (document.getElementById('scn-name') as HTMLInputElement).value.trim();
+    const ssid = (document.getElementById('scn-ssid') as HTMLInputElement).value.trim();
+    const serverUrl = (document.getElementById('scn-server') as HTMLSelectElement).value;
+    const error = document.getElementById('scn-error') as HTMLElement;
+    const fail = (key: string) => { error.textContent = t(key); error.hidden = false; };
+    if (scenarioDraftKind === 'wifi' && !ssid) return fail('scn_err_ssid');
+    if (scenarioDraftAction === 'connect' && !appLinks.some(l => l.url === serverUrl)) return fail('scn_err_server');
+    const next = {
+        name,
+        kind: scenarioDraftKind,
+        ssid: scenarioDraftKind === 'wifi' ? ssid : '',
+        action: scenarioDraftAction,
+        serverUrl: scenarioDraftAction === 'connect' ? serverUrl : null,
+    };
+    const existing = scenarioEditId ? scenarios.find(x => x.id === scenarioEditId) : null;
+    if (existing) {
+        Object.assign(existing, next);
+    } else {
+        scenarios.push({ id: 'scn_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), enabled: true, ...next });
+    }
+    saveScenarios();
+    (document.getElementById('scenario-modal') as HTMLDialogElement).close();
+    renderScenariosPage();
+    scheduleScenarioSync(100, true);
+}
+
+function moveScenario(id: string, delta: number) {
+    const i = scenarios.findIndex(s => s.id === id);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= scenarios.length) return;
+    [scenarios[i], scenarios[j]] = [scenarios[j], scenarios[i]];
+    saveScenarios();
+    scheduleScenarioSync(100);
+}
+
+function initScenarios() {
+    updateScenarioCount();
+    document.getElementById('btn-open-scenarios')?.addEventListener('click', openScenariosPage);
+    document.getElementById('scn-cancel')?.addEventListener('click', () => (document.getElementById('scenario-modal') as HTMLDialogElement).close());
+    document.getElementById('scn-save')?.addEventListener('click', saveScenarioDialog);
+    document.getElementById('scn-kind')?.addEventListener('click', (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>('.scn-seg-btn');
+        if (b) setScenarioDraftKind(b.dataset.kind === 'mobile' ? 'mobile' : 'wifi');
+    });
+    document.getElementById('scn-action')?.addEventListener('click', (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>('.scn-seg-btn');
+        if (b) setScenarioDraftAction(b.dataset.action === 'connect' ? 'connect' : 'off');
+    });
+    document.getElementById('scn-use-current')?.addEventListener('click', async () => {
+        await refreshScenarioStatus();
+        const hint = document.getElementById('scn-ssid-hint') as HTMLElement;
+        if (scenarioStatus.netKind === 'wifi' && scenarioStatus.ssid) {
+            (document.getElementById('scn-ssid') as HTMLInputElement).value = scenarioStatus.ssid;
+            hint.textContent = '';
+        } else {
+            hint.textContent = t('scn_use_current_none');
+        }
+    });
+    const page = document.getElementById('subpage-scenarios');
+    page?.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const pick = (attr: string) => target.closest<HTMLElement>(`[${attr}]`)?.getAttribute(attr) || null;
+        if (target.closest('#btn-scn-new')) { openScenarioDialog(null); return; }
+        const level = pick('data-scn-notify') as ScenarioNotify | null;
+        if (level === 'off' || level === 'quiet' || level === 'button') {
+            scenarioNotify = level;
+            try { localStorage.setItem('karin_scenario_notify', level); } catch { /* storage unavailable */ }
+            renderScenariosPage();
+            scheduleScenarioSync(100);
+            return;
+        }
+        const perm = pick('data-scn-perm');
+        if (perm) { void invoke('scenarios_request_permission', { kind: perm }).then(() => window.setTimeout(() => { void refreshScenarioStatus(); }, 800)).catch(() => { /* ignored */ }); return; }
+        const menu = pick('data-scn-menu');
+        if (menu) { scenarioMenuId = scenarioMenuId === menu ? null : menu; renderScenariosPage(); return; }
+        const edit = pick('data-scn-edit');
+        if (edit) { scenarioMenuId = null; renderScenariosPage(); openScenarioDialog(edit); return; }
+        const up = pick('data-scn-up');
+        if (up) { moveScenario(up, -1); scenarioMenuId = null; renderScenariosPage(); return; }
+        const down = pick('data-scn-down');
+        if (down) { moveScenario(down, 1); scenarioMenuId = null; renderScenariosPage(); return; }
+        const del = pick('data-scn-del');
+        if (del) { scenarios = scenarios.filter(s => s.id !== del); saveScenarios(); scenarioMenuId = null; renderScenariosPage(); scheduleScenarioSync(100); return; }
+        if (scenarioMenuId && !target.closest('.scn-menu')) { scenarioMenuId = null; renderScenariosPage(); }
+    });
+    page?.addEventListener('change', (e) => {
+        const box = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-scn-toggle]');
+        if (!box) return;
+        const s = scenarios.find(x => x.id === box.dataset.scnToggle);
+        if (!s) return;
+        s.enabled = box.checked;
+        saveScenarios();
+        renderScenariosPage();
+        scheduleScenarioSync(100, s.enabled && s.action === 'connect');
+    });
+    // Start (or stop) the native watcher and rebuild the prepared connections when needed.
+    scheduleScenarioSync(1200);
 }
 
 // **********************************

@@ -3778,3 +3778,130 @@ html.qr-scanning .qr-overlay {
 .platform-android .diag-actions button {
     min-height: 44px;
 }
+
+/* **********************************
+   17. CONNECTION SCENARIOS (alpha.44)
+   ********************************** */
+.settings-link-row {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 12px;
+    text-align: left;
+    color: var(--text-color);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.settings-link-row:active { border-color: var(--accent); }
+.settings-link-icon { display: grid; place-items: center; color: var(--accent); flex-shrink: 0; }
+.settings-link-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.settings-link-title { font-size: 14px; font-weight: 600; }
+.settings-link-desc { font-size: 12px; font-weight: 400; color: var(--text-dim); line-height: 1.35; }
+.settings-link-chevron { display: grid; place-items: center; color: var(--text-dim); flex-shrink: 0; }
+.settings-link-row .drawer-count { margin-left: 0; flex-shrink: 0; }
+
+.scn-status { margin: -6px 0 14px; font-size: 12.5px; color: var(--text-dim); }
+.scn-list { display: flex; flex-direction: column; gap: 10px; }
+.scn-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 12px 12px 14px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+}
+.scn-card.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 16px -6px var(--accent); }
+.scn-card.is-off .scn-card-main { opacity: 0.5; }
+.scn-card.scn-fallback { border-style: dashed; background: transparent; }
+.scn-card-main { flex: 1; min-width: 0; }
+.scn-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.scn-card-name { font-size: 14px; font-weight: 600; color: var(--text-color); overflow-wrap: anywhere; }
+.scn-card-rule { margin-top: 4px; font-size: 12.5px; color: var(--text-dim); line-height: 1.45; overflow-wrap: anywhere; }
+.scn-card-rule b { color: var(--text-color); font-weight: 600; }
+.scn-pill { padding: 1px 8px; font-size: 11px; border-radius: 999px; color: var(--accent); border: 1px solid var(--accent); white-space: nowrap; }
+.scn-warn { color: var(--danger); }
+
+.scn-menu-wrap { position: relative; flex-shrink: 0; }
+.scn-dots {
+    width: 36px; height: 36px; padding: 0;
+    display: grid; place-items: center;
+    background: transparent !important; color: var(--text-dim);
+    border: none; border-radius: 10px;
+    -webkit-tap-highlight-color: transparent;
+}
+.scn-dots:active { background: var(--input-bg) !important; }
+.scn-menu {
+    position: absolute; right: 0; top: 40px; z-index: 5;
+    min-width: 160px; padding: 4px;
+    display: flex; flex-direction: column;
+    background: var(--panel-bg); border: 1px solid var(--border-hover);
+    border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.scn-menu button {
+    min-height: 40px; padding: 8px 12px; text-align: left; font-size: 14px;
+    background: transparent !important; color: var(--text-color);
+    border: none; border-radius: 8px;
+}
+.scn-menu button:active:not(:disabled) { background: var(--input-bg) !important; }
+.scn-menu button:disabled { opacity: 0.35; }
+.scn-menu button.danger { color: var(--danger); }
+
+.scn-add {
+    width: 100%;
+    min-height: 46px;
+    margin-top: 12px;
+    background: transparent !important;
+    color: var(--accent);
+    border: 1px dashed var(--accent);
+    border-radius: 12px;
+    font-size: 14.5px;
+    font-weight: 600;
+}
+.scn-add:active { background: var(--input-bg) !important; }
+
+.scn-perm {
+    margin: 0 0 14px; padding: 12px 14px;
+    background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 14px;
+}
+.scn-perm.needs { border-color: var(--accent); }
+.scn-perm-title { font-size: 14px; font-weight: 600; color: var(--text-color); }
+.scn-perm-desc { margin-top: 6px; font-size: 12.5px; line-height: 1.45; color: var(--text-dim); }
+.scn-perm-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.scn-perm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--text-color); }
+.scn-perm-state { font-size: 11.5px; font-weight: 600; padding: 1px 9px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.scn-perm-state.ok { color: var(--success); }
+.scn-perm-state.bad { color: var(--danger); }
+.scn-perm-btn { margin-top: 12px; width: 100%; min-height: 42px; }
+
+.scn-notify { margin-top: 20px; }
+.scn-notify-title { font-size: 14px; font-weight: 600; color: var(--text-color); }
+.scn-notify-desc { margin: 4px 0 10px; font-size: 12.5px; line-height: 1.45; color: var(--text-dim); }
+.scn-last { margin-top: 16px; font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere; }
+
+.scn-seg { display: flex; gap: 4px; padding: 4px; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; }
+.scn-seg .scn-seg-btn {
+    flex: 1; min-height: 40px; padding: 8px 10px; font-size: 13px;
+    background: transparent !important; color: var(--text-dim);
+    border: none; border-radius: 9px; box-shadow: none;
+    -webkit-tap-highlight-color: transparent;
+}
+.scn-seg .scn-seg-btn.active { background: var(--accent) !important; color: var(--bg-color); font-weight: 600; }
+
+dialog.scenario-modal { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; }
+.scn-dlg-title { margin: 0 0 16px; font-size: 16px; }
+.scn-field { margin-bottom: 14px; }
+.scn-field label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-dim); }
+.scn-field input[type="text"], .scn-field select { width: 100%; box-sizing: border-box; }
+.scn-use-current { margin-top: 8px; }
+.scn-hint { margin-top: 6px; font-size: 12px; color: var(--text-dim); }
+.scn-hint:empty { display: none; }
+.scn-error { margin-top: 4px; font-size: 13px; color: var(--danger); }
+.scn-dlg-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.scn-dlg-actions button { flex: 1; }
+
+/* Servers panel: one even rhythm between the section label and the first group */
+.platform-android #links-container { margin-top: 0; }
+.platform-android #links-container > :first-child { margin-top: 0; }
+
+/* Karin messages: a little breathing room from the top edge */
+.platform-android #page-main .karin-console { margin-top: 8px; }

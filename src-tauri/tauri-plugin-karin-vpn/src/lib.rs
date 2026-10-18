@@ -5,7 +5,8 @@ pub use error::{Error, Result};
 pub use models::{
     ClearLogsResult, DeviceInfoResult, FetchTextRequest, FetchTextResult, InstalledApp,
     InstalledAppsResult, LogsResult, OpenSettingsResult, OpenStabilitySettingsRequest,
-    PrepareResult, SaveDocumentRequest, SaveDocumentResult, SecureStateRequest, SecureStateResult,
+    PrepareResult, SaveDocumentRequest, SaveDocumentResult, ScenarioConnectionRequest,
+    ScenarioPermissionRequest, ScenariosSyncRequest, SecureStateRequest, SecureStateResult,
     SecureStateSaveResult, StabilityDiagnosticsResult, StartRequest, VpnStatus,
 };
 
@@ -198,6 +199,61 @@ impl<R: Runtime> KarinVpn<R> {
 
     #[cfg(not(target_os = "android"))]
     pub fn request_add_tile(&self) -> Result<OpenSettingsResult> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn scenarios_sync(&self, request: ScenariosSyncRequest) -> Result<serde_json::Value> {
+        self.mobile_plugin_handle
+            .run_mobile_plugin("scenariosSync", request)
+            .map_err(Error::from)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn scenarios_sync(&self, _request: ScenariosSyncRequest) -> Result<serde_json::Value> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn scenario_save_connection(&self, request: ScenarioConnectionRequest) -> Result<()> {
+        self.mobile_plugin_handle
+            .run_mobile_plugin::<serde_json::Value>("scenarioSaveConnection", request)
+            .map(|_| ())
+            .map_err(Error::from)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn scenario_save_connection(&self, _request: ScenarioConnectionRequest) -> Result<()> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn scenarios_status(&self) -> Result<serde_json::Value> {
+        self.mobile_plugin_handle
+            .run_mobile_plugin("scenariosStatus", ())
+            .map_err(Error::from)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn scenarios_status(&self) -> Result<serde_json::Value> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn scenario_request_permission(
+        &self,
+        request: ScenarioPermissionRequest,
+    ) -> Result<serde_json::Value> {
+        self.mobile_plugin_handle
+            .run_mobile_plugin("scenarioRequestPermission", request)
+            .map_err(Error::from)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn scenario_request_permission(
+        &self,
+        _request: ScenarioPermissionRequest,
+    ) -> Result<serde_json::Value> {
         Err(Error::UnsupportedPlatform)
     }
 

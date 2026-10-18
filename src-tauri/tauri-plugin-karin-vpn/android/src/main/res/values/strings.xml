@@ -21,4 +21,21 @@
     <string name="tile_connected">Connected</string>
     <string name="tile_connecting">Connecting…</string>
     <string name="tile_disconnected">Off</string>
+    <string name="scenario_channel_watch">Network watching</string>
+    <string name="scenario_channel_events">Scenarios</string>
+    <string name="scenario_channel_errors">Scenario problems</string>
+    <string name="scenario_watching">Watching networks · %1$d on</string>
+    <string name="scenario_condition_wifi">Wi‑Fi %1$s</string>
+    <string name="scenario_condition_mobile">Mobile network</string>
+    <string name="scenario_result_off">VPN turned off</string>
+    <string name="scenario_result_connect">connecting to %1$s</string>
+    <string name="scenario_line">%1$s → %2$s</string>
+    <string name="scenario_undo">Undo</string>
+    <string name="scenario_err_title">Scenario “%1$s” did not run</string>
+    <string name="scenario_err_wifi_title">Wi‑Fi scenarios cannot see the network name</string>
+    <string name="scenario_err_location">Allow location access all the time so KarinCore can read the Wi‑Fi name. Tap to open settings.</string>
+    <string name="scenario_err_no_config">Open KarinCore once so it can prepare the connection.</string>
+    <string name="scenario_err_vpn_permission">Open KarinCore and allow the VPN connection first.</string>
+    <string name="scenario_err_always_on">Always-on VPN is enabled in Android settings, so it cannot be turned off here.</string>
+    <string name="scenario_err_start">Android did not allow starting this from the background. Open KarinCore.</string>
 </resources>

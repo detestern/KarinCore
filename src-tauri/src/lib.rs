@@ -22,7 +22,10 @@ use tauri_plugin_karin_vpn::SaveDocumentRequest;
 #[cfg(target_os = "android")]
 use tauri_plugin_karin_vpn::SecureStateRequest;
 #[cfg(target_os = "android")]
-use tauri_plugin_karin_vpn::{KarinVpnExt, StartRequest};
+use tauri_plugin_karin_vpn::{
+    KarinVpnExt, ScenarioConnectionRequest, ScenarioPermissionRequest, ScenariosSyncRequest,
+    StartRequest,
+};
 
 // **********************************
 // STATE & AUTHENTICATION
@@ -3230,44 +3233,26 @@ fn close_window(_window: tauri::Window, _state: State<'_, ProxyState>) {
 }
 
 #[cfg(target_os = "android")]
-#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-async fn start_proxy(
-    app: tauri::AppHandle,
-    state: State<'_, ProxyState>,
-    vless_link: String,
-    routing_state: serde_json::Value,
-    default_outbound: String,
-    dns_params: serde_json::Value,
-    _allow_server_proxy: bool,
+async fn build_android_start_request(
+    vless_link: &str,
+    routing_state: &serde_json::Value,
+    default_outbound: &str,
+    dns_params: &serde_json::Value,
     zone_priority: Vec<String>,
     proxy_lan: bool,
-    _kill_switch: bool,
     app_routing_mode: String,
     app_packages: Vec<String>,
-) -> Result<String, String> {
-    if vless_link.starts_with("ovpn://") {
-        return Err("OpenVPN chaining is not implemented on Android yet".into());
-    }
-
-    let prepared = app.karin_vpn().prepare().map_err(|e| e.to_string())?;
-    if !prepared.prepared {
-        return Err("VPN permission was denied".into());
-    }
-
-    let token = generate_token();
-    if let Ok(mut guard) = state.auth_token.lock() {
-        *guard = Some(token.clone());
-    }
-
+    token: &str,
+) -> Result<StartRequest, String> {
     let proxy_outbound = if vless_link.starts_with("wg://") {
-        build_android_wireguard_outbound(&vless_link)?
+        build_android_wireguard_outbound(vless_link)?
     } else {
-        let (outbound, _out_addr, _resolved_ips) = build_proxy_outbound(&vless_link).await?;
+        let (outbound, _out_addr, _resolved_ips) = build_proxy_outbound(vless_link).await?;
         outbound
     };
-    let dns_config = build_dns_config(&dns_params, &routing_state);
-    let dynamic_rules = build_xray_rules(&routing_state, zone_priority);
+    let dns_config = build_dns_config(dns_params, routing_state);
+    let dynamic_rules = build_xray_rules(routing_state, zone_priority);
 
     let mut all_rules = vec![
         json!({
@@ -3307,7 +3292,7 @@ async fn start_proxy(
         "network": "tcp,udp",
         "outboundTag": default_outbound
     }));
-    let runtime_routing = build_runtime_routing(&routing_state, "IPIfNonMatch", all_rules);
+    let runtime_routing = build_runtime_routing(routing_state, "IPIfNonMatch", all_rules);
 
     let android_tun_mtu = if vless_link.starts_with("wg://") {
         1420
@@ -3350,20 +3335,169 @@ async fn start_proxy(
         ]
     });
 
-    let status = app
-        .karin_vpn()
-        .start(StartRequest {
-            config_json: config.to_string(),
-            mtu: android_tun_mtu,
-            app_routing_mode,
-            app_packages,
-        })
-        .map_err(|e| e.to_string())?;
+    Ok(StartRequest {
+        config_json: config.to_string(),
+        mtu: android_tun_mtu,
+        app_routing_mode,
+        app_packages,
+    })
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn start_proxy(
+    app: tauri::AppHandle,
+    state: State<'_, ProxyState>,
+    vless_link: String,
+    routing_state: serde_json::Value,
+    default_outbound: String,
+    dns_params: serde_json::Value,
+    _allow_server_proxy: bool,
+    zone_priority: Vec<String>,
+    proxy_lan: bool,
+    _kill_switch: bool,
+    app_routing_mode: String,
+    app_packages: Vec<String>,
+) -> Result<String, String> {
+    if vless_link.starts_with("ovpn://") {
+        return Err("OpenVPN chaining is not implemented on Android yet".into());
+    }
+
+    let prepared = app.karin_vpn().prepare().map_err(|e| e.to_string())?;
+    if !prepared.prepared {
+        return Err("VPN permission was denied".into());
+    }
+
+    let token = generate_token();
+    if let Ok(mut guard) = state.auth_token.lock() {
+        *guard = Some(token.clone());
+    }
+
+    let request = build_android_start_request(
+        &vless_link,
+        &routing_state,
+        &default_outbound,
+        &dns_params,
+        zone_priority,
+        proxy_lan,
+        app_routing_mode,
+        app_packages,
+        &token,
+    )
+    .await?;
+
+    let status = app.karin_vpn().start(request).map_err(|e| e.to_string())?;
 
     if let Some(err) = status.last_error {
         return Err(err);
     }
     Ok("OK".into())
+}
+
+/// Builds the connection of a "connect" scenario ahead of time and stores it
+/// natively. The scenario engine runs without the WebView, so it cannot ask this
+/// code to build a config when the network changes.
+#[cfg(target_os = "android")]
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn scenarios_prepare_connection(
+    app: tauri::AppHandle,
+    scenario_id: String,
+    vless_link: String,
+    routing_state: serde_json::Value,
+    default_outbound: String,
+    dns_params: serde_json::Value,
+    zone_priority: Vec<String>,
+    proxy_lan: bool,
+    app_routing_mode: String,
+    app_packages: Vec<String>,
+) -> Result<(), String> {
+    if vless_link.starts_with("ovpn://") {
+        return Err("OpenVPN chaining is not implemented on Android yet".into());
+    }
+    let token = generate_token();
+    let request = build_android_start_request(
+        &vless_link,
+        &routing_state,
+        &default_outbound,
+        &dns_params,
+        zone_priority,
+        proxy_lan,
+        app_routing_mode,
+        app_packages,
+        &token,
+    )
+    .await?;
+    let payload = json!({
+        "configJson": request.config_json,
+        "mtu": request.mtu,
+        "appRoutingMode": request.app_routing_mode,
+        "appPackages": request.app_packages,
+    })
+    .to_string();
+    app.karin_vpn()
+        .scenario_save_connection(ScenarioConnectionRequest {
+            id: scenario_id,
+            payload,
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn scenarios_prepare_connection(_scenario_id: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn scenarios_sync(
+    app: tauri::AppHandle,
+    scenarios_json: String,
+    notify_level: String,
+) -> Result<Value, String> {
+    app.karin_vpn()
+        .scenarios_sync(ScenariosSyncRequest {
+            scenarios_json,
+            notify_level,
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn scenarios_sync(_scenarios_json: String, _notify_level: String) -> Result<Value, String> {
+    Ok(Value::Null)
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn scenarios_status(app: tauri::AppHandle) -> Result<Value, String> {
+    app.karin_vpn()
+        .scenarios_status()
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn scenarios_status() -> Result<Value, String> {
+    Ok(Value::Null)
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn scenarios_request_permission(app: tauri::AppHandle, kind: String) -> Result<(), String> {
+    app.karin_vpn()
+        .scenario_request_permission(ScenarioPermissionRequest { kind })
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn scenarios_request_permission(_kind: String) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(target_os = "android")]
@@ -3781,7 +3915,11 @@ pub fn run() {
             request_android_tile,
             get_android_stability_diagnostics,
             open_android_stability_settings,
-            request_android_vpn_permission
+            request_android_vpn_permission,
+            scenarios_prepare_connection,
+            scenarios_sync,
+            scenarios_status,
+            scenarios_request_permission
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

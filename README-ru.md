@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-0.1.0--alpha.43-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-0.1.0--alpha.44-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-android-dc8add?style=flat-square&labelColor=11111b&logo=android&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -32,6 +32,7 @@ KarinCore Android переносит на Android тот же интерфейс
 - **Зоны Direct / Proxy / Block** с правилами по доменам, `geosite` и `geoip`, приоритетом зон и своим DNS (DoH или обычный). `geoip.dat` и `geosite.dat` уже внутри, отдельно качать не нужно.
 - **Раздельное туннелирование по приложениям:** все приложения, только выбранные или все, кроме выбранных.
 - **Плитка в шторке** и **виджет на рабочем столе** — включают и выключают последний рабочий профиль одним нажатием, не открывая приложение.
+- **Сценарии подключений:** VPN переключается автоматически по имени Wi-Fi или по мобильной сети (выключается или подключается к выбранному серверу), сверху вниз, срабатывает первый подходящий. Работает при закрытом приложении и может уведомлять о срабатывании.
 - **Always-on VPN**, встроенная самопроверка VPN и живая диагностика разрешений и ограничений батареи.
 - **Приватность:** никакой телеметрии разработчика; профили и URL подписок шифруются ключом из Android Keystore.
 

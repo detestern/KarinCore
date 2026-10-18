@@ -67,6 +67,23 @@ class SecureStateArgs {
 }
 
 @InvokeArg
+class ScenariosSyncArgs {
+    lateinit var scenariosJson: String
+    var notifyLevel: String = "quiet"
+}
+
+@InvokeArg
+class ScenarioConnectionArgs {
+    lateinit var id: String
+    lateinit var payload: String
+}
+
+@InvokeArg
+class ScenarioPermissionArgs {
+    lateinit var kind: String
+}
+
+@InvokeArg
 class OpenStabilitySettingsArgs {
     lateinit var target: String
 }
@@ -589,6 +606,131 @@ class KarinVpnPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     @Command
+    fun scenariosSync(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(ScenariosSyncArgs::class.java)
+            val level = when (args.notifyLevel) {
+                ScenarioStore.LEVEL_OFF, ScenarioStore.LEVEL_BUTTON -> args.notifyLevel
+                else -> ScenarioStore.LEVEL_QUIET
+            }
+            val changed = ScenarioStore(activity).replace(args.scenariosJson, level)
+            ScenarioNotifier.ensureChannels(activity)
+            ScenarioWatcherService.startIfNeeded(activity)
+            if (changed) {
+                // An edited or toggled scenario applies to the current network right away.
+                ScenarioStore(activity).setApplied(null)
+                ScenarioWatcherService.reevaluate()
+            }
+            invoke.resolve(JSObject().apply {
+                put("watcherRunning", ScenarioWatcherService.running)
+                put("enabled", ScenarioStore(activity).enabledCount())
+            })
+        } catch (ex: Exception) {
+            invoke.reject(ex.message ?: "SCENARIOS_SYNC_FAILED")
+        }
+    }
+
+    @Command
+    fun scenarioSaveConnection(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(ScenarioConnectionArgs::class.java)
+            if (args.id.isBlank() || args.payload.isBlank()) {
+                invoke.reject("SCENARIO_CONNECTION_EMPTY")
+                return
+            }
+            ScenarioStore(activity).saveConnection(args.id, args.payload)
+            invoke.resolve(JSObject().apply { put("saved", true) })
+        } catch (ex: Exception) {
+            invoke.reject(ex.message ?: "SCENARIO_CONNECTION_FAILED")
+        }
+    }
+
+    @Command
+    fun scenariosStatus(invoke: Invoke) {
+        try {
+            val store = ScenarioStore(activity)
+            val fine = ContextCompat.checkSelfPermission(activity, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+            val background = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContextCompat.checkSelfPermission(activity, android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+                    PackageManager.PERMISSION_GRANTED
+            } else {
+                fine
+            }
+            val locationManager = activity.getSystemService(android.location.LocationManager::class.java)
+            val locationEnabled = locationManager != null &&
+                androidx.core.location.LocationManagerCompat.isLocationEnabled(locationManager)
+            val net = ScenarioEngine.current
+            invoke.resolve(JSObject().apply {
+                put("watcherRunning", ScenarioWatcherService.running)
+                put("netKind", net.kind)
+                put("ssid", net.ssid)
+                put("activeId", ScenarioEngine.activeId)
+                put("lastText", store.lastText()?.takeIf { it.isNotBlank() })
+                put("fineLocation", fine)
+                put("backgroundLocation", background)
+                put("locationEnabled", locationEnabled)
+                put("notifications", NotificationManagerCompat.from(activity).areNotificationsEnabled())
+                put("sdkInt", Build.VERSION.SDK_INT)
+            })
+        } catch (ex: Exception) {
+            invoke.reject(ex.message ?: "SCENARIOS_STATUS_FAILED")
+        }
+    }
+
+    @Command
+    fun scenarioRequestPermission(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(ScenarioPermissionArgs::class.java)
+            when (args.kind) {
+                "location" -> androidx.core.app.ActivityCompat.requestPermissions(
+                    activity,
+                    arrayOf(
+                        android.Manifest.permission.ACCESS_FINE_LOCATION,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    ),
+                    REQUEST_SCENARIO_PERMISSION
+                )
+                "background" -> if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
+                    androidx.core.app.ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION),
+                        REQUEST_SCENARIO_PERMISSION
+                    )
+                } else {
+                    // Android 11+ only grants "all the time" from the app settings screen.
+                    openAppDetails()
+                }
+                "notifications" -> if (Build.VERSION.SDK_INT >= 33) {
+                    androidx.core.app.ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                        REQUEST_SCENARIO_PERMISSION
+                    )
+                } else {
+                    openAppDetails()
+                }
+                "settings" -> openAppDetails()
+                else -> {
+                    invoke.reject("UNKNOWN_PERMISSION")
+                    return
+                }
+            }
+            invoke.resolve(JSObject().apply { put("requested", true) })
+        } catch (ex: Exception) {
+            invoke.reject(ex.message ?: "SCENARIO_PERMISSION_FAILED")
+        }
+    }
+
+    private fun openAppDetails() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", activity.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        activity.startActivity(intent)
+    }
+
+    @Command
     fun logs(invoke: Invoke) {
         invoke.resolve(JSObject().apply {
             put("content", KarinVpnService.logsSnapshot())
@@ -627,5 +769,6 @@ class KarinVpnPlugin(private val activity: Activity) : Plugin(activity) {
         private const val POLL_MS = 100L
         private const val START_TIMEOUT_MS = 12_000L
         private const val STOP_TIMEOUT_MS = 5_000L
+        private const val REQUEST_SCENARIO_PERMISSION = 7401
     }
 }

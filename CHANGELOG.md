@@ -4,6 +4,20 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.44] - 2026-10-19
+
+### Added
+- Connection scenarios (Settings → Connection scenarios). Rules like "if Wi‑Fi *Home* → turn the VPN off" or "if mobile network → connect to this server". Scenarios can be named, enabled and disabled, edited, reordered and deleted. The first matching scenario from the top wins; if none matches, nothing changes. A scenario is applied once when you join the network, so a manual connect or disconnect afterwards is not overridden.
+- Scenarios work while the app is closed. While at least one scenario is enabled, a quiet foreground service watches Wi‑Fi and mobile networks (also while the VPN is on) and restarts after a reboot. With the VPN on it shares the VPN notification instead of adding another one; with all scenarios off the service and its notification disappear.
+- Wi‑Fi scenarios need location access ("all the time"), because Android shows the Wi‑Fi name only to apps that have it; the screen shows what is missing and a button to grant it. The location itself is never read or sent. Mobile-network scenarios need no extra access.
+- Notifications about scenarios, in three levels in the scenarios screen: Off, Quiet (a short message that disappears after 10 seconds, the default) and With Undo. Problems (no location access, a deleted server, Always-on VPN blocking the change) are shown once per cause in a separate channel. The service, the events and the problems are three separate notification channels.
+- The screen texts are translated into English, Russian, French, Chinese and Turkish; the notification texts into English and Russian.
+
+### Changed
+- The gap between the "My servers" row and the first subscription group in the configurations panel is now the same as between the other sections.
+- The Karin message block on the main screen sits a little lower from the top edge.
+- The VPN service notification is now built by a shared function, so the scenario service can keep it unchanged while the VPN is on.
+
 ## [0.1.0-alpha.43] - 2026-10-16
 
 ### Added

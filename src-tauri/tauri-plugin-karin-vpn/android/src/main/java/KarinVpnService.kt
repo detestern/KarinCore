@@ -570,9 +570,11 @@ class KarinVpnService : VpnService() {
     private fun updateHomeScreenWidget() {
         KarinVpnWidgetProvider.updateAll(this)
         KarinVpnTileService.refresh()
+        ScenarioWatcherService.onVpnStateChanged()
     }
 
     private fun startInForeground(text: String) {
+        ongoingText = text
         val channelId = CHANNEL_ID
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
@@ -591,64 +593,14 @@ class KarinVpnService : VpnService() {
     }
 
     private fun updateNotification(text: String) {
+        ongoingText = text
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, buildNotification(text))
     }
 
     private fun buildNotification(text: String): android.app.Notification {
         refreshSystemVpnFlags()
-
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-        val launchPendingIntent = launchIntent?.let {
-            PendingIntent.getActivity(
-                this,
-                0,
-                it,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-        }
-
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_karincore)
-            .setContentTitle("KarinCore")
-            .setContentText(text)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .setContentIntent(launchPendingIntent)
-
-        if (alwaysOn) {
-            val settingsIntent = Intent(Settings.ACTION_VPN_SETTINGS)
-            val settingsPendingIntent = PendingIntent.getActivity(
-                this,
-                2,
-                settingsIntent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-            builder.addAction(
-                android.R.drawable.ic_menu_manage,
-                getString(R.string.notification_vpn_settings),
-                settingsPendingIntent
-            )
-        } else {
-            val stopIntent = Intent(this, KarinVpnService::class.java).apply {
-                action = ACTION_STOP
-            }
-            val stopPendingIntent = PendingIntent.getService(
-                this,
-                1,
-                stopIntent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-            builder.addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                getString(R.string.notification_disconnect),
-                stopPendingIntent
-            )
-        }
-
-        return builder.build()
+        return buildOngoingNotification(this, text)
     }
 
     private inner class CoreCallback : CoreCallbackHandler {
@@ -710,6 +662,64 @@ class KarinVpnService : VpnService() {
             instance?.refreshSystemVpnFlags()
         }
 
+        /**
+         * The ongoing VPN notification. Static so the scenario watcher, which shares
+         * this notification slot, can repost it unchanged instead of replacing it.
+         */
+        fun buildOngoingNotification(context: android.content.Context, text: String): android.app.Notification {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            val launchPendingIntent = launchIntent?.let {
+                PendingIntent.getActivity(
+                    context,
+                    0,
+                    it,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            }
+
+            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_karincore)
+                .setContentTitle("KarinCore")
+                .setContentText(text)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setContentIntent(launchPendingIntent)
+
+            if (alwaysOn) {
+                val settingsIntent = Intent(Settings.ACTION_VPN_SETTINGS)
+                val settingsPendingIntent = PendingIntent.getActivity(
+                    context,
+                    2,
+                    settingsIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                builder.addAction(
+                    android.R.drawable.ic_menu_manage,
+                    context.getString(R.string.notification_vpn_settings),
+                    settingsPendingIntent
+                )
+            } else {
+                val stopIntent = Intent(context, KarinVpnService::class.java).apply {
+                    action = ACTION_STOP
+                }
+                val stopPendingIntent = PendingIntent.getService(
+                    context,
+                    1,
+                    stopIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                builder.addAction(
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    context.getString(R.string.notification_disconnect),
+                    stopPendingIntent
+                )
+            }
+
+            return builder.build()
+        }
+
         fun widgetStartIntent(context: android.content.Context): Intent? {
             val payload = SecureStorage(context).get(SecureStorage.WIDGET_CONNECTION_KEY) ?: return null
             val persisted = try {
@@ -749,6 +759,7 @@ class KarinVpnService : VpnService() {
         private const val HANDOVER_RETRY_COUNT = 3
         private const val HANDOVER_RETRY_DELAY_MS = 500L
 
+        @Volatile var ongoingText: String = ""
         @Volatile var running: Boolean = false
         @Volatile var starting: Boolean = false
         @Volatile var coreRunning: Boolean = false

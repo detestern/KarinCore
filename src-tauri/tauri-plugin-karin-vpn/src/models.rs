@@ -178,3 +178,28 @@ pub struct DeviceInfoResult {
     pub android_release: String,
     pub sdk_int: u32,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScenariosSyncRequest {
+    pub scenarios_json: String,
+    #[serde(default = "default_notify_level")]
+    pub notify_level: String,
+}
+
+fn default_notify_level() -> String {
+    "quiet".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScenarioConnectionRequest {
+    pub id: String,
+    pub payload: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScenarioPermissionRequest {
+    pub kind: String,
+}
