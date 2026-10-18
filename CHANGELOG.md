@@ -5,6 +5,14 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.5.4 — Compass
+
+<sub>2026-10-18</sub>
+
+* **Changed:** the Routing tab now works the same way as in the Android app. A summary at the top shows the selected routing profile (the one last applied or saved) and the default route. Below it, Proxy, Direct and Block are three cards from left to right in order of priority. Drag a card to change the priority.
+* **Added:** a zone page. Click a card to open it: the zone's rules with delete buttons, "Add rule", "Make default" and a priority control with left and right buttons. Esc or the back button closes it.
+* **Changed:** the DNS cards, saved profiles and the two switches (proxy the server IP, proxy the local network) keep their logic and sit in a calmer layout under the cards. The three-column grid stays in the page only as a hidden store of the rules.
+
 ## v1.5.3 — Sonar
 
 <sub>2026-10-16</sub>

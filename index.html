@@ -87,7 +87,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 1.5.3</div>
+      <div class="app-version-text">v 1.5.4</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -220,45 +220,37 @@
   </div>
 
   <div id="page-routing" class="page-view">
-    <div class="panel links-wrapper">
-      
-      <div style="display: flex; justify-content: space-between; align-items: center;" class="header-actions">
-        <h3 style="margin-bottom: 5px;">
-          <span data-i18n="routing_title">Маршрутизация</span> 
-          (<span data-i18n="routing_default">По умолчанию:</span> <span id="default-outbound-label" style="color:var(--accent);">Proxy</span>)
-        </h3>
-        <button id="btn-route-action" style="background: transparent; border: none; cursor: pointer; padding: 0;">
+    <div class="panel links-wrapper routing-panel">
+
+      <div class="routing-header">
+        <h3 data-i18n="routing_title">Маршрутизация</h3>
+      </div>
+
+      <div class="routing-summary">
+        <div class="routing-summary-cell">
+          <div class="routing-summary-text">
+            <span class="routing-summary-label" data-i18n="routing_selected_profile">Выбранный профиль</span>
+            <span id="routing-profile-name" class="routing-summary-value">—</span>
+          </div>
+          <button id="btn-route-action" class="route-share-btn" type="button" aria-label="Share">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share-icon lucide-share"><path d="M12 2v13"/><path d="m16 6-4-4-4 4"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
         </button>
+        </div>
+        <div class="routing-summary-cell">
+          <div class="routing-summary-text">
+            <span class="routing-summary-label" data-i18n="routing_default_route">Маршрут по умолчанию</span>
+            <span id="default-outbound-label" class="routing-summary-value">Proxy</span>
+          </div>
+        </div>
       </div>
-      
-      <p style="font-size: 12px; color: var(--text-dim); margin-top: 10px; margin-bottom: 15px;" data-i18n="routing_hint">
-        Перетаскивайте колонки для изменения приоритета (слева направо). Кликните на фон, чтобы сделать маршрутом по умолчанию.
-      </p>
-      
-      <div class="links-list" style="padding-bottom: 30px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; background: var(--base-crust); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);">
-          <div style="font-size: 13px;">
-            <div style="color: var(--text-color); font-weight: 500;" data-i18n="routing_server_ip">Проксировать IP сервера</div>
-            <div style="color: var(--text-dim); font-size: 11px; margin-top: 4px;" data-i18n="routing_server_ip_desc">Снимает системный bypass. Включайте для проксирования сервера, на котором расположен VPN.</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="toggle-server-proxy">
-            <span class="slider"></span>
-          </label>
-        </div>
 
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; background: var(--base-crust); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);">
-          <div style="font-size: 13px;">
-            <div style="color: var(--text-color); font-weight: 500;" data-i18n="routing_proxy_lan">Проксировать локальную сеть (LAN)</div>
-            <div style="color: var(--text-dim); font-size: 11px; margin-top: 4px;" data-i18n="routing_proxy_lan_desc">Направляет подсети 10.x, 192.168.x и 172.x через прокси. По умолчанию отключено (прямой доступ).</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="toggle-proxy-lan">
-            <span class="slider"></span>
-          </label>
-        </div>
-        
+      <p id="routing-description" class="section-description" data-i18n="routing_hint_cards">
+        Перетащите карточку, чтобы изменить приоритет (слева направо). Нажмите на карточку, чтобы править её правила.
+      </p>
+
+      <div class="links-list routing-content">
+        <div id="zone-cards" class="zone-cards"></div>
+
         <div id="routing-grid" class="routing-container" style="display: flex; gap: 10px; align-items: stretch; padding-bottom: 5px;">
           <div class="route-column" id="col-direct" data-zone="direct" draggable="true" style="flex: 1; min-width: 0;">
             <h3 style="color: var(--success); pointer-events: none; display: flex; align-items: center; gap: 6px;">
@@ -283,7 +275,7 @@
           </div>
         </div>
 
-        <div class="dns-grid" style="margin-top: 15px;">
+        <div class="dns-grid">
           <div class="dns-card">
             <h4 style="margin: 0; color: var(--text-color);">Domestic DNS</h4>
             <div class="dns-row">
@@ -309,7 +301,7 @@
             <div class="dns-row"><span>IP:</span> <input type="text" id="dns-rem-ip" value="1.1.1.1"></div>
           </div>
         </div>
-        
+
         <div class="profiles-section">
             <h3 style="font-size: 15px; display: flex; align-items: center; gap: 8px;" data-i18n="saved_profiles">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
@@ -317,7 +309,33 @@
             </h3>
             <div id="routing-profiles-list"></div>
         </div>
+
+        <div class="routing-toggles">
+          <div class="routing-option-card">
+            <div class="routing-option-copy">
+              <div class="routing-option-title" data-i18n="routing_server_ip">Проксировать IP сервера</div>
+              <div class="routing-option-desc" data-i18n="routing_server_ip_desc">Снимает системный bypass. Включайте для проксирования сервера, на котором расположен VPN.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-server-proxy">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="routing-option-card">
+            <div class="routing-option-copy">
+              <div class="routing-option-title" data-i18n="routing_proxy_lan">Проксировать локальную сеть (LAN)</div>
+              <div class="routing-option-desc" data-i18n="routing_proxy_lan_desc">Направляет подсети 10.x, 192.168.x и 172.x через прокси. По умолчанию отключено (прямой доступ).</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-proxy-lan">
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
       </div>
+
+      <div id="subpage-zone" class="subpage" aria-hidden="true"></div>
     </div>
   </div>
 

@@ -46,6 +46,8 @@ let selectedGroups = new Set<string>();
 let logInterval: number | null = null; 
 
 let zonePriority: ZoneKey[] = safeParse('karin_zone_priority', ['proxy', 'direct', 'block']);
+let openZone: ZoneKey | null = null;
+let activeRouteProfileId: string | null = localStorage.getItem('karin_active_route_profile');
 
 const savedOutbound = localStorage.getItem('karin_default_outbound');
 if (savedOutbound === 'direct' || savedOutbound === 'proxy' || savedOutbound === 'block') {
@@ -333,6 +335,9 @@ const preventNativeZoom = (e: Event) => {
 };
 
 window.addEventListener('keydown', preventNativeZoom, { capture: true });
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !document.querySelector('dialog[open]') && closeZonePage()) e.preventDefault();
+});
 window.addEventListener('wheel', preventNativeZoom, { passive: false, capture: true });
 window.addEventListener('mousewheel', preventNativeZoom, { passive: false, capture: true });
 window.addEventListener('DOMMouseScroll', preventNativeZoom, { passive: false, capture: true });
@@ -788,6 +793,7 @@ function toggleMenu(show?: boolean) {
 }
 
 function switchPage(pageId: string) { 
+    closeZonePage();
     pages.forEach(page => page.classList.toggle('active', page.id === pageId)); 
     toggleMenu(false); 
     
@@ -1222,6 +1228,251 @@ function renderRouting() {
         }
     }); 
     localStorage.setItem('karin_routing', JSON.stringify(routingState)); 
+    renderZoneCards();
+    if (openZone) renderZoneSubpage();
+    updateRoutingProfileName();
+}
+
+// **********************************
+// ROUTING: ZONE CARDS AND ZONE PAGE
+// Три карточки слева направо в порядке приоритета. Клик по карточке открывает страницу зоны
+// (правила, маршрут по умолчанию, порядок). Колонки #routing-grid остаются в DOM скрытыми:
+// они хранят состояние правил, как и раньше.
+// **********************************
+const ZONE_META: Record<ZoneKey, { label: string, color: string, descKey: string, icon: string }> = {
+    direct: {
+        label: 'Direct', color: 'var(--success)', descKey: 'zone_desc_direct',
+        icon: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>'
+    },
+    proxy: {
+        label: 'Proxy', color: 'var(--accent)', descKey: 'zone_desc_proxy',
+        icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+    },
+    block: {
+        label: 'Block', color: 'var(--danger)', descKey: 'zone_desc_block',
+        icon: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>'
+    },
+};
+
+function svgIcon(path: string, size = 20): string {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+}
+
+function renderZoneCards() {
+    const host = document.getElementById('zone-cards');
+    if (!host) return;
+    host.replaceChildren();
+    zonePriority.forEach((zone, index) => {
+        const meta = ZONE_META[zone];
+        const count = routingState[zone]?.length || 0;
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `zone-card${zone === defaultOutbound ? ' is-default' : ''}`;
+        card.dataset.zoneOpen = zone;
+        card.style.setProperty('--zone-color', meta.color);
+        card.innerHTML = `
+            <span class="zone-card-top">
+                <span class="zone-card-icon">${svgIcon(meta.icon, 22)}</span>
+                <span class="zone-card-chevron">${svgIcon('<path d="m9 6 6 6-6 6"/>', 18)}</span>
+            </span>
+            <span class="zone-card-title">${esc(meta.label)}${zone === defaultOutbound ? `<span class="zone-badge">${esc(t('zone_default_badge'))}</span>` : ''}</span>
+            <span class="zone-card-desc">${esc(t(meta.descKey))}</span>
+            <span class="zone-card-meta">${esc(count > 0 ? t('zone_rules_count').replace('{n}', String(count)) : t('zone_no_rules'))}</span>
+        `;
+        host.appendChild(card);
+        if (index < zonePriority.length - 1) {
+            const arrow = document.createElement('div');
+            arrow.className = 'zone-arrow';
+            arrow.setAttribute('aria-hidden', 'true');
+            arrow.innerHTML = svgIcon('<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>', 18);
+            host.appendChild(arrow);
+        }
+    });
+}
+
+function renderZoneSubpage() {
+    const host = document.getElementById('subpage-zone');
+    if (!host || !openZone) return;
+    const zone = openZone;
+    const meta = ZONE_META[zone];
+    const rules: any[] = routingState[zone] || [];
+    const position = zonePriority.indexOf(zone);
+
+    const rulesHtml = rules.length === 0
+        ? `<div class="zone-empty">${esc(t('zone_empty'))}</div>`
+        : rules.map(rule => `
+            <div class="tag-item zone-rule">
+                <span class="zone-rule-text">${esc(String(rule.value))}</span>
+                <span class="btn-delete-tag" data-tag="${esc(String(rule.value))}" data-zone="${zone}" role="button" aria-label="${esc(t('btn_delete'))}">×</span>
+            </div>`).join('');
+
+    host.style.setProperty('--zone-color', meta.color);
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${esc(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 20)}</button>
+            <div class="subpage-title zone-title"><span class="zone-title-icon">${svgIcon(meta.icon, 20)}</span>${esc(meta.label)}</div>
+        </div>
+        <div class="subpage-body">
+            <p class="subpage-lead">${esc(t(meta.descKey))}</p>
+            <div class="zone-settings">
+                <div class="zone-setting">
+                    <div class="zone-setting-copy">
+                        <div class="zone-setting-title">${esc(t('zone_default_title'))}</div>
+                        <div class="zone-setting-hint">${esc(t('zone_default_hint'))}</div>
+                    </div>
+                    ${zone === defaultOutbound
+                        ? `<span class="zone-badge zone-badge-solid">${esc(t('zone_default_badge'))}</span>`
+                        : `<button type="button" class="outline-btn" data-zone-default="${zone}">${esc(t('zone_make_default'))}</button>`}
+                </div>
+                <div class="zone-setting">
+                    <div class="zone-setting-copy">
+                        <div class="zone-setting-title">${esc(t('zone_priority').replace('{n}', String(position + 1)).replace('{total}', String(zonePriority.length)))}</div>
+                        <div class="zone-setting-hint">${esc(t('zone_priority_hint'))}</div>
+                    </div>
+                    <div class="zone-move">
+                        <button type="button" class="outline-btn icon-only" data-zone-move="-1" aria-label="${esc(t('zone_move_left'))}" title="${esc(t('zone_move_left'))}" ${position <= 0 ? 'disabled' : ''}>${svgIcon('<path d="m15 18-6-6 6-6"/>', 18)}</button>
+                        <button type="button" class="outline-btn icon-only" data-zone-move="1" aria-label="${esc(t('zone_move_right'))}" title="${esc(t('zone_move_right'))}" ${position >= zonePriority.length - 1 ? 'disabled' : ''}>${svgIcon('<path d="m9 18 6-6-6-6"/>', 18)}</button>
+                    </div>
+                </div>
+            </div>
+            <h4 class="subpage-section-title">${esc(t('zone_rules_title'))}</h4>
+            <div class="zone-rules">${rulesHtml}</div>
+            <button type="button" class="btn-add" data-zone="${zone}">${esc(t('zone_add_rule'))}</button>
+        </div>
+    `;
+}
+
+function openZonePage(zone: ZoneKey) {
+    openZone = zone;
+    renderZoneSubpage();
+    const el = document.getElementById('subpage-zone');
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+    const body = el.querySelector<HTMLElement>('.subpage-body');
+    if (body) body.scrollTop = 0;
+}
+
+function closeZonePage(): boolean {
+    const el = document.getElementById('subpage-zone');
+    if (!el || !el.classList.contains('open')) return false;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+    openZone = null;
+    return true;
+}
+
+function setActiveRouteProfile(id: string | null) {
+    activeRouteProfileId = id;
+    try {
+        if (id) localStorage.setItem('karin_active_route_profile', id);
+        else localStorage.removeItem('karin_active_route_profile');
+    } catch { /* storage unavailable */ }
+    updateRoutingProfileName();
+}
+
+/** Name of the routing profile (rules + DNS preset) that was last applied or saved. */
+function updateRoutingProfileName() {
+    const el = document.getElementById('routing-profile-name');
+    if (!el) return;
+    const profile = activeRouteProfileId ? routeProfiles.find(p => p.id === activeRouteProfileId) : undefined;
+    if (activeRouteProfileId && !profile) {
+        activeRouteProfileId = null;
+        try { localStorage.removeItem('karin_active_route_profile'); } catch { /* ignore */ }
+    }
+    if (profile) {
+        el.textContent = profile.name;
+        el.removeAttribute('data-i18n');
+    } else {
+        el.setAttribute('data-i18n', 'routing_profile_none');
+        el.textContent = t('routing_profile_none');
+    }
+}
+
+// Перетаскивание карточек зон мышью (по горизонтали). Короткий клик без движения открывает зону.
+let suppressZoneClickUntil = 0;
+
+function initZoneCardDragAndDrop() {
+    const host = document.getElementById('zone-cards');
+    if (!host) return;
+
+    const MOVE_THRESHOLD = 6;
+    let card: HTMLElement | null = null;
+    let pointerId: number | null = null;
+    let startX = 0, grabOffset = 0;
+    let dragging = false;
+
+    const cards = () => Array.from(host.querySelectorAll<HTMLElement>('.zone-card'));
+
+    const beginDrag = () => {
+        if (!card) return;
+        dragging = true;
+        host.classList.add('is-sorting');
+        host.querySelectorAll('.zone-arrow').forEach(el => el.remove());
+        card.classList.add('is-dragging');
+        grabOffset = startX - card.getBoundingClientRect().left;
+        try { card.setPointerCapture(pointerId as number); } catch { /* ignore */ }
+    };
+
+    const moveDrag = (clientX: number) => {
+        if (!card) return;
+        let before: HTMLElement | null = null;
+        for (const other of cards().filter(el => el !== card)) {
+            const r = other.getBoundingClientRect();
+            if (clientX < r.left + r.width / 2) { before = other; break; }
+        }
+        if (before !== (card.nextElementSibling as HTMLElement | null)) host.insertBefore(card, before);
+        card.style.transform = 'none';
+        const hostRect = host.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const wanted = Math.min(Math.max(clientX - grabOffset, hostRect.left), hostRect.right - cardRect.width);
+        card.style.transform = `translateX(${wanted - cardRect.left}px)`;
+    };
+
+    const finish = (commit: boolean) => {
+        const wasDragging = dragging;
+        const dragged = card;
+        if (wasDragging && dragged) {
+            suppressZoneClickUntil = Date.now() + 300;
+            if (commit) {
+                const order = cards().map(el => el.dataset.zoneOpen as ZoneKey);
+                if (order.length === zonePriority.length && order.every(z => zonePriority.includes(z))) {
+                    zonePriority = order;
+                    localStorage.setItem('karin_zone_priority', JSON.stringify(zonePriority));
+                    applyColumnOrder();
+                }
+            }
+            dragged.style.transform = '';
+            dragged.classList.remove('is-dragging');
+        }
+        host.classList.remove('is-sorting');
+        dragging = false;
+        card = null;
+        pointerId = null;
+        if (wasDragging) renderRouting();
+    };
+
+    host.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        const target = (e.target as HTMLElement).closest<HTMLElement>('.zone-card');
+        if (!target) return;
+        card = target;
+        pointerId = e.pointerId;
+        startX = e.clientX;
+    });
+
+    host.addEventListener('pointermove', (e) => {
+        if (card === null || e.pointerId !== pointerId) return;
+        if (!dragging) {
+            if (Math.abs(e.clientX - startX) > MOVE_THRESHOLD) beginDrag();
+            else return;
+        }
+        e.preventDefault();
+        moveDrag(e.clientX);
+    });
+
+    host.addEventListener('pointerup', (e) => { if (e.pointerId === pointerId) finish(true); });
+    host.addEventListener('pointercancel', (e) => { if (e.pointerId === pointerId) finish(false); });
 }
 
 function renderRoutingProfiles() {
@@ -1246,6 +1497,7 @@ function renderRoutingProfiles() {
         `;
     });
     list.innerHTML = profilesHtml;
+    updateRoutingProfileName();
 }
 
 function renderAboutPage() {
@@ -1388,7 +1640,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.5.3";
+        const CURRENT_VERSION = "1.5.4";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -1448,6 +1700,7 @@ function init() {
     
     // Инициализация Drag and Drop для колонок маршрутизации
     initDragAndDrop();
+    initZoneCardDragAndDrop();
     applyColumnOrder();
 
     renderLinks(); 
@@ -1494,6 +1747,7 @@ function init() {
             updateStatusUI(); 
             renderAboutPage();
             renderRoutingProfiles();
+            renderRouting();
             checkApplicationUpdates();
         });
     });
@@ -1746,13 +2000,15 @@ function init() {
         routeModal?.close();
         const name = await showPrompt(t('prompt_profile_name'));
         if (name && domType && domUrl && domIp && remType && remUrl && remIp) {
+            const newProfileId = 'rp_' + Date.now();
             routeProfiles.push({
-                id: 'rp_' + Date.now(), name, defaultOutbound, rules: routingState,
+                id: newProfileId, name, defaultOutbound, rules: routingState,
                 domDns: { type: domType.value, url: domUrl.value, ip: domIp.value },
                 remDns: { type: remType.value, url: remUrl.value, ip: remIp.value },
                 zonePriority: [...zonePriority] 
             });
             localStorage.setItem('karin_route_profiles', JSON.stringify(routeProfiles));
+            setActiveRouteProfile(newProfileId);
             renderRoutingProfiles();
         }
     });
@@ -1786,6 +2042,33 @@ function init() {
 // **********************************
 document.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement;
+
+    if (target.closest('[data-subpage-close]')) { closeZonePage(); return; }
+    const zoneCard = target.closest<HTMLElement>('[data-zone-open]');
+    if (zoneCard) {
+        if (Date.now() >= suppressZoneClickUntil) openZonePage(zoneCard.dataset.zoneOpen as ZoneKey);
+        return;
+    }
+    const makeDefault = target.closest<HTMLElement>('[data-zone-default]');
+    if (makeDefault) {
+        defaultOutbound = makeDefault.dataset.zoneDefault as ZoneKey;
+        localStorage.setItem('karin_default_outbound', defaultOutbound);
+        updateDefaultOutboundUI();
+        renderRouting();
+        return;
+    }
+    const moveZone = target.closest<HTMLElement>('[data-zone-move]');
+    if (moveZone && openZone) {
+        const from = zonePriority.indexOf(openZone);
+        const to = from + Number(moveZone.dataset.zoneMove);
+        if (to >= 0 && to < zonePriority.length) {
+            zonePriority.splice(to, 0, zonePriority.splice(from, 1)[0]);
+            localStorage.setItem('karin_zone_priority', JSON.stringify(zonePriority));
+            applyColumnOrder();
+            renderRouting();
+        }
+        return;
+    }
   
     const col = target.closest('.route-column');
     if (col && !target.closest('.btn-add') && !target.closest('.btn-delete-tag') && !target.closest('.tag-item')) {
@@ -1884,6 +2167,7 @@ document.addEventListener('click', async (e) => {
             const p = routeProfiles.find(x => x.id === loadBtn.dataset.id);
             if (p) {
                 applyRouteProfile(p);
+                setActiveRouteProfile(p.id);
                 
                 const orig = loadBtn.innerText;
                 loadBtn.innerText = t('status_applied');
@@ -1896,6 +2180,7 @@ document.addEventListener('click', async (e) => {
   
     const delBtn = target.closest('.btn-del-profile') as HTMLElement;
     if (delBtn) {
+        if (activeRouteProfileId === delBtn.dataset.id) setActiveRouteProfile(null);
         routeProfiles = routeProfiles.filter(x => x.id !== delBtn.dataset.id);
         localStorage.setItem('karin_route_profiles', JSON.stringify(routeProfiles)); 
         renderRoutingProfiles();

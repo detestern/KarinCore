@@ -6,7 +6,7 @@
 <p><a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a></p>
 
 <p>
-<img src="https://img.shields.io/badge/версия-1.5.3-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/версия-1.5.4-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/платформа-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/на_чём_написано-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Rust"/>
 <img src="https://img.shields.io/badge/фреймворк-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -89,7 +89,7 @@ yay -S karincore-git
 Свежий `.deb` всегда доступен в разделе [Releases](https://github.com/detestern/KarinCore/releases). Он устанавливает привилегированный helper, правило `sudoers` из одной строки и юнит `systemd`, создаёт группу `karincore` и добавляет в неё устанавливающего пользователя (после установки перезайди в сессию). Убедись, что в системе уже стоят `openvpn` и `wireguard-tools`. Xray в `.deb` не входит: установи его отдельно (например, через [XTLS/Xray-install](https://github.com/XTLS/Xray-install)). Бинарник должен лежать в `/usr/bin/xray`; если установщик кладёт его в `/usr/local/bin/xray`, пакет сам создаст ссылку.
 
 ```bash
-sudo dpkg -i KarinCore_1.5.3_amd64.deb
+sudo dpkg -i KarinCore_1.5.4_amd64.deb
 sudo apt install -f # только если не хватает зависимостей
 ```
 
@@ -219,11 +219,11 @@ sudo pacman -S --overwrite '/usr/include/*' openssl glibc linux-api-headers
 
 | Версия | Название | Что изменилось |
 |---|---|---|
+| [v1.5.4](CHANGELOG-ru.md#v154--compass) | Compass | Вкладка маршрутизации: карточки приоритета и страницы зон |
 | [v1.5.3](CHANGELOG-ru.md#v153--sonar) | Sonar | Пинг всех серверов, панель серверов из двух блоков |
 | [v1.5.2](CHANGELOG-ru.md#v152--check-engine) | Check Engine | Вкладка диагностики |
 | [v1.5.1](CHANGELOG-ru.md#v151--dual-stack) | Dual Stack | IPv6, правки DNS-маршрутизации, строгая проверка Xray |
 | [v1.5.0](CHANGELOG-ru.md#v150--privilege-boundary) | Privilege Boundary | Один root-helper вместо множества правил sudo, CSP |
-| [v1.4.0](CHANGELOG-ru.md#v140--shell-bridge) | Shell Bridge | Файл статуса и флаги CLI для внешних оболочек |
 | 1.3.x | — | Режим handheld, укрепление безопасности, импорт маршрутизации из подписки |
 
 Все релизы начиная с 1.0.0, с датами, собраны в **[полной истории версий →](CHANGELOG-ru.md)**
