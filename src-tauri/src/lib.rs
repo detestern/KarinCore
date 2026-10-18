@@ -2800,16 +2800,35 @@ fn stop_proxy(_state: State<'_, ProxyState>) -> Result<String, String> {
 // **********************************
 // TAURI COMMANDS: UTILITIES & NETWORK
 // **********************************
-fn build_probe_client(state: &State<'_, ProxyState>) -> Result<reqwest::Client, String> {
-    let token = {
-        let guard = state
-            .auth_token
-            .lock()
-            .map_err(|_| "VPN proxy state is unavailable".to_string())?;
-        guard
-            .clone()
-            .ok_or_else(|| "VPN proxy is not ready".to_string())?
-    };
+/// Password of the local ping-in inbound. On Android the tunnel may have been
+/// started natively (scenario, widget, service restart), so the running
+/// service is asked first and the remembered value is only a fallback.
+fn probe_token(app: &tauri::AppHandle, state: &State<'_, ProxyState>) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    if let Ok(status) = app.karin_vpn().status() {
+        if let Some(token) = status.ping_token.filter(|t| !t.is_empty()) {
+            if let Ok(mut guard) = state.auth_token.lock() {
+                *guard = Some(token.clone());
+            }
+            return Ok(token);
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
+    let guard = state
+        .auth_token
+        .lock()
+        .map_err(|_| "VPN proxy state is unavailable".to_string())?;
+    guard
+        .clone()
+        .ok_or_else(|| "VPN proxy is not ready".to_string())
+}
+
+fn build_probe_client(
+    app: &tauri::AppHandle,
+    state: &State<'_, ProxyState>,
+) -> Result<reqwest::Client, String> {
+    let token = probe_token(app, state)?;
 
     let proxy = reqwest::Proxy::all("http://127.0.0.1:2082")
         .map_err(|e| e.to_string())?
@@ -2822,8 +2841,12 @@ fn build_probe_client(state: &State<'_, ProxyState>) -> Result<reqwest::Client, 
         .map_err(|e| e.to_string())
 }
 
-async fn probe_proxy_text(state: &State<'_, ProxyState>, url: &str) -> Result<String, String> {
-    let client = build_probe_client(state)?;
+async fn probe_proxy_text(
+    app: &tauri::AppHandle,
+    state: &State<'_, ProxyState>,
+    url: &str,
+) -> Result<String, String> {
+    let client = build_probe_client(app, state)?;
     let mut last_error = String::new();
 
     for attempt in 0..4 {
@@ -2864,38 +2887,44 @@ fn validate_probe_ip(value: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn get_vpn_ip(state: State<'_, ProxyState>) -> Result<String, String> {
+async fn get_vpn_ip(app: tauri::AppHandle, state: State<'_, ProxyState>) -> Result<String, String> {
     #[cfg(target_os = "android")]
     let url = "http://api.ipify.org";
     #[cfg(not(target_os = "android"))]
     let url = "https://api.ipify.org";
 
-    validate_probe_ip(probe_proxy_text(&state, url).await?)
+    validate_probe_ip(probe_proxy_text(&app, &state, url).await?)
 }
 
 #[tauri::command]
-async fn get_vpn_ipv4(state: State<'_, ProxyState>) -> Result<String, String> {
+async fn get_vpn_ipv4(
+    app: tauri::AppHandle,
+    state: State<'_, ProxyState>,
+) -> Result<String, String> {
     #[cfg(target_os = "android")]
     let url = "http://api4.ipify.org";
     #[cfg(not(target_os = "android"))]
     let url = "https://api4.ipify.org";
 
-    validate_probe_ip(probe_proxy_text(&state, url).await?)
+    validate_probe_ip(probe_proxy_text(&app, &state, url).await?)
 }
 
 #[tauri::command]
-async fn get_vpn_ipv6(state: State<'_, ProxyState>) -> Result<String, String> {
+async fn get_vpn_ipv6(
+    app: tauri::AppHandle,
+    state: State<'_, ProxyState>,
+) -> Result<String, String> {
     #[cfg(target_os = "android")]
     let url = "http://api6.ipify.org";
     #[cfg(not(target_os = "android"))]
     let url = "https://api6.ipify.org";
 
-    validate_probe_ip(probe_proxy_text(&state, url).await?)
+    validate_probe_ip(probe_proxy_text(&app, &state, url).await?)
 }
 
 #[tauri::command]
-async fn check_ping(state: State<'_, ProxyState>) -> Result<String, String> {
-    let client = build_probe_client(&state)?;
+async fn check_ping(app: tauri::AppHandle, state: State<'_, ProxyState>) -> Result<String, String> {
+    let client = build_probe_client(&app, &state)?;
     let start = std::time::Instant::now();
     #[cfg(target_os = "android")]
     let url = "http://cp.cloudflare.com/generate_204";
@@ -3015,15 +3044,7 @@ fn diag_core(app: tauri::AppHandle) -> String {
 
 #[tauri::command]
 async fn diag_tunnel(app: tauri::AppHandle, state: State<'_, ProxyState>) -> Result<Value, String> {
-    let token = {
-        let guard = state
-            .auth_token
-            .lock()
-            .map_err(|_| "VPN proxy state is unavailable".to_string())?;
-        guard
-            .clone()
-            .ok_or_else(|| "VPN proxy is not ready".to_string())?
-    };
+    let token = probe_token(&app, &state)?;
     let proxy = reqwest::Proxy::all("http://127.0.0.1:2082")
         .map_err(|e| e.to_string())?
         .basic_auth("karin", &token);

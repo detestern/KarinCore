@@ -87,7 +87,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.44</div>
+      <div class="app-version-text">v 0.1.0-alpha.45</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -530,9 +530,9 @@
     </div>
     <div class="scn-field" id="scn-ssid-field">
       <label for="scn-ssid" data-i18n="scn_f_wifi">Wi‑Fi network name</label>
-      <input type="text" id="scn-ssid" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-placeholder="scn_f_wifi_ph" placeholder="Network name (SSID)">
-      <button type="button" id="scn-use-current" class="small-btn scn-use-current" data-i18n="scn_use_current">Use current network</button>
-      <div id="scn-ssid-hint" class="scn-hint"></div>
+      <select id="scn-ssid-pick"></select>
+      <input type="text" id="scn-ssid" class="scn-ssid-manual" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-placeholder="scn_f_wifi_ph" placeholder="Network name (SSID)">
+      <div id="scn-ssid-hint" class="scn-hint" data-i18n="scn_wifi_pick_hint">Shows the current, nearby and previously seen networks.</div>
     </div>
     <div class="scn-field">
       <label data-i18n="scn_f_then">Then</label>

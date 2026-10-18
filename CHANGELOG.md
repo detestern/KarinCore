@@ -4,6 +4,14 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.45] - 2026-10-19
+
+### Added
+- A Wi‑Fi scenario now picks the network from a drop-down list instead of typing its name. The list holds the current network, the networks around (when location access is granted) and the networks the app has seen before. "Other network…" still lets you type a name, for example for a hidden network.
+
+### Fixed
+- After a VPN connection started by a scenario, the IP check showed an error until you reconnected by hand. The app did not know the local check password of a tunnel it had not started itself; it now reads it from the running VPN service. The same applies to tunnels started from the home-screen widget or restarted by the system, and to the diagnostics check through the tunnel.
+
 ## [0.1.0-alpha.44] - 2026-10-19
 
 ### Added

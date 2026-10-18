@@ -61,6 +61,8 @@ pub struct VpnStatus {
     pub tun_fd: Option<i32>,
     pub core_version: Option<String>,
     pub last_error: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub ping_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

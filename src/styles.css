@@ -3892,7 +3892,8 @@ dialog.scenario-modal { width: min(420px, calc(100vw - 32px)); max-height: calc(
 .scn-field { margin-bottom: 14px; }
 .scn-field label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-dim); }
 .scn-field input[type="text"], .scn-field select { width: 100%; box-sizing: border-box; }
-.scn-use-current { margin-top: 8px; }
+.scn-ssid-manual { margin-top: 8px; }
+.scn-ssid-manual[hidden], #scn-ssid-pick[hidden] { display: none; }
 .scn-hint { margin-top: 6px; font-size: 12px; color: var(--text-dim); }
 .scn-hint:empty { display: none; }
 .scn-error { margin-top: 4px; font-size: 13px; color: var(--danger); }

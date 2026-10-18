@@ -34,6 +34,7 @@ internal object ScenarioEngine {
     private val lock = Any()
 
     fun onNetwork(context: Context, net: Net) {
+        net.ssid?.let { if (net.kind == Net.WIFI) ScenarioStore(context.applicationContext).rememberSsid(it) }
         synchronized(lock) {
             current = net
             evaluateLocked(context.applicationContext)

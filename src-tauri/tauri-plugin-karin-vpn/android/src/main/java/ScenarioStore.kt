@@ -123,6 +123,24 @@ internal class ScenarioStore(context: Context) {
         editor.apply()
     }
 
+    /** Wi-Fi names seen by the watcher, newest first. Android cannot list saved networks. */
+    fun seenSsids(): List<String> {
+        val raw = prefs.getString(KEY_SEEN, null) ?: return emptyList()
+        return try {
+            val array = org.json.JSONArray(raw)
+            (0 until array.length()).map { array.optString(it) }.filter { it.isNotBlank() }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun rememberSsid(ssid: String) {
+        val list = seenSsids()
+        if (list.firstOrNull() == ssid) return
+        val next = (listOf(ssid) + list.filter { it != ssid }).take(MAX_SEEN)
+        prefs.edit().putString(KEY_SEEN, org.json.JSONArray(next).toString()).apply()
+    }
+
     fun lastText(): String? = prefs.getString(KEY_LAST_TEXT, null)
 
     fun setLastText(text: String) {
@@ -205,6 +223,8 @@ internal class ScenarioStore(context: Context) {
         private const val KEY_APPLIED_BOOT = "applied_boot"
         private const val KEY_LAST_TEXT = "last_text"
         private const val KEY_ERRORS = "errors"
+        private const val KEY_SEEN = "seen_ssids"
+        private const val MAX_SEEN = 30
         const val LEVEL_OFF = "off"
         const val LEVEL_QUIET = "quiet"
         const val LEVEL_BUTTON = "button"

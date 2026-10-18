@@ -672,10 +672,36 @@ class KarinVpnPlugin(private val activity: Activity) : Plugin(activity) {
                 put("locationEnabled", locationEnabled)
                 put("notifications", NotificationManagerCompat.from(activity).areNotificationsEnabled())
                 put("sdkInt", Build.VERSION.SDK_INT)
+                put("knownSsids", knownSsids(store, net.ssid, fine && locationEnabled))
             })
         } catch (ex: Exception) {
             invoke.reject(ex.message ?: "SCENARIOS_STATUS_FAILED")
         }
+    }
+
+    // Current network, networks around (last system scan), networks seen before
+    // and names already used in scenarios, without duplicates.
+    private fun knownSsids(store: ScenarioStore, current: String?, canScan: Boolean): JSArray {
+        val result = LinkedHashSet<String>()
+        current?.let { result.add(it) }
+        if (canScan) {
+            try {
+                val wifi = activity.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
+                    as? android.net.wifi.WifiManager
+                @Suppress("MissingPermission")
+                wifi?.scanResults
+                    ?.sortedByDescending { it.level }
+                    ?.forEach { r ->
+                        @Suppress("DEPRECATION")
+                        val name = r.SSID?.trim().orEmpty()
+                        if (name.isNotEmpty()) result.add(name)
+                    }
+            } catch (_: Exception) {
+            }
+        }
+        result.addAll(store.seenSsids())
+        store.scenarios().forEach { if (it.ssid.isNotBlank()) result.add(it.ssid) }
+        return JSArray.from(result.take(40))
     }
 
     @Command
@@ -761,6 +787,27 @@ class KarinVpnPlugin(private val activity: Activity) : Plugin(activity) {
         put("tunFd", KarinVpnService.tunFd.takeIf { it >= 0 })
         put("coreVersion", KarinVpnService.coreVersion)
         put("lastError", KarinVpnService.lastError)
+        put("pingToken", extractPingToken(KarinVpnService.lastConfigJson))
+    }
+
+    // The local ping-in inbound password of the running tunnel. Tunnels started
+    // natively (scenarios, widget, service restart) never passed through the
+    // Rust command that remembers it, so the app reads it back from here.
+    private fun extractPingToken(configJson: String?): String? {
+        if (configJson.isNullOrBlank()) return null
+        return try {
+            val inbounds = org.json.JSONObject(configJson).optJSONArray("inbounds") ?: return null
+            for (i in 0 until inbounds.length()) {
+                val inbound = inbounds.optJSONObject(i) ?: continue
+                if (inbound.optString("tag") != "ping-in") continue
+                val accounts = inbound.optJSONObject("settings")?.optJSONArray("accounts") ?: continue
+                val pass = accounts.optJSONObject(0)?.optString("pass").orEmpty()
+                if (pass.isNotBlank()) return pass
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     companion object {

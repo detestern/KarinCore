@@ -3420,7 +3420,7 @@ type ScenarioNotify = 'off' | 'quiet' | 'button';
 interface Scenario { id: string; name: string; kind: ScenarioKind; ssid: string; action: ScenarioAction; serverUrl: string | null; enabled: boolean; }
 interface ScenarioStatus {
     watcherRunning?: boolean; netKind?: string; ssid?: string | null; activeId?: string | null; lastText?: string | null;
-    fineLocation?: boolean; backgroundLocation?: boolean; locationEnabled?: boolean; notifications?: boolean; sdkInt?: number;
+    knownSsids?: string[]; fineLocation?: boolean; backgroundLocation?: boolean; locationEnabled?: boolean; notifications?: boolean; sdkInt?: number;
 }
 
 function loadScenarios(): Scenario[] {
@@ -3446,6 +3446,9 @@ let scenarioMenuId: string | null = null;
 let scenarioEditId: string | null = null;
 let scenarioDraftKind: ScenarioKind = 'wifi';
 let scenarioDraftAction: ScenarioAction = 'off';
+let scenarioDraftSsid = '';
+let scenarioSsidManual = false;
+const SCN_SSID_OTHER = '__other__';
 let scenarioPrepareErrors = new Set<string>();
 let scenarioStatusTimer: number | null = null;
 let scenarioSyncTimer: number | null = null;
@@ -3553,7 +3556,10 @@ async function refreshScenarioStatus() {
         const next = await invoke<ScenarioStatus>('scenarios_status');
         const changed = JSON.stringify(next) !== JSON.stringify(scenarioStatus);
         scenarioStatus = next || {};
-        if (changed) refreshScenariosIfOpen();
+        if (changed) {
+            refreshScenariosIfOpen();
+            if ((document.getElementById('scenario-modal') as HTMLDialogElement | null)?.open) renderScenarioSsidPicker();
+        }
     } catch { /* plugin not ready */ }
 }
 
@@ -3688,6 +3694,29 @@ function openScenariosPage() {
     }, 2000);
 }
 
+function renderScenarioSsidPicker() {
+    const pick = document.getElementById('scn-ssid-pick') as HTMLSelectElement | null;
+    const input = document.getElementById('scn-ssid') as HTMLInputElement | null;
+    if (!pick || !input) return;
+    const names = scenarioStatus.knownSsids || [];
+    const current = scenarioStatus.netKind === 'wifi' ? scenarioStatus.ssid : null;
+    const manual = scenarioSsidManual || names.length === 0;
+    pick.hidden = names.length === 0;
+    input.hidden = !manual;
+    const label = (n: string) => n === current ? `${n} (${t('scn_wifi_current')})` : n;
+    pick.innerHTML = `<option value="">${escapeHtml(t('scn_wifi_choose'))}</option>`
+        + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(label(n))}</option>`).join('')
+        + `<option value="${SCN_SSID_OTHER}">${escapeHtml(t('scn_wifi_other'))}</option>`;
+    if (scenarioSsidManual) pick.value = SCN_SSID_OTHER;
+    else pick.value = names.includes(scenarioDraftSsid) ? scenarioDraftSsid : '';
+}
+
+function readScenarioDraftSsid(): string {
+    const pick = document.getElementById('scn-ssid-pick') as HTMLSelectElement;
+    const input = document.getElementById('scn-ssid') as HTMLInputElement;
+    return (scenarioSsidManual || pick.hidden) ? input.value.trim() : scenarioDraftSsid.trim();
+}
+
 function setScenarioDraftKind(kind: ScenarioKind) {
     scenarioDraftKind = kind;
     document.querySelectorAll<HTMLElement>('#scn-kind .scn-seg-btn').forEach(b => b.classList.toggle('active', b.dataset.kind === kind));
@@ -3710,6 +3739,9 @@ function openScenarioDialog(id: string | null) {
     (document.getElementById('scn-dlg-title') as HTMLElement).textContent = t(s ? 'scn_dlg_edit' : 'scn_dlg_new');
     (document.getElementById('scn-name') as HTMLInputElement).value = s ? s.name : '';
     (document.getElementById('scn-ssid') as HTMLInputElement).value = s ? s.ssid : '';
+    scenarioDraftSsid = s ? s.ssid : '';
+    scenarioSsidManual = !!s && s.kind === 'wifi' && !(scenarioStatus.knownSsids || []).includes(s.ssid);
+    renderScenarioSsidPicker();
     const select = document.getElementById('scn-server') as HTMLSelectElement;
     const usable = appLinks.filter(l => !l.url.startsWith('ovpn://'));
     select.innerHTML = usable.length
@@ -3720,14 +3752,13 @@ function openScenarioDialog(id: string | null) {
     setScenarioDraftKind(s ? s.kind : 'wifi');
     setScenarioDraftAction(s ? s.action : 'off');
     (document.getElementById('scn-error') as HTMLElement).hidden = true;
-    (document.getElementById('scn-ssid-hint') as HTMLElement).textContent = '';
     modal.showModal();
     void refreshScenarioStatus();
 }
 
 function saveScenarioDialog() {
     const name = (document.getElementById('scn-name') as HTMLInputElement).value.trim();
-    const ssid = (document.getElementById('scn-ssid') as HTMLInputElement).value.trim();
+    const ssid = readScenarioDraftSsid();
     const serverUrl = (document.getElementById('scn-server') as HTMLSelectElement).value;
     const error = document.getElementById('scn-error') as HTMLElement;
     const fail = (key: string) => { error.textContent = t(key); error.hidden = false; };
@@ -3774,14 +3805,16 @@ function initScenarios() {
         const b = (e.target as HTMLElement).closest<HTMLElement>('.scn-seg-btn');
         if (b) setScenarioDraftAction(b.dataset.action === 'connect' ? 'connect' : 'off');
     });
-    document.getElementById('scn-use-current')?.addEventListener('click', async () => {
-        await refreshScenarioStatus();
-        const hint = document.getElementById('scn-ssid-hint') as HTMLElement;
-        if (scenarioStatus.netKind === 'wifi' && scenarioStatus.ssid) {
-            (document.getElementById('scn-ssid') as HTMLInputElement).value = scenarioStatus.ssid;
-            hint.textContent = '';
+    document.getElementById('scn-ssid-pick')?.addEventListener('change', (e) => {
+        const value = (e.target as HTMLSelectElement).value;
+        if (value === SCN_SSID_OTHER) {
+            scenarioSsidManual = true;
+            renderScenarioSsidPicker();
+            (document.getElementById('scn-ssid') as HTMLInputElement).focus();
         } else {
-            hint.textContent = t('scn_use_current_none');
+            scenarioSsidManual = false;
+            scenarioDraftSsid = value;
+            renderScenarioSsidPicker();
         }
     });
     const page = document.getElementById('subpage-scenarios');
