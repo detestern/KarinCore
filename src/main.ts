@@ -6,7 +6,7 @@ import { extractEndpoint, initDiagnostics } from "./diagnostics";
 // **********************************
 // TYPES & INTERFACES
 // **********************************
-interface ProxyGroup { id: string; name: string; pinned: boolean; isOpen: boolean; }
+interface ProxyGroup { id: string; name: string; pinned: boolean; isOpen: boolean; subUrl?: string; updatedAt?: number; }
 interface ProxyLink { id: string; url: string; pinned: boolean; groupId: string | null; }
 interface DnsConfig { type: string, url: string, ip: string }
 interface RouteProfile { id: string, name: string, defaultOutbound: string, rules: any, domDns?: DnsConfig, remDns?: DnsConfig, zonePriority?: ZoneKey[] }
@@ -365,9 +365,15 @@ function updateUIStrings() {
         const key = el.getAttribute('data-i18n-placeholder'); 
         if (key) (el as HTMLInputElement).placeholder = t(key); 
     });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        const key = el.getAttribute('data-i18n-title');
+        if (key) { el.setAttribute('title', t(key)); el.setAttribute('aria-label', t(key)); }
+    });
     diagnostics?.refreshText();
     refreshScenariosIfOpen();
     updateScenarioCount();
+    updateGuardCount();
+    if (document.getElementById('subpage-guard')?.classList.contains('open')) renderGuard();
 }
 
 // **********************************
@@ -692,9 +698,16 @@ async function saveNewLink() {
         try {
             const result = await invoke<SubscriptionResult>('fetch_subscription', { url: input });
             const domain = new URL(input).hostname;
-            const newGroupId = 'grp_' + Date.now();
-            appGroups.push({ id: newGroupId, name: domain, pinned: false, isOpen: true });
-            result.links.forEach(u => addLink(u, newGroupId));
+            // Повторное добавление той же подписки обновляет её группу, а не создаёт дубль.
+            // Группа, добавленная до 1.7.0, ссылки не помнит: узнаём её по имени-домену.
+            let group = appGroups.find(g => g.subUrl === input) || appGroups.find(g => !g.subUrl && g.name === domain);
+            if (!group) {
+                group = { id: 'grp_' + Date.now(), name: domain, pinned: false, isOpen: true };
+                appGroups.push(group);
+            }
+            group.subUrl = input;
+            group.updatedAt = Date.now();
+            mergeSubscriptionLinks(group, result.links);
 
             createProfileFromSubscription(result, domain);
 
@@ -713,7 +726,7 @@ async function saveNewLink() {
     alert(t('err_invalid_link'));
 }
 
-async function connectProxy(link: string) {
+async function connectProxy(link: string, silent = false): Promise<boolean> {
     try {
         if(statusText) statusText.innerText = t('status_connecting');
         setHeroPhase('connecting');
@@ -738,15 +751,19 @@ async function connectProxy(link: string) {
             sessionStorage.setItem('karin_active_link', link); 
             updateStatusUI(); 
             renderLinks(); 
-            typeKarinMessage('karin_connect_ok');
-        } else {
-            setHeroPhase(activeLink ? 'on' : 'idle');
+            if (!silent) typeKarinMessage('karin_connect_ok');
+            return true;
         }
+        setHeroPhase(activeLink ? 'on' : 'idle');
+        return false;
     } catch (error) { 
         setHeroPhase(activeLink ? 'on' : 'idle');
-        alert(`Core Error: ${error}`); 
-        if(statusText) statusText.innerText = t('status_inactive'); 
-        typeKarinMessage('karin_connect_fail');
+        if (!silent) {
+            alert(`Core Error: ${error}`); 
+            if(statusText) statusText.innerText = t('status_inactive'); 
+            typeKarinMessage('karin_connect_fail');
+        }
+        return false;
     }
 }
 
@@ -1369,7 +1386,8 @@ function closeZonePage(): boolean {
 function closeAnySubpage(): boolean {
     const zone = closeZonePage();
     const scn = closeScenariosPage();
-    return zone || scn;
+    const grd = closeGuardPage();
+    return zone || scn || grd;
 }
 
 function setActiveRouteProfile(id: string | null) {
@@ -1650,7 +1668,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.6.0";
+        const CURRENT_VERSION = "1.7.0";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -1799,6 +1817,14 @@ function init() {
             }
         }
     });
+
+    const subAutoToggle = document.getElementById('sub-autoupdate-toggle') as HTMLInputElement | null;
+    if (subAutoToggle) {
+        subAutoToggle.checked = subAutoEnabled();
+        subAutoToggle.addEventListener('change', (e) => {
+            localStorage.setItem(SUB_AUTO_KEY, (e.target as HTMLInputElement).checked ? 'true' : 'false');
+        });
+    }
 
     const karinAssistantToggle = document.getElementById('karin-assistant-toggle') as HTMLInputElement | null;
     if (karinAssistantToggle) {
@@ -2045,6 +2071,8 @@ function init() {
     });
     void initBridge();
     initScenarios();
+    initGuard();
+    initSubscriptionUpdates();
     checkApplicationUpdates();
 }
 
@@ -2335,6 +2363,460 @@ function initScenarios() {
     });
     window.setInterval(() => { void pollWifi(); }, 3000);
     void pollWifi();
+}
+
+// **********************************
+// SUBSCRIPTION UPDATE
+// **********************************
+const SUB_AUTO_KEY = 'karin_sub_autoupdate';
+const SUB_AUTO_MIN_AGE_MS = 10 * 60 * 1000;
+const SUB_CONCURRENCY = 3;
+let subUpdateRunning = false;
+
+function subAutoEnabled(): boolean {
+    return localStorage.getItem(SUB_AUTO_KEY) !== 'false';
+}
+
+// Сверяет серверы группы со свежим списком подписки: новые добавляются, пропавшие удаляются.
+// Закреплённые серверы, подключённый сейчас и выбранный профиль остаются на месте.
+function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: number; removed: number } {
+    const fresh = new Set(links);
+    let added = 0;
+    let removed = 0;
+    links.forEach(url => {
+        if (appLinks.some(l => l.url === url)) return;
+        appLinks.push({ id: 'link_' + Date.now() + Math.random(), url, pinned: false, groupId: group.id });
+        added++;
+    });
+    appLinks = appLinks.filter(l => {
+        if (l.groupId !== group.id || fresh.has(l.url)) return true;
+        if (l.pinned || l.url === activeLink || l.url === selectedProfileUrl) return true;
+        removed++;
+        return false;
+    });
+    return { added, removed };
+}
+
+async function refreshSubscriptions(manual: boolean) {
+    if (subUpdateRunning) return;
+    const groups = appGroups.filter(g => g.subUrl);
+    if (groups.length === 0) return;
+    const due = manual ? groups : groups.filter(g => !g.updatedAt || Date.now() - g.updatedAt >= SUB_AUTO_MIN_AGE_MS);
+    if (due.length === 0) return;
+
+    subUpdateRunning = true;
+    const button = document.getElementById('btn-sub-refresh') as HTMLButtonElement | null;
+    button?.classList.add('is-busy');
+    if (button) button.disabled = true;
+
+    let added = 0;
+    let removed = 0;
+    let next = 0;
+    const worker = async () => {
+        while (next < due.length) {
+            const group = due[next++];
+            try {
+                const result = await invoke<SubscriptionResult>('fetch_subscription', { url: group.subUrl });
+                // Пустой ответ провайдера не должен стереть список серверов.
+                if (!Array.isArray(result.links) || result.links.length === 0) throw new Error('empty');
+                if (!appGroups.includes(group)) continue;
+                const diff = mergeSubscriptionLinks(group, result.links);
+                group.updatedAt = Date.now();
+                added += diff.added;
+                removed += diff.removed;
+            } catch {
+                // Подписка не ответила: её группа остаётся как была.
+            }
+        }
+    };
+    try {
+        await Promise.all(Array.from({ length: Math.min(SUB_CONCURRENCY, due.length) }, worker));
+    } finally {
+        subUpdateRunning = false;
+        button?.classList.remove('is-busy');
+        if (button) button.disabled = false;
+    }
+
+    saveData();
+    if (added || removed) renderLinks();
+}
+
+// **********************************
+// TUNNEL GUARD (проверка туннеля и запасной сервер)
+// **********************************
+type GuardAction = 'off' | 'profile' | 'best';
+type GuardPhase = 'idle' | 'ok' | 'checking' | 'waiting' | 'switching';
+interface GuardSettings { enabled: boolean; action: GuardAction; serverUrl: string | null; notify: boolean; interval: number; }
+interface GuardEvent { at: number; text: string; }
+
+const GUARD_INTERVALS = [15, 30, 60] as const; // как часто проверяем живой туннель, секунды
+const GUARD_CONFIRM = 3;            // обрыв = столько неудачных проверок подряд
+const GUARD_GRACE_MS = 8_000;       // даём новому туннелю время подняться
+const GUARD_WAIT_MS = 10_000;       // повторная проверка, пока нет интернета
+const GUARD_MAX_TRIES = 3;          // запасных серверов пробуем не больше
+const GUARD_LOG_MAX = 5;
+
+function loadGuard(): GuardSettings {
+    const raw = safeParse('karin_guard', {});
+    return {
+        enabled: raw.enabled !== false,
+        action: raw.action === 'profile' || raw.action === 'best' ? raw.action : 'off',
+        serverUrl: typeof raw.serverUrl === 'string' ? raw.serverUrl : null,
+        notify: raw.notify !== false,
+        interval: (GUARD_INTERVALS as readonly number[]).includes(raw.interval) ? raw.interval : 30,
+    };
+}
+
+function loadGuardLog(): GuardEvent[] {
+    const raw = safeParse('karin_guard_log', []);
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .filter((e: any) => e && typeof e.at === 'number' && typeof e.text === 'string')
+        .slice(0, GUARD_LOG_MAX);
+}
+
+let guard: GuardSettings = loadGuard();
+let guardLog: GuardEvent[] = loadGuardLog();
+let guardPhase: GuardPhase = 'idle';
+let guardLink: string | null = null;   // профиль, который проверяется сейчас
+let guardNextAt = 0;
+let guardFails = 0;
+let guardBusy = false;
+let guardLastOkAt = 0;
+let guardLastMs = 0;
+let guardLastTick = Date.now();
+
+function saveGuard() {
+    try { localStorage.setItem('karin_guard', JSON.stringify(guard)); } catch { /* storage unavailable */ }
+    updateGuardCount();
+}
+
+function guardIntervalMs(): number {
+    return guard.interval * 1000;
+}
+
+function guardKillSwitchOn(): boolean {
+    return localStorage.getItem('karin_kill_switch') === 'true';
+}
+
+function updateGuardCount() {
+    const el = document.getElementById('guard-settings-count');
+    if (!el) return;
+    el.textContent = !guard.enabled ? t('guard_count_off') : t('guard_act_' + guard.action);
+}
+
+function addGuardEvent(text: string) {
+    guardLog.unshift({ at: Date.now(), text });
+    guardLog = guardLog.slice(0, GUARD_LOG_MAX);
+    try { localStorage.setItem('karin_guard_log', JSON.stringify(guardLog)); } catch { /* storage unavailable */ }
+    if (guard.notify) invoke('notify_desktop', { title: 'KarinCore', body: text }).catch(() => { /* нет notify-send */ });
+}
+
+function guardSleep(ms: number): Promise<void> {
+    return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+async function guardProbeOnce(): Promise<{ ok: boolean; ms: number }> {
+    try {
+        const res = await invoke<{ state?: string; ms?: number }>('diag_tunnel');
+        return { ok: res.state === 'ok', ms: Number(res.ms) || 0 };
+    } catch {
+        return { ok: false, ms: 0 };
+    }
+}
+
+// Нет интернета вообще — менять сервер бессмысленно. При Kill Switch прямого интернета нет
+// по определению, поэтому там считаем, что сеть есть.
+async function guardNetworkUp(): Promise<boolean> {
+    if (guardKillSwitchOn()) return true;
+    try {
+        return (await invoke<string>('diag_internet')) === 'ok';
+    } catch {
+        return false;
+    }
+}
+
+async function guardCandidates(dead: string): Promise<string[]> {
+    const usable = Array.from(new Set(appLinks.map(l => l.url)))
+        .filter(url => url !== dead && extractEndpoint(url)?.transport === 'tcp');
+    if (guard.action === 'profile') {
+        return guard.serverUrl && guard.serverUrl !== dead && appLinks.some(l => l.url === guard.serverUrl) ? [guard.serverUrl] : [];
+    }
+    // Kill Switch закрывает прямой трафик к другим серверам: берём прошлые замеры «Пинг».
+    if (guardKillSwitchOn()) {
+        const known = (url: string) => { const r = serverPings.get(url); return r && r.state === 'ok' ? r.ms : Number.MAX_SAFE_INTEGER; };
+        return usable.sort((a, b) => known(a) - known(b)).slice(0, GUARD_MAX_TRIES);
+    }
+    const measured: { url: string; ms: number }[] = [];
+    let next = 0;
+    const worker = async () => {
+        while (next < usable.length) {
+            const url = usable[next++];
+            const r = await pingServer(url, false);
+            if (r.state === 'ok') measured.push({ url, ms: r.ms });
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(PING_CONCURRENCY, usable.length) }, worker));
+    return measured.sort((a, b) => a.ms - b.ms).slice(0, GUARD_MAX_TRIES).map(m => m.url);
+}
+
+async function guardSwitchTo(candidates: string[]): Promise<string | null> {
+    for (const url of candidates.slice(0, GUARD_MAX_TRIES)) {
+        const connected = await connectProxy(url, true);
+        if (!connected || activeLink !== url) continue;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            await guardSleep(3000);
+            if ((await guardProbeOnce()).ok) return url;
+        }
+    }
+    return null;
+}
+
+async function guardHandleDead(link: string) {
+    if (!(await guardNetworkUp())) {
+        // Сеть пропала целиком: ждём её возвращения, одной проверки хватит, чтобы снова решать.
+        guardPhase = 'waiting';
+        guardFails = GUARD_CONFIRM - 1;
+        guardNextAt = Date.now() + GUARD_WAIT_MS;
+        return;
+    }
+    guardPhase = 'switching';
+    updateGuardLive();
+    const name = getLinkDisplayName(link);
+    const candidates = guard.action === 'off' ? [] : await guardCandidates(link);
+
+    if (candidates.length > 0) {
+        const target = await guardSwitchTo(candidates);
+        if (target) {
+            addGuardEvent(t('guard_ev_switch').replace('{from}', name).replace('{to}', getLinkDisplayName(target)));
+            return;
+        }
+        await disconnectProxy();
+        addGuardEvent(t('guard_ev_failed').replace('{server}', name));
+        return;
+    }
+    await disconnectProxy();
+    addGuardEvent(t('guard_ev_off').replace('{server}', name));
+}
+
+async function guardProbe() {
+    const link = guardLink;
+    if (!link) return;
+    guardBusy = true;
+    try {
+        const res = await guardProbeOnce();
+        if (heroPhase !== 'on' || activeLink !== link) return; // пока ждали, всё изменилось
+        if (res.ok) {
+            guardFails = 0;
+            guardPhase = 'ok';
+            guardLastOkAt = Date.now();
+            guardLastMs = res.ms;
+            guardNextAt = Date.now() + guardIntervalMs();
+            return;
+        }
+        guardFails++;
+        if (guardFails < GUARD_CONFIRM) {
+            guardPhase = 'checking';
+            guardNextAt = Date.now() + guardIntervalMs();
+            return;
+        }
+        await guardHandleDead(link);
+    } finally {
+        guardBusy = false;
+    }
+}
+
+async function guardLoop() {
+    const now = Date.now();
+    const gap = now - guardLastTick;
+    guardLastTick = now;
+    if (guardBusy) { updateGuardLive(); return; }
+
+    const active = heroPhase === 'on' ? activeLink : null;
+    if (active !== guardLink) {
+        guardLink = active;
+        guardFails = 0;
+        guardLastOkAt = 0;
+        guardNextAt = active ? now + GUARD_GRACE_MS : 0;
+        guardPhase = active ? 'checking' : 'idle';
+    } else if (gap > 20_000 && guardLink) {
+        // Компьютер спал: сеть ещё поднимается, не считаем это обрывом.
+        guardFails = 0;
+        guardPhase = 'checking';
+        guardNextAt = now + GUARD_GRACE_MS;
+    }
+    if (!guard.enabled || !guardLink) { updateGuardLive(); return; }
+    if (now >= guardNextAt) await guardProbe();
+    updateGuardLive();
+}
+
+function guardTimeText(at: number): string {
+    const d = new Date(at);
+    const time = d.toLocaleTimeString(currentLang, { hour: '2-digit', minute: '2-digit' });
+    if (new Date().toDateString() === d.toDateString()) return time;
+    return `${d.toLocaleDateString(currentLang, { day: '2-digit', month: '2-digit' })} ${time}`;
+}
+
+function guardStatus(): { dot: string; title: string; sub: string } {
+    if (!guard.enabled) return { dot: 'off', title: t('guard_st_disabled'), sub: '' };
+    if (heroPhase !== 'on' || !guardLink) return { dot: 'off', title: t('guard_st_idle'), sub: '' };
+    if (guardPhase === 'switching') return { dot: 'warn', title: t('guard_st_switching'), sub: '' };
+    if (guardPhase === 'waiting') return { dot: 'warn', title: t('guard_st_waiting'), sub: '' };
+    if (guardPhase === 'ok' && guardLastOkAt) {
+        const secs = Math.max(0, Math.round((Date.now() - guardLastOkAt) / 1000));
+        const sub = t('guard_st_checked')
+            .replace('{s}', String(secs))
+            .replace('{server}', getLinkDisplayName(guardLink))
+            .replace('{ms}', String(guardLastMs));
+        return { dot: 'ok', title: t('guard_st_ok'), sub };
+    }
+    if (guardFails > 0) return { dot: 'warn', title: t('guard_st_retry').replace('{n}', String(guardFails)).replace('{max}', String(GUARD_CONFIRM)), sub: '' };
+    return { dot: 'warn', title: t('guard_st_checking'), sub: '' };
+}
+
+// Живые части экрана обновляются на месте, чтобы не закрывать открытый список серверов.
+function updateGuardLive() {
+    if (!document.getElementById('subpage-guard')?.classList.contains('open')) return;
+    const st = guardStatus();
+    const dot = document.getElementById('guard-dot');
+    if (dot) dot.className = `guard-dot ${st.dot}`;
+    const text = document.getElementById('guard-text');
+    if (text) text.innerHTML = `<b>${esc(st.title)}</b>${st.sub ? `<span>${esc(st.sub)}</span>` : ''}`;
+    const log = document.getElementById('guard-log');
+    if (log) {
+        log.innerHTML = guardLog.length
+            ? guardLog.map(e => `<div><i>${esc(guardTimeText(e.at))}</i> ${esc(e.text)}</div>`).join('')
+            : `<div>${esc(t('guard_log_empty'))}</div>`;
+    }
+}
+
+function guardActionDescription(): string {
+    if (guard.action === 'profile') return t('guard_desc_profile');
+    if (guard.action === 'best') return t('guard_desc_best');
+    return guardKillSwitchOn() ? `${t('guard_desc_off')} ${t('guard_desc_off_ks')}` : t('guard_desc_off');
+}
+
+function renderGuard() {
+    const host = document.getElementById('subpage-guard');
+    if (!host) return;
+    if (guard.action === 'profile' && !(guard.serverUrl && appLinks.some(l => l.url === guard.serverUrl)) && appLinks.length) {
+        guard.serverUrl = guardDefaultServer();
+        saveGuard();
+    }
+    const actions: GuardAction[] = ['off', 'profile', 'best'];
+    const serverPicker = guard.action === 'profile'
+        ? (appLinks.length
+            ? `<select id="guard-server" class="guard-select">${appLinks.map(l => `<option value="${esc(l.url)}"${l.url === guard.serverUrl ? ' selected' : ''}>${esc(getLinkDisplayName(l.url))}</option>`).join('')}</select>`
+            : `<div class="guard-warn">${esc(t('guard_no_servers'))}</div>`)
+        : '';
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${esc(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 20)}</button>
+            <div class="subpage-title">${esc(t('guard_title'))}</div>
+        </div>
+        <div class="subpage-body">
+            <div class="guard-health">
+                <span id="guard-dot" class="guard-dot off"></span>
+                <div id="guard-text" class="guard-health-text"></div>
+                <label class="switch"><input type="checkbox" id="guard-enabled" ${guard.enabled ? 'checked' : ''}><span class="slider"></span></label>
+            </div>
+            <div id="guard-log" class="guard-log"></div>
+            <div class="guard-h">${esc(t('guard_when'))}</div>
+            <div class="scn-seg" id="guard-action">
+                ${actions.map(a => `<button type="button" class="scn-seg-btn${guard.action === a ? ' active' : ''}" data-guard-action="${a}">${esc(t('guard_act_' + a))}</button>`).join('')}
+            </div>
+            <div class="guard-card">
+                <span class="guard-radio"></span>
+                <div class="guard-card-text">
+                    <b>${esc(t('guard_card_' + guard.action))}</b>
+                    <span>${esc(guardActionDescription())}</span>
+                    ${serverPicker}
+                </div>
+            </div>
+            <div class="guard-row">
+                <div class="guard-row-text"><b>${esc(t('guard_notify'))}</b><span>${esc(t('guard_notify_desc'))}</span></div>
+                <label class="switch"><input type="checkbox" id="guard-notify" ${guard.notify ? 'checked' : ''}><span class="slider"></span></label>
+            </div>
+            <div class="guard-row">
+                <div class="guard-row-text"><b>${esc(t('guard_interval'))}</b></div>
+                <div class="scn-seg guard-interval">
+                    ${GUARD_INTERVALS.map(n => `<button type="button" class="scn-seg-btn${guard.interval === n ? ' active' : ''}" data-guard-interval="${n}">${esc(t('guard_sec').replace('{n}', String(n)))}</button>`).join('')}
+                </div>
+            </div>
+            <p class="guard-note">${esc(t('guard_note_confirm').replace('{s}', String(guard.interval * GUARD_CONFIRM)))} ${esc(t('guard_note_internet'))}</p>
+        </div>`;
+    updateGuardLive();
+}
+
+function openGuardPage() {
+    renderGuard();
+    const el = document.getElementById('subpage-guard');
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+    updateGuardLive();
+}
+
+function closeGuardPage(): boolean {
+    const el = document.getElementById('subpage-guard');
+    if (!el || !el.classList.contains('open')) return false;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+    return true;
+}
+
+function guardDefaultServer(): string | null {
+    const other = appLinks.find(l => l.url !== selectedProfileUrl && l.url !== activeLink) || appLinks[0];
+    return other ? other.url : null;
+}
+
+function initGuard() {
+    updateGuardCount();
+    document.getElementById('btn-open-guard')?.addEventListener('click', openGuardPage);
+    const page = document.getElementById('subpage-guard');
+    page?.addEventListener('click', (e) => {
+        const every = (e.target as HTMLElement).closest<HTMLElement>('[data-guard-interval]');
+        if (every) {
+            const n = Number(every.dataset.guardInterval);
+            if (!(GUARD_INTERVALS as readonly number[]).includes(n)) return;
+            guard.interval = n;
+            guardNextAt = Date.now() + guardIntervalMs();
+            saveGuard();
+            renderGuard();
+            return;
+        }
+        const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-guard-action]');
+        if (!btn) return;
+        const action = btn.dataset.guardAction;
+        if (action !== 'off' && action !== 'profile' && action !== 'best') return;
+        guard.action = action;
+        if (action === 'profile' && !(guard.serverUrl && appLinks.some(l => l.url === guard.serverUrl))) guard.serverUrl = guardDefaultServer();
+        saveGuard();
+        renderGuard();
+    });
+    page?.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement | HTMLSelectElement;
+        if (target.id === 'guard-enabled') {
+            guard.enabled = (target as HTMLInputElement).checked;
+            guardFails = 0;
+            guardNextAt = Date.now() + GUARD_GRACE_MS;
+            saveGuard();
+            updateGuardLive();
+        } else if (target.id === 'guard-notify') {
+            guard.notify = (target as HTMLInputElement).checked;
+            saveGuard();
+        } else if (target.id === 'guard-server') {
+            guard.serverUrl = (target as HTMLSelectElement).value || null;
+            saveGuard();
+        }
+    });
+    window.setInterval(() => { void guardLoop(); }, 2000);
+}
+
+function initSubscriptionUpdates() {
+    document.getElementById('btn-sub-refresh')?.addEventListener('click', () => { void refreshSubscriptions(true); });
+    // Даём окну открыться, потом тихо обновляем подписки.
+    if (subAutoEnabled()) window.setTimeout(() => { void refreshSubscriptions(false); }, 3000);
 }
 
 // **********************************

@@ -1687,6 +1687,11 @@ dialog::backdrop {
     cursor: default;
 }
 
+.drawer-refresh { width: 30px; padding: 0; justify-content: center; }
+.drawer-refresh + .drawer-ping { margin-left: 0; }
+.drawer-refresh.is-busy svg { animation: sub-refresh-spin 0.9s linear infinite; }
+@keyframes sub-refresh-spin { to { transform: rotate(360deg); } }
+
 .ping-hint {
     margin: -2px 2px 8px;
     font-size: 11.5px;
@@ -2275,3 +2280,50 @@ dialog.scenario-modal { width: 420px; max-width: calc(100vw - 32px); }
     cursor: pointer;
 }
 .subpage .scn-add:hover:not(:active) { background: var(--input-bg); box-shadow: 0 0 14px -4px var(--accent); }
+
+
+/* ==========================================================
+   18. TUNNEL GUARD (экран «При обрыве связи»)
+   ========================================================== */
+.guard-health {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px;
+    background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px;
+}
+.guard-health-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.guard-health-text b { font-size: 14px; font-weight: 600; color: var(--text-color); }
+.guard-health-text span { font-size: 12px; color: var(--text-dim); }
+.guard-dot { width: 11px; height: 11px; flex: none; border-radius: 50%; background: var(--text-dim); opacity: 0.6; }
+.guard-dot.ok { background: var(--success); opacity: 1; animation: guard-pulse 2s infinite; }
+.guard-dot.warn { background: #e0af68; opacity: 1; }
+@keyframes guard-pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 55%, transparent); }
+    70% { box-shadow: 0 0 0 9px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+.guard-log { margin: 8px 2px 0; font-size: 12px; line-height: 1.7; color: var(--text-dim); }
+.guard-log i { font-style: normal; color: var(--text-color); }
+.guard-h { margin: 20px 0 8px; font-size: 12.5px; color: var(--text-dim); }
+.guard-card {
+    display: flex; gap: 12px; align-items: flex-start;
+    margin-top: 10px; padding: 13px 14px;
+    background: var(--input-bg); border: 1px solid var(--accent); border-radius: 12px;
+    box-shadow: 0 0 0 1px var(--accent), 0 0 16px -6px var(--accent);
+}
+.guard-radio { position: relative; flex: none; width: 16px; height: 16px; margin-top: 2px; border: 2px solid var(--accent); border-radius: 50%; }
+.guard-radio::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent); }
+.guard-card-text { flex: 1; min-width: 0; }
+.guard-card-text b { display: block; font-size: 14px; font-weight: 600; color: var(--text-color); }
+.guard-card-text > span { display: block; margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
+.guard-select { margin-top: 10px; width: 100%; box-sizing: border-box; }
+.guard-warn { margin-top: 8px; font-size: 12px; color: var(--danger); }
+.guard-row {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 8px; padding: 12px 14px;
+    background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px;
+}
+.guard-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.guard-row-text b { font-size: 14px; font-weight: 600; color: var(--text-color); }
+.guard-row-text span { font-size: 12px; color: var(--text-dim); }
+.guard-row .scn-seg { flex: none; width: 190px; }
+.guard-note { margin: 12px 2px 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }

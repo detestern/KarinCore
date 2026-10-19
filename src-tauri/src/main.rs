@@ -1417,6 +1417,18 @@ fn diag_verdict(
 #[tauri::command]
 fn open_browser(url: String) { std::process::Command::new("xdg-open").arg(url).spawn().ok(); }
 
+// Короткое системное уведомление (например, о переключении сервера при обрыве). Если notify-send
+// не установлен, ничего не происходит: то же сообщение есть в самом приложении.
+#[tauri::command]
+fn notify_desktop(title: String, body: String) {
+    let clip = |text: String| text.chars().take(200).collect::<String>();
+    let _ = std::process::Command::new("notify-send")
+        .args(["-a", "KarinCore", "--"])
+        .arg(clip(title))
+        .arg(clip(body))
+        .spawn();
+}
+
 #[tauri::command]
 fn get_logs() -> Result<String, String> {
     let (log_path, _) = get_log_paths();
@@ -1606,7 +1618,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            start_proxy, stop_proxy, fetch_subscription, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, diag_internet, diag_resolve, diag_tcp, diag_core, diag_tunnel, wifi_scan, wifi_current, diag_verdict, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update
+            start_proxy, stop_proxy, fetch_subscription, notify_desktop, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, diag_internet, diag_resolve, diag_tcp, diag_core, diag_tunnel, wifi_scan, wifi_current, diag_verdict, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update
         ]).build(tauri::generate_context!()).expect("error while building tauri application");
     app.run(|app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {

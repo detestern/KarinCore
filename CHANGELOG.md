@@ -5,6 +5,16 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.7.0 — Lifeline
+
+<sub>2026-10-19</sub>
+
+* **Added:** "On connection loss" in Settings. While the VPN is on, KarinCore checks that the tunnel is alive with a request through it (every 30 seconds by default, or 15 or 60 on the same screen). A drop means 3 failed checks in a row, so a short blip switches nothing. Then it does what you chose: turn the VPN off (default), connect to a server you picked, or take the best one by ping. A replacement is verified the same way and the next one is tried if it does not work (up to 3), then the VPN is turned off.
+* **Added:** if there is no internet at all, nothing is switched: a new server would not help, so the check just waits. After the computer wakes up from sleep the check starts over instead of counting the reconnect as an outage.
+* **Added:** the screen shows the tunnel state ("checked 12 s ago, 84 ms"), a short log of the last events, and an optional desktop notification when the server changes. With Kill Switch on, "best by ping" uses the results of the last Ping press, because the firewall blocks direct measurements.
+* **Added:** subscriptions remember their link and are updated when the app starts (Settings → "Update subscriptions on start", on by default). New servers are added, removed ones disappear, pinned servers, the connected one and the selected one always stay. A failed or empty answer never touches the list.
+* **Added:** a button with arrows next to "Ping" updates all subscriptions at once. Adding the same subscription link again updates its group instead of creating a copy; subscriptions added before this version need their link added once more.
+
 ## v1.6.0 — Waypoint
 
 <sub>2026-10-18</sub>

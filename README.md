@@ -6,7 +6,7 @@
 <p><a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a></p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.6.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.7.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -45,6 +45,12 @@ No Electron. No sandbox fighting your routing table. A Rust core, native `system
 **Subscriptions and profiles.** Add a subscription URL or a single `vless://`, `vmess://`, `trojan://`, `ss://`, `wg://` link, or drop in `.ovpn` and `.conf` files. Routing rules from the subscription are imported too. Save full setups (rules, column order, DNS) as named profiles.
 
 **Ping of every server.** One button in the servers panel measures the response time of the whole list and colours it: green up to 250 ms, yellow up to 500 ms, red above.
+
+**Tunnel guard.** KarinCore regularly checks that the tunnel is alive. If it fails 3 checks in a row, it turns the VPN off, switches to a server you chose, or to the best one by ping.
+
+**Subscriptions stay fresh.** They are updated when the app starts, or all at once with one button next to "Ping".
+
+**Connection scenarios.** Rules like "if Wi‑Fi *Home* → turn the VPN off" switch the VPN by network.
 
 **Diagnostics.** A dedicated tab answers "why isn't it working?": internet, DNS, the server's port and a request through the tunnel, with a plain-language verdict and the fix.
 
@@ -89,7 +95,7 @@ yay -S karincore-git
 Grab the latest `.deb` from [Releases](https://github.com/detestern/KarinCore/releases). It installs the privileged helper, a one-line `sudoers` rule and the `systemd` unit, creates the `karincore` group and adds the installing user (log out and back in afterwards). Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)). The binary has to be at `/usr/bin/xray`; if the installer puts it in `/usr/local/bin/xray`, the package creates the link for you.
 
 ```bash
-sudo dpkg -i KarinCore_1.6.0_amd64.deb
+sudo dpkg -i KarinCore_1.7.0_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 
@@ -219,6 +225,7 @@ This split means the entire graphical stack (webview, rendering, everything) run
 
 | Version | Name | What changed |
 |---|---|---|
+| [v1.7.0](CHANGELOG.md#v170--lifeline) | Lifeline | Backup server when the tunnel dies, subscriptions update on start |
 | [v1.6.0](CHANGELOG.md#v160--waypoint) | Waypoint | Connection scenarios: switch the VPN by Wi‑Fi network |
 | [v1.5.5](CHANGELOG.md#v155--afterglow) | Afterglow | Zone pages use the full width, soft glow on hover |
 | [v1.5.4](CHANGELOG.md#v154--compass) | Compass | Routing tab redesigned: priority cards and zone pages |
@@ -232,7 +239,7 @@ Every release since 1.0.0, with dates, is in the **[full changelog →](CHANGELO
 
 ## Roadmap
 
-KarinCore was built for Linux first, but the free internet doesn't stop at the OS boundary. Native **Windows** and **macOS** ports are the next major milestone. Next on the Linux and Android side: automatic switching to the next-best server when the connection drops, context profiles, per-app traffic stats and encrypted settings transfer.
+KarinCore was built for Linux first, but the free internet doesn't stop at the OS boundary. Native **Windows** and **macOS** ports are the next major milestone. Next: the tunnel guard on Android, context profiles, per-app traffic stats and encrypted settings transfer.
 
 <br/>
 

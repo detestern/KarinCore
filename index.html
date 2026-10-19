@@ -87,7 +87,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 1.6.0</div>
+      <div class="app-version-text">v 1.7.0</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -210,6 +210,7 @@
 
         <div class="drawer-section-label">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01"/><path d="M7 16.5h.01"/></svg><span data-i18n="config_servers">Мои серверы</span><span id="links-count" class="drawer-count"></span>
+          <button id="btn-sub-refresh" class="drawer-ping drawer-refresh" type="button" data-i18n-title="sub_refresh_title" title="Обновить подписки" aria-label="Обновить подписки"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-15.5-6.2L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15.5 6.2L21 16"/><path d="M16 16h5v5"/></svg></button>
           <button id="btn-ping-all" class="drawer-ping" type="button"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span id="btn-ping-label" data-i18n="ping_btn">Пинг</span></button>
         </div>
         <p id="ping-hint" class="ping-hint" data-i18n="ping_tunnel_hint" hidden></p>
@@ -412,6 +413,13 @@
         </label>
       </div>
       <div style="margin-top: 4px; font-size: 11px; color: var(--text-dim);" data-i18n="settings_kill_switch_note">Блокирует весь трафик, если туннель неожиданно оборвётся. Снимается при отключении или новом подключении. Если что-то пойдёт не так — sudo iptables -F OUTPUT сбросит правила вручную.</div>
+      <div style="margin-top: 15px; display: flex; align-items: center; gap: 15px;">
+        <label style="font-size: 14px;" data-i18n="settings_sub_autoupdate">Обновлять подписки при запуске:</label>
+        <label class="switch">
+          <input type="checkbox" id="sub-autoupdate-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
       <button id="btn-open-scenarios" class="settings-link-row" type="button">
         <span class="settings-link-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg></span>
         <span class="settings-link-text">
@@ -422,6 +430,16 @@
         <span class="settings-link-chevron"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
       </button>
       <div id="subpage-scenarios" class="subpage" aria-hidden="true"></div>
+      <button id="btn-open-guard" class="settings-link-row" type="button">
+        <span class="settings-link-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        <span class="settings-link-text">
+          <span class="settings-link-title" data-i18n="guard_title">При обрыве связи</span>
+          <span class="settings-link-desc" data-i18n="guard_settings_desc">Проверка туннеля и запасной сервер</span>
+        </span>
+        <span id="guard-settings-count" class="drawer-count"></span>
+        <span class="settings-link-chevron"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
+      </button>
+      <div id="subpage-guard" class="subpage" aria-hidden="true"></div>
     </div>
   </div>
   

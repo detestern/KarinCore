@@ -6,7 +6,7 @@
 <p><a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a></p>
 
 <p>
-<img src="https://img.shields.io/badge/версия-1.6.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/версия-1.7.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/платформа-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/на_чём_написано-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Rust"/>
 <img src="https://img.shields.io/badge/фреймворк-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -45,6 +45,12 @@ KarinCore создана, чтобы избавить пользователей
 **Подписки и профили.** Добавляй URL подписки или отдельную ссылку `vless://`, `vmess://`, `trojan://`, `ss://`, `wg://`, либо закидывай `.ovpn` и `.conf` файлы. Правила маршрутизации из подписки тоже импортируются. Сохраняй целые связки (правила, порядок колонок, DNS) в именованные профили.
 
 **Пинг всех серверов.** Одна кнопка в панели серверов измеряет отклик всего списка и подсвечивает его: зелёный до 250 мс, жёлтый до 500 мс, красный выше.
+
+**Страж туннеля.** KarinCore регулярно проверяет, что туннель жив. Если 3 проверки подряд не прошли, VPN отключается, переключается на выбранный сервер или на лучший по пингу.
+
+**Свежие подписки.** Они обновляются при запуске приложения или все сразу одной кнопкой рядом с «Пинг».
+
+**Сценарии подключений.** Правила вроде «если Wi‑Fi *Дом* → выключить VPN» переключают VPN по сети.
 
 **Диагностика.** Отдельная вкладка отвечает на вопрос «почему не работает?»: интернет, DNS, порт сервера и запрос через туннель, с понятным вердиктом и подсказкой, что делать.
 
@@ -89,7 +95,7 @@ yay -S karincore-git
 Свежий `.deb` всегда доступен в разделе [Releases](https://github.com/detestern/KarinCore/releases). Он устанавливает привилегированный helper, правило `sudoers` из одной строки и юнит `systemd`, создаёт группу `karincore` и добавляет в неё устанавливающего пользователя (после установки перезайди в сессию). Убедись, что в системе уже стоят `openvpn` и `wireguard-tools`. Xray в `.deb` не входит: установи его отдельно (например, через [XTLS/Xray-install](https://github.com/XTLS/Xray-install)). Бинарник должен лежать в `/usr/bin/xray`; если установщик кладёт его в `/usr/local/bin/xray`, пакет сам создаст ссылку.
 
 ```bash
-sudo dpkg -i KarinCore_1.6.0_amd64.deb
+sudo dpkg -i KarinCore_1.7.0_amd64.deb
 sudo apt install -f # только если не хватает зависимостей
 ```
 
@@ -219,6 +225,7 @@ sudo pacman -S --overwrite '/usr/include/*' openssl glibc linux-api-headers
 
 | Версия | Название | Что изменилось |
 |---|---|---|
+| [v1.7.0](CHANGELOG-ru.md#v170--lifeline) | Lifeline | Запасной сервер при обрыве туннеля, обновление подписок при запуске |
 | [v1.6.0](CHANGELOG-ru.md#v160--waypoint) | Waypoint | Сценарии подключений: переключение VPN по Wi‑Fi сети |
 | [v1.5.5](CHANGELOG-ru.md#v155--afterglow) | Afterglow | Страницы зон на всю ширину, мягкая подсветка при наведении |
 | [v1.5.4](CHANGELOG-ru.md#v154--compass) | Compass | Вкладка маршрутизации: карточки приоритета и страницы зон |
@@ -232,7 +239,7 @@ sudo pacman -S --overwrite '/usr/include/*' openssl glibc linux-api-headers
 
 ## Вектор развития
 
-KarinCore создавалась в первую очередь для Linux, но у свободного интернета нет границ ОС. Нативные порты на **Windows** и **macOS** следующая крупная веха. Дальше на Linux и Android: автопереключение на следующий по пингу сервер при обрыве, контекстные профили, статистика трафика по приложениям и зашифрованный перенос настроек.
+KarinCore создавалась в первую очередь для Linux, но у свободного интернета нет границ ОС. Нативные порты на **Windows** и **macOS** следующая крупная веха. Дальше: страж туннеля на Android, контекстные профили, статистика трафика по приложениям и зашифрованный перенос настроек.
 
 <br/>
 
