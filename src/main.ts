@@ -2377,19 +2377,94 @@ function subAutoEnabled(): boolean {
     return localStorage.getItem(SUB_AUTO_KEY) !== 'false';
 }
 
+// Сервер узнаётся по протоколу, id и адресу с портом. Имя, порядок и кодировка параметров не в счёт:
+// иначе та же запись из подписки, чуть иначе записанная, считалась бы новым сервером.
+function linkIdentity(url: string): string {
+    const raw = url.trim();
+    if (/^vmess:\/\//i.test(raw)) {
+        try {
+            const body = raw.slice(8).split('#')[0].replace(/-/g, '+').replace(/_/g, '/');
+            const bytes = Uint8Array.from(atob(body), c => c.charCodeAt(0));
+            const v = JSON.parse(new TextDecoder().decode(bytes));
+            return `vmess://${v.id}@${String(v.add).toLowerCase()}:${v.port}`;
+        } catch { /* дальше общий разбор */ }
+    }
+    const m = raw.match(/^([a-z0-9+.-]+):\/\/([^?#]*)/i);
+    if (!m) return raw.split('#')[0];
+    const scheme = m[1].toLowerCase();
+    const at = m[2].lastIndexOf('@');
+    if (at < 0) return `${scheme}://${m[2]}`;
+    let user = m[2].slice(0, at + 1);
+    try { user = decodeURIComponent(user); } catch { /* оставляем как есть */ }
+    return `${scheme}://${user}${m[2].slice(at + 1).replace(/\/$/, '').toLowerCase()}`;
+}
+
+// Когда запись сервера получает новую ссылку, всё, что на неё указывало, переезжает вместе с ней.
+function remapLinkRefs(from: string, to: string) {
+    if (from === to) return;
+    if (activeLink === from) {
+        activeLink = to;
+        sessionStorage.setItem('karin_active_link', to);
+    }
+    if (selectedProfileUrl === from) {
+        selectedProfileUrl = to;
+        localStorage.setItem('karin_selected_profile', to);
+    }
+    let scenariosChanged = false;
+    scenarios.forEach(s => { if (s.serverUrl === from) { s.serverUrl = to; scenariosChanged = true; } });
+    if (scenariosChanged) saveScenarios();
+    if (guard.serverUrl === from) { guard.serverUrl = to; saveGuard(); }
+}
+
 // Сверяет серверы группы со свежим списком подписки: новые добавляются, пропавшие удаляются.
 // Закреплённые серверы, подключённый сейчас и выбранный профиль остаются на месте.
 function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: number; removed: number } {
-    const fresh = new Set(links);
+    const fresh = Array.from(new Set(links));
+    const inGroup = () => appLinks.filter(l => l.groupId === group.id);
+    const matched = new Map<string, ProxyLink>();
+    const kept = new Set<ProxyLink>();
     let added = 0;
     let removed = 0;
-    links.forEach(url => {
-        if (appLinks.some(l => l.url === url)) return;
-        appLinks.push({ id: 'link_' + Date.now() + Math.random(), url, pinned: false, groupId: group.id });
+
+    // Сначала точные совпадения, затем тот же сервер в другой записи (имя или параметры изменились).
+    fresh.forEach(url => {
+        const entry = inGroup().find(l => l.url === url);
+        if (entry) { matched.set(url, entry); kept.add(entry); }
+    });
+    fresh.forEach(url => {
+        if (matched.has(url)) return;
+        const id = linkIdentity(url);
+        const entry = inGroup().find(l => !kept.has(l) && linkIdentity(l.url) === id);
+        if (entry) { matched.set(url, entry); kept.add(entry); }
+    });
+    matched.forEach((entry, url) => {
+        if (entry.url === url) return;
+        remapLinkRefs(entry.url, url);
+        entry.url = url;
+    });
+
+    fresh.forEach(url => {
+        if (matched.has(url) || appLinks.some(l => l.url === url)) return;
+        const entry: ProxyLink = { id: 'link_' + Date.now() + Math.random(), url, pinned: false, groupId: group.id };
+        appLinks.push(entry);
+        kept.add(entry);
         added++;
     });
+
+    const freshIds = new Set(fresh.map(linkIdentity));
     appLinks = appLinks.filter(l => {
-        if (l.groupId !== group.id || fresh.has(l.url)) return true;
+        if (l.groupId !== group.id || kept.has(l)) return true;
+        const id = linkIdentity(l.url);
+        if (freshIds.has(id)) {
+            // Дубль сервера, который уже есть в списке: закрепление и выбор переходят к оставшейся записи.
+            const twin = Array.from(kept).find(k => k.groupId === group.id && linkIdentity(k.url) === id);
+            if (twin) {
+                if (l.pinned) twin.pinned = true;
+                remapLinkRefs(l.url, twin.url);
+                removed++;
+                return false;
+            }
+        }
         if (l.pinned || l.url === activeLink || l.url === selectedProfileUrl) return true;
         removed++;
         return false;
