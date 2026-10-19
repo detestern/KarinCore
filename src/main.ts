@@ -2397,18 +2397,33 @@ function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: nu
     return { added, removed };
 }
 
+// Короткая обратная связь на кнопке: вращение пока идёт обновление, затем галочка или «!».
+function flashSubRefresh(state: 'is-done' | 'is-fail') {
+    const button = document.getElementById('btn-sub-refresh');
+    if (!button) return;
+    button.classList.remove('is-done', 'is-fail');
+    button.classList.add(state);
+    window.setTimeout(() => button.classList.remove(state), 1500);
+}
+
 async function refreshSubscriptions(manual: boolean) {
     if (subUpdateRunning) return;
     const groups = appGroups.filter(g => g.subUrl);
-    if (groups.length === 0) return;
+    if (groups.length === 0) {
+        if (manual) flashSubRefresh('is-fail');
+        return;
+    }
     const due = manual ? groups : groups.filter(g => !g.updatedAt || Date.now() - g.updatedAt >= SUB_AUTO_MIN_AGE_MS);
     if (due.length === 0) return;
 
     subUpdateRunning = true;
     const button = document.getElementById('btn-sub-refresh') as HTMLButtonElement | null;
+    button?.classList.remove('is-done', 'is-fail');
     button?.classList.add('is-busy');
     if (button) button.disabled = true;
+    const startedAt = Date.now();
 
+    let answered = 0;
     let added = 0;
     let removed = 0;
     let next = 0;
@@ -2424,6 +2439,7 @@ async function refreshSubscriptions(manual: boolean) {
                 group.updatedAt = Date.now();
                 added += diff.added;
                 removed += diff.removed;
+                answered++;
             } catch {
                 // Подписка не ответила: её группа остаётся как была.
             }
@@ -2431,6 +2447,9 @@ async function refreshSubscriptions(manual: boolean) {
     };
     try {
         await Promise.all(Array.from({ length: Math.min(SUB_CONCURRENCY, due.length) }, worker));
+        // Даже мгновенный ответ даёт один полный оборот значка, чтобы было видно, что обновление шло.
+        const spent = Date.now() - startedAt;
+        if (spent < 1000) await guardSleep(1000 - spent);
     } finally {
         subUpdateRunning = false;
         button?.classList.remove('is-busy');
@@ -2439,6 +2458,7 @@ async function refreshSubscriptions(manual: boolean) {
 
     saveData();
     if (added || removed) renderLinks();
+    flashSubRefresh(answered > 0 ? 'is-done' : 'is-fail');
 }
 
 // **********************************

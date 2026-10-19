@@ -13,7 +13,7 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 * **Added:** if there is no internet at all, nothing is switched: a new server would not help, so the check just waits. After the computer wakes up from sleep the check starts over instead of counting the reconnect as an outage.
 * **Added:** the screen shows the tunnel state ("checked 12 s ago, 84 ms"), a short log of the last events, and an optional desktop notification when the server changes. With Kill Switch on, "best by ping" uses the results of the last Ping press, because the firewall blocks direct measurements.
 * **Added:** subscriptions remember their link and are updated when the app starts (Settings → "Update subscriptions on start", on by default). New servers are added, removed ones disappear, pinned servers, the connected one and the selected one always stay. A failed or empty answer never touches the list.
-* **Added:** a button with arrows next to "Ping" updates all subscriptions at once. Adding the same subscription link again updates its group instead of creating a copy; subscriptions added before this version need their link added once more.
+* **Added:** a button with arrows next to "Ping" updates all subscriptions at once: the icon spins while it works, then shows a check mark (or "!" if nothing answered). Adding the same subscription link again updates its group instead of creating a copy; subscriptions added before this version need their link added once more.
 
 ## v1.6.0 — Waypoint
 

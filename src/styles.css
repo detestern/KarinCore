@@ -1689,8 +1689,20 @@ dialog::backdrop {
 
 .drawer-refresh { width: 30px; padding: 0; justify-content: center; }
 .drawer-refresh + .drawer-ping { margin-left: 0; }
-.drawer-refresh.is-busy svg { animation: sub-refresh-spin 0.9s linear infinite; }
+.drawer-refresh { transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease; }
+.drawer-refresh .icon-done, .drawer-refresh .icon-fail { display: none; }
+.drawer-refresh.is-busy:disabled { opacity: 1; }
+.drawer-refresh.is-busy .icon-idle { animation: sub-refresh-spin 1s linear infinite; }
+.drawer-refresh.is-done, .drawer-refresh.is-done:hover:not(:disabled) { color: var(--success); border-color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.drawer-refresh.is-fail, .drawer-refresh.is-fail:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.drawer-refresh.is-done .icon-idle, .drawer-refresh.is-fail .icon-idle { display: none; }
+.drawer-refresh.is-done .icon-done, .drawer-refresh.is-fail .icon-fail { display: block; animation: sub-refresh-pop 0.35s ease-out; }
 @keyframes sub-refresh-spin { to { transform: rotate(360deg); } }
+@keyframes sub-refresh-pop { 0% { transform: scale(0.5); opacity: 0; } 60% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+    .drawer-refresh.is-busy .icon-idle { animation: none; }
+    .drawer-refresh .icon-done, .drawer-refresh .icon-fail { animation: none !important; }
+}
 
 .ping-hint {
     margin: -2px 2px 8px;
@@ -2175,7 +2187,7 @@ dialog::backdrop {
 /* **********************************
    SETTINGS LINK ROW & CONNECTION SCENARIOS
    ********************************** */
-.settings-panel { position: relative; min-height: 520px; }
+.settings-panel { position: relative; flex: 1; min-height: 520px; }
 
 .settings-link-row {
     display: flex;
