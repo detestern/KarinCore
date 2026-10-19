@@ -4,6 +4,21 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.47] - 2026-10-19
+
+### Added
+- Subscriptions update themselves at launch (a few seconds after the app opens, in the background; groups updated less than 10 minutes ago are skipped). A button next to Ping in the server list updates all subscriptions at once. The new setting "Update subscriptions at launch" is in Settings and is on by default.
+- Subscription updates merge by server identity: servers that stay keep their place, pin and selection, new ones are added, removed ones disappear. An empty or failed answer never touches your list, so duplicates after "update all" are gone.
+- Connection drop (Settings → Connection drop). While the VPN is on, the app checks the tunnel every 15, 30 or 60 seconds. Three failed checks in a row count as a drop; one lost packet never switches anything. Then it does what you chose: turn the VPN off (default), move to your own backup server, or move to the best server by the last ping (up to 3 backups are tried and verified). It runs inside the VPN service, so it works while the app is closed, and shows a short notification when it acts. If there is no network at all, nothing is switched. Always-on VPN from Android settings cannot be turned off by an app, so the guard says so in the log instead of pretending.
+
+### Changed
+- Settings are rearranged: language, theme, Karin messages and subscription updates on top, then Connection scenarios, Connection drop and Permissions as separate pages.
+- The long list of Android permissions moved to its own page, "Permissions". The row shows how many items still need attention.
+
+### Removed
+- The Kill Switch card: it only opened Android settings, which the "Always-on VPN and blocking" item on the Permissions page already does. The quick-settings tile card is gone too; add the tile from the system quick-settings panel as before.
+- "VPN for apps" is hidden from Settings for now. It will return in Routing; a mode saved earlier keeps applying until then.
+
 ## [0.1.0-alpha.46] - 2026-10-19
 
 ### Changed

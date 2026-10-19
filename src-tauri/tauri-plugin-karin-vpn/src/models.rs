@@ -189,6 +189,12 @@ pub struct ScenariosSyncRequest {
     pub notify_level: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GuardSyncRequest {
+    pub config_json: String,
+}
+
 fn default_notify_level() -> String {
     "quiet".into()
 }

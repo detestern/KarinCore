@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-0.1.0--alpha.46-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-0.1.0--alpha.47-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-android-dc8add?style=flat-square&labelColor=11111b&logo=android&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -33,6 +33,8 @@ KarinCore Android brings the same interface and the same Direct / Proxy / Block 
 - **Per-app split tunneling:** all apps, only selected, or bypass selected.
 - **Quick settings tile** and a **home-screen widget**: connect and disconnect the last working profile in one tap, without opening the app.
 - **Connection scenarios:** switch the VPN automatically by Wi-Fi name or mobile network (turn it off or connect to a chosen server), top to bottom, first match wins. Works with the app closed and can notify when a scenario runs.
+- **Connection drop:** while the VPN is on, the tunnel is checked every 15-60 s; after three failed checks in a row it turns the VPN off or moves to a backup server (your own or the best by ping). Works with the app closed.
+- **Subscription updates:** subscriptions refresh at launch and with one button next to Ping; servers are merged without duplicates.
 - **Always-on VPN** support, a built-in VPN self-test and live diagnostics for permissions and battery restrictions.
 - **Private by design:** no developer telemetry; profiles and subscription URLs are encrypted with a key held by the Android Keystore.
 

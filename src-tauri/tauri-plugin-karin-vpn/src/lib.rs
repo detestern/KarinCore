@@ -3,11 +3,11 @@ mod models;
 
 pub use error::{Error, Result};
 pub use models::{
-    ClearLogsResult, DeviceInfoResult, FetchTextRequest, FetchTextResult, InstalledApp,
-    InstalledAppsResult, LogsResult, OpenSettingsResult, OpenStabilitySettingsRequest,
-    PrepareResult, SaveDocumentRequest, SaveDocumentResult, ScenarioConnectionRequest,
-    ScenarioPermissionRequest, ScenariosSyncRequest, SecureStateRequest, SecureStateResult,
-    SecureStateSaveResult, StabilityDiagnosticsResult, StartRequest, VpnStatus,
+    ClearLogsResult, DeviceInfoResult, FetchTextRequest, FetchTextResult, GuardSyncRequest,
+    InstalledApp, InstalledAppsResult, LogsResult, OpenSettingsResult,
+    OpenStabilitySettingsRequest, PrepareResult, SaveDocumentRequest, SaveDocumentResult,
+    ScenarioConnectionRequest, ScenarioPermissionRequest, ScenariosSyncRequest, SecureStateRequest,
+    SecureStateResult, SecureStateSaveResult, StabilityDiagnosticsResult, StartRequest, VpnStatus,
 };
 
 use tauri::{plugin::TauriPlugin, Manager, Runtime};
@@ -199,6 +199,30 @@ impl<R: Runtime> KarinVpn<R> {
 
     #[cfg(not(target_os = "android"))]
     pub fn request_add_tile(&self) -> Result<OpenSettingsResult> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn guard_sync(&self, request: GuardSyncRequest) -> Result<serde_json::Value> {
+        self.mobile_plugin_handle
+            .run_mobile_plugin("guardSync", request)
+            .map_err(Error::from)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn guard_sync(&self, _request: GuardSyncRequest) -> Result<serde_json::Value> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn guard_status(&self) -> Result<serde_json::Value> {
+        self.mobile_plugin_handle
+            .run_mobile_plugin("guardStatus", ())
+            .map_err(Error::from)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn guard_status(&self) -> Result<serde_json::Value> {
         Err(Error::UnsupportedPlatform)
     }
 

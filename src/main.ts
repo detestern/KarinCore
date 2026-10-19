@@ -12,7 +12,7 @@ import { changelogReleaseCount, DISCONNECTED_CORE_LABEL, renderProjectChangelog,
 // **********************************
 // TYPES & INTERFACES
 // **********************************
-interface ProxyGroup { id: string; name: string; pinned: boolean; isOpen: boolean; sourceUrl?: string; providerRouting?: RoutingMap; }
+interface ProxyGroup { id: string; name: string; pinned: boolean; isOpen: boolean; sourceUrl?: string; updatedAt?: number; providerRouting?: RoutingMap; }
 interface ProxyLink { id: string; url: string; pinned: boolean; groupId: string | null; }
 interface DnsConfig { type: string, url: string, ip: string }
 interface RouteProfile { id: string, name: string, defaultOutbound: string, rules: any, domDns?: DnsConfig, remDns?: DnsConfig, zonePriority?: ZoneKey[] }
@@ -103,6 +103,7 @@ function isProxyGroup(value: unknown): value is ProxyGroup {
         && typeof item.pinned === 'boolean'
         && typeof item.isOpen === 'boolean'
         && (item.sourceUrl === undefined || typeof item.sourceUrl === 'string')
+        && (item.updatedAt === undefined || typeof item.updatedAt === 'number')
         && (item.providerRouting === undefined || isRoutingMap(item.providerRouting));
 }
 
@@ -128,7 +129,6 @@ let nativeVpnStarting = false;
 let nativeVpnCoreRunning = false;
 let nativeVpnReconnecting = false;
 let nativeVpnAlwaysOn = false;
-let nativeVpnLockdown = false;
 let nativeStatusInterval: number | null = null;
 let nativeStatusPollInFlight = false;
 let lastNativeStatusSignature = '';
@@ -275,8 +275,6 @@ const themeLabel = document.getElementById('theme-label') as HTMLLabelElement | 
 const btnImportFile = document.getElementById('btn-import-file') as HTMLButtonElement | null;
 const importFileInput = document.getElementById('import-file-input') as HTMLInputElement | null;
 const toggleServerProxy = document.getElementById('toggle-server-proxy') as HTMLInputElement | null;
-const androidAppRoutingSection = document.getElementById('android-app-routing-section') as HTMLDivElement | null;
-const androidStabilitySection = document.getElementById('android-stability-section') as HTMLDivElement | null;
 const androidStabilitySummary = document.getElementById('android-stability-summary') as HTMLDivElement | null;
 const androidStabilityList = document.getElementById('android-stability-list') as HTMLDivElement | null;
 const androidStabilityRefresh = document.getElementById('android-stability-refresh') as HTMLButtonElement | null;
@@ -535,6 +533,14 @@ function updateUIStrings() {
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { 
         const key = el.getAttribute('data-i18n-placeholder'); 
         if (key) (el as HTMLInputElement).placeholder = t(key); 
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        const key = el.getAttribute('data-i18n-title');
+        if (key) { el.setAttribute('title', t(key)); el.setAttribute('aria-label', t(key)); }
+    });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+        const key = el.getAttribute('data-i18n-aria-label');
+        if (key) el.setAttribute('aria-label', t(key));
     });
     diagnostics?.refreshText();
 }
@@ -825,20 +831,17 @@ async function saveNewLink() {
             });
             const result = await Promise.race([subscriptionRequest, uiWatchdog]);
             const domain = new URL(input).hostname;
-            const newGroupId = 'grp_' + Date.now();
-            appGroups.push({
-                id: newGroupId,
-                name: domain,
-                pinned: false,
-                isOpen: true,
-                sourceUrl: input,
-                providerRouting: result.routingOverride ? result.importedRouting : undefined
-            });
-            result.links.forEach(u => addLink(u, newGroupId));
-
-            createProfileFromSubscription(result, domain);
+            // Adding the same subscription again updates its group instead of creating a copy.
+            let group = appGroups.find(g => g.sourceUrl === input);
+            if (!group) {
+                group = { id: 'grp_' + Date.now(), name: domain, pinned: false, isOpen: true, sourceUrl: input };
+                appGroups.push(group);
+            }
+            applySubscriptionResult(group, result);
 
             saveData();
+            scheduleScenarioSync(300);
+            scheduleGuardSync(600);
             renderLinks();
             linkInput.value = '';
             typeKarinMessage('karin_add_link');
@@ -862,6 +865,141 @@ async function saveNewLink() {
     alert(t('err_invalid_link'));
 }
 
+// **********************************
+// SUBSCRIPTION UPDATE
+// **********************************
+const SUB_AUTO_KEY = 'karin_sub_autoupdate';
+const SUB_AUTO_MIN_AGE_MS = 10 * 60 * 1000;
+const SUB_CONCURRENCY = 3;
+let subUpdateRunning = false;
+
+function subAutoEnabled(): boolean {
+    return localStorage.getItem(SUB_AUTO_KEY) !== 'false';
+}
+
+function pause(ms: number): Promise<void> {
+    return new Promise(resolve => { window.setTimeout(resolve, ms); });
+}
+
+// A server is recognised by protocol, id and address with port. The name, the order and the
+// encoding of parameters do not count, otherwise the same entry written slightly differently
+// would be added as a second copy.
+function linkIdentity(url: string): string {
+    const raw = url.trim();
+    if (/^vmess:\/\//i.test(raw)) {
+        try {
+            const body = raw.slice(8).split('#')[0].replace(/-/g, '+').replace(/_/g, '/');
+            const bytes = Uint8Array.from(atob(body), c => c.charCodeAt(0));
+            const v = JSON.parse(new TextDecoder().decode(bytes));
+            return `vmess://${v.id}@${String(v.add).toLowerCase()}:${v.port}`;
+        } catch { /* fall through to the generic parser */ }
+    }
+    const m = raw.match(/^([a-z0-9+.-]+):\/\/([^?#]*)/i);
+    if (!m) return raw.split('#')[0];
+    const scheme = m[1].toLowerCase();
+    const at = m[2].lastIndexOf('@');
+    if (at < 0) return `${scheme}://${m[2]}`;
+    let user = m[2].slice(0, at + 1);
+    try { user = decodeURIComponent(user); } catch { /* keep as is */ }
+    return `${scheme}://${user}${m[2].slice(at + 1).replace(/\/$/, '').toLowerCase()}`;
+}
+
+// When a server entry gets a new link, everything that pointed at it moves along.
+function remapLinkRefs(from: string, to: string) {
+    if (from === to) return;
+    if (activeLink === from) {
+        activeLink = to;
+        sessionStorage.setItem('karin_active_link', to);
+    }
+    if (selectedProfileUrl === from) selectedProfileUrl = to;
+    let scenariosChanged = false;
+    scenarios.forEach(item => { if (item.serverUrl === from) { item.serverUrl = to; scenariosChanged = true; } });
+    if (scenariosChanged) saveScenarios();
+    if (guard.serverUrl === from) { guard.serverUrl = to; saveGuard(); }
+}
+
+// Compares the servers of a group with the fresh subscription list: new ones are added,
+// vanished ones are removed. Pinned servers, the connected one and the selected profile stay.
+function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: number; removed: number } {
+    const fresh = Array.from(new Set(links));
+    const inGroup = () => appLinks.filter(l => l.groupId === group.id);
+    const matched = new Map<string, ProxyLink>();
+    const kept = new Set<ProxyLink>();
+    let added = 0;
+    let removed = 0;
+
+    // Exact matches first, then the same server stored in another form (name or parameters changed).
+    fresh.forEach(url => {
+        const entry = inGroup().find(l => l.url === url);
+        if (entry) { matched.set(url, entry); kept.add(entry); }
+    });
+    fresh.forEach(url => {
+        if (matched.has(url)) return;
+        const id = linkIdentity(url);
+        const entry = inGroup().find(l => !kept.has(l) && linkIdentity(l.url) === id);
+        if (entry) { matched.set(url, entry); kept.add(entry); }
+    });
+    matched.forEach((entry, url) => {
+        if (entry.url === url) return;
+        remapLinkRefs(entry.url, url);
+        entry.url = url;
+    });
+
+    fresh.forEach((url, index) => {
+        if (matched.has(url) || appLinks.some(l => l.url === url)) return;
+        const entry: ProxyLink = { id: `link_${Date.now()}_${index}_${Math.random()}`, url, pinned: false, groupId: group.id };
+        appLinks.push(entry);
+        kept.add(entry);
+        added++;
+    });
+
+    const freshIds = new Set(fresh.map(linkIdentity));
+    appLinks = appLinks.filter(l => {
+        if (l.groupId !== group.id || kept.has(l)) return true;
+        const id = linkIdentity(l.url);
+        if (freshIds.has(id)) {
+            // A duplicate of a server that is already in the list: pin and selection move to the one that stays.
+            const twin = Array.from(kept).find(k => k.groupId === group.id && linkIdentity(k.url) === id);
+            if (twin) {
+                if (l.pinned) twin.pinned = true;
+                remapLinkRefs(l.url, twin.url);
+                removed++;
+                return false;
+            }
+        }
+        if (l.pinned || l.url === activeLink || l.url === selectedProfileUrl) return true;
+        removed++;
+        return false;
+    });
+
+    // Within the group the servers follow the subscription order.
+    const rank = (l: ProxyLink) => { const i = fresh.indexOf(l.url); return i < 0 ? fresh.length : i; };
+    const ordered = inGroup().sort((x, y) => rank(x) - rank(y));
+    appLinks = appLinks.filter(l => l.groupId !== group.id).concat(ordered);
+    return { added, removed };
+}
+
+async function fetchSubscriptionResult(url: string): Promise<SubscriptionResult> {
+    const subscriptionRequest = invoke<SubscriptionResult>('fetch_subscription', { url });
+    const uiWatchdog = new Promise<never>((_, reject) => {
+        window.setTimeout(() => reject(new Error('SUBSCRIPTION_UI_TIMEOUT')), 25_000);
+    });
+    return Promise.race([subscriptionRequest, uiWatchdog]);
+}
+
+function applySubscriptionResult(group: ProxyGroup, result: SubscriptionResult): { added: number; removed: number } {
+    const diff = mergeSubscriptionLinks(group, result.links);
+    if (result.routingOverride) {
+        group.providerRouting = result.importedRouting;
+    } else {
+        delete group.providerRouting;
+    }
+    group.updatedAt = Date.now();
+    createProfileFromSubscription(result, group.name);
+    return diff;
+}
+
+// The refresh button on a single group keeps its dialogs; the bulk update below is silent.
 async function refreshSubscriptionGroup(groupId: string) {
     const group = appGroups.find(g => g.id === groupId);
     if (!group?.sourceUrl) return;
@@ -876,54 +1014,16 @@ async function refreshSubscriptionGroup(groupId: string) {
     }
 
     try {
-        const subscriptionRequest = invoke<SubscriptionResult>('fetch_subscription', { url: group.sourceUrl });
-        const uiWatchdog = new Promise<never>((_, reject) => {
-            window.setTimeout(
-                () => reject(new Error('SUBSCRIPTION_UI_TIMEOUT')),
-                25_000
-            );
-        });
-        const result = await Promise.race([subscriptionRequest, uiWatchdog]);
-
-        const existing = appLinks.filter(link => link.groupId === groupId);
-        const existingByUrl = new Map(existing.map(link => [link.url, link]));
-        const refreshed = result.links.map((url, index) => {
-            const current = existingByUrl.get(url);
-            if (current) {
-                return { ...current, groupId };
-            }
-
-            return {
-                id: `link_${Date.now()}_${index}_${Math.random()}`,
-                url,
-                pinned: false,
-                groupId
-            } as ProxyLink;
-        });
-
-        const refreshedUrls = new Set(result.links);
-        if (
-            selectedProfileUrl
-            && existingByUrl.has(selectedProfileUrl)
-            && !refreshedUrls.has(selectedProfileUrl)
-            && activeLink !== selectedProfileUrl
-        ) {
-            selectedProfileUrl = null;
-        }
-
-        appLinks = appLinks.filter(link => link.groupId !== groupId).concat(refreshed);
-
-        if (result.routingOverride) {
-            group.providerRouting = result.importedRouting;
-        } else {
-            delete group.providerRouting;
-        }
-        createProfileFromSubscription(result, group.name);
+        const result = await fetchSubscriptionResult(group.sourceUrl);
+        if (!Array.isArray(result.links) || result.links.length === 0) throw new Error('empty');
+        applySubscriptionResult(group, result);
 
         saveData();
         renderLinks();
         renderRouting();
         updateHeroProfileName();
+        scheduleScenarioSync(300);
+        scheduleGuardSync(600);
         typeKarinMessage('karin_add_link');
         alert(t('subscription_refresh_ok'));
     } catch (error) {
@@ -946,6 +1046,86 @@ async function refreshSubscriptionGroup(groupId: string) {
             currentButton.innerText = originalText;
         }
     }
+}
+
+// Short feedback on the button: the icon spins while the update runs, then a check mark or "!".
+function flashSubRefresh(state: 'is-done' | 'is-fail') {
+    const button = document.getElementById('btn-sub-refresh');
+    if (!button) return;
+    button.classList.remove('is-done', 'is-fail');
+    button.classList.add(state);
+    window.setTimeout(() => button.classList.remove(state), 1500);
+}
+
+async function refreshSubscriptions(manual: boolean) {
+    if (subUpdateRunning) return;
+    const groups = appGroups.filter(g => g.sourceUrl);
+    if (groups.length === 0) {
+        if (manual) flashSubRefresh('is-fail');
+        return;
+    }
+    const due = manual ? groups : groups.filter(g => !g.updatedAt || Date.now() - g.updatedAt >= SUB_AUTO_MIN_AGE_MS);
+    if (due.length === 0) return;
+
+    subUpdateRunning = true;
+    const button = document.getElementById('btn-sub-refresh') as HTMLButtonElement | null;
+    button?.classList.remove('is-done', 'is-fail');
+    button?.classList.add('is-busy');
+    if (button) button.disabled = true;
+    const startedAt = Date.now();
+
+    let answered = 0;
+    let changed = 0;
+    let next = 0;
+    const worker = async () => {
+        while (next < due.length) {
+            const group = due[next++];
+            try {
+                const result = await fetchSubscriptionResult(group.sourceUrl!);
+                // An empty answer from the provider must never wipe the list of servers.
+                if (!Array.isArray(result.links) || result.links.length === 0) throw new Error('empty');
+                if (!appGroups.includes(group)) continue;
+                const diff = applySubscriptionResult(group, result);
+                changed += diff.added + diff.removed;
+                answered++;
+            } catch {
+                // The subscription did not answer: its group stays as it was.
+            }
+        }
+    };
+    try {
+        await Promise.all(Array.from({ length: Math.min(SUB_CONCURRENCY, due.length) }, worker));
+        // Even an instant answer gives one full turn of the icon, so it is visible that an update ran.
+        const spent = Date.now() - startedAt;
+        if (spent < 1000) await pause(1000 - spent);
+    } finally {
+        subUpdateRunning = false;
+        button?.classList.remove('is-busy');
+        if (button) button.disabled = false;
+    }
+
+    if (answered > 0) {
+        saveData();
+        renderLinks();
+        renderRouting();
+        updateHeroProfileName();
+        scheduleScenarioSync(300);
+        scheduleGuardSync(600);
+    }
+    if (manual || changed > 0) flashSubRefresh(answered > 0 ? 'is-done' : 'is-fail');
+}
+
+function initSubscriptionUpdates() {
+    document.getElementById('btn-sub-refresh')?.addEventListener('click', () => { void refreshSubscriptions(true); });
+    const toggle = document.getElementById('sub-autoupdate-toggle') as HTMLInputElement | null;
+    if (toggle) {
+        toggle.checked = subAutoEnabled();
+        toggle.addEventListener('change', () => {
+            try { localStorage.setItem(SUB_AUTO_KEY, toggle.checked ? 'true' : 'false'); } catch { /* storage unavailable */ }
+        });
+    }
+    // Let the window open first, then update the subscriptions quietly.
+    if (subAutoEnabled()) window.setTimeout(() => { void refreshSubscriptions(false); }, 3000);
 }
 
 async function connectProxy(link: string) {
@@ -994,6 +1174,7 @@ async function connectProxy(link: string) {
             updateStatusUI(); 
             renderLinks(); 
             renderRouting();
+            scheduleGuardSync(800);
             typeKarinMessage('karin_connect_ok');
         }
     } catch (error) { 
@@ -1255,7 +1436,7 @@ function initPasteAndQr() {
 // **********************************
 // SUBPAGES (routing zone, patch notes) & SWIPES
 // **********************************
-type SubpageId = 'subpage-zone' | 'subpage-patches' | 'subpage-scenarios';
+type SubpageId = 'subpage-zone' | 'subpage-patches' | 'subpage-scenarios' | 'subpage-guard' | 'subpage-permissions';
 let openZone: ZoneKey | null = null;
 
 const ZONE_META: Record<ZoneKey, { label: string, color: string, descKey: string, icon: string }> = {
@@ -2031,6 +2212,7 @@ async function pingAllServers() {
         pingInFlight = false;
         if (button) button.disabled = false;
         if (label) label.textContent = t('ping_btn');
+        if (guard.enabled && guard.action === 'best') scheduleGuardSync(600);
     }
 }
 
@@ -2594,28 +2776,10 @@ function renderInstalledApps(filter = '') {
 }
 
 function renderAndroidSystemVpnStatus() {
-    const section = document.getElementById('android-system-vpn-section') as HTMLDivElement | null;
+    // The firewall Kill Switch exists on desktop only; Android has system-level Always-on VPN
+    // (listed on the permissions page).
     const desktopSection = document.getElementById('desktop-kill-switch-section') as HTMLDivElement | null;
-    const status = document.getElementById('android-system-vpn-status') as HTMLDivElement | null;
-
-    if (runtimeInfo.platform !== 'android') {
-        if (section) section.style.display = 'none';
-        if (desktopSection) desktopSection.style.display = 'block';
-        return;
-    }
-
-    if (section) section.style.display = 'flex';
-    if (desktopSection) desktopSection.style.display = 'none';
-    const tileSection = document.getElementById('android-tile-section');
-    if (tileSection) tileSection.style.display = 'flex';
-
-    if (status) {
-        status.textContent = nativeVpnLockdown
-            ? t('settings_android_lockdown_on')
-            : nativeVpnAlwaysOn
-                ? t('settings_android_always_on')
-                : t('settings_android_always_off');
-    }
+    if (desktopSection) desktopSection.style.display = runtimeInfo.platform === 'android' ? 'none' : 'block';
 }
 
 type StabilityLevel = 'ok' | 'warning' | 'info';
@@ -2669,7 +2833,6 @@ function appendStabilityItem(item: StabilityItem) {
 
 async function refreshAndroidStabilityDiagnostics() {
     if (runtimeInfo.platform !== 'android' || stabilityRefreshInFlight) return;
-    if (androidStabilitySection) androidStabilitySection.style.display = 'flex';
     if (!androidStabilityList || !androidStabilitySummary) return;
 
     stabilityRefreshInFlight = true;
@@ -2689,6 +2852,11 @@ async function refreshAndroidStabilityDiagnostics() {
             !state.networkAvailable || !state.networkValidated
         ].filter(Boolean).length;
 
+        const permCount = document.getElementById('perm-settings-count');
+        if (permCount) {
+            permCount.textContent = issues === 0 ? '' : String(issues);
+            permCount.classList.toggle('is-warn', issues > 0);
+        }
         androidStabilitySummary.className = `stability-summary ${issues === 0 ? 'is-ok' : 'is-warning'}`;
         androidStabilitySummary.textContent = issues === 0
             ? t('settings_stability_all_ok')
@@ -2769,7 +2937,6 @@ async function initAndroidAppRouting() {
         if (!Array.isArray(apps) || apps.length === 0) return;
 
         installedApps = apps;
-        if (androidAppRoutingSection) androidAppRoutingSection.style.display = 'flex';
         if (appRoutingModeSelect) appRoutingModeSelect.value = appRoutingMode;
 
         const installedPackageNames = new Set(installedApps.map(app => app.packageName));
@@ -2795,7 +2962,6 @@ async function restoreAndroidVpnState() {
         nativeVpnCoreRunning = !!status.coreRunning;
         nativeVpnReconnecting = !!status.reconnecting;
         nativeVpnAlwaysOn = !!status.alwaysOn;
-        nativeVpnLockdown = !!status.lockdown;
         renderAndroidSystemVpnStatus();
 
         const nativeActive = nativeVpnRunning || nativeVpnStarting || nativeVpnCoreRunning || nativeVpnReconnecting;
@@ -2819,7 +2985,6 @@ async function restoreAndroidVpnState() {
         nativeVpnCoreRunning = false;
         nativeVpnReconnecting = false;
         nativeVpnAlwaysOn = false;
-        nativeVpnLockdown = false;
         renderAndroidSystemVpnStatus();
         activeLink = null;
         sessionStorage.removeItem('karin_active_link');
@@ -2833,6 +2998,7 @@ async function pollAndroidVpnState() {
 
     nativeStatusPollInFlight = true;
     try {
+        void refreshGuardStatus();
         const status = await invoke<VpnRuntimeStatus>('get_vpn_runtime_status');
         const signature = [
             status.running,
@@ -2852,7 +3018,6 @@ async function pollAndroidVpnState() {
         nativeVpnCoreRunning = !!status.coreRunning;
         nativeVpnReconnecting = !!status.reconnecting;
         nativeVpnAlwaysOn = !!status.alwaysOn;
-        nativeVpnLockdown = !!status.lockdown;
 
         const nativeActive = nativeVpnRunning || nativeVpnStarting || nativeVpnCoreRunning || nativeVpnReconnecting;
         if (!nativeActive) {
@@ -2918,7 +3083,6 @@ async function init() {
     renderAndroidSystemVpnStatus();
     await restoreAndroidVpnState();
     if (runtimeInfo.platform === 'android') {
-        if (androidStabilitySection) androidStabilitySection.style.display = 'flex';
         void refreshAndroidStabilityDiagnostics();
     }
     startAndroidVpnStateMonitor();
@@ -2961,6 +3125,8 @@ async function init() {
     renderRoutingProfiles();
     void initAndroidAppRouting();
     initScenarios();
+    initGuard();
+    initSubscriptionUpdates();
     
     if (currentTheme === 'light') {
         document.documentElement.setAttribute('data-theme', 'light');
@@ -2998,6 +3164,7 @@ async function init() {
             renderRouting();
             renderAboutPage();
             renderRoutingProfiles();
+            updateGuardCount();
             void refreshAndroidStabilityDiagnostics();
             checkApplicationUpdates();
         });
@@ -3072,22 +3239,9 @@ async function init() {
         appRoutingModal?.close();
     });
 
-    document.getElementById('android-tile-btn')?.addEventListener('click', async () => {
-        const note = document.getElementById('android-tile-note');
-        try {
-            const added = await invoke<boolean>('request_android_tile');
-            if (note) note.textContent = added ? t('settings_tile_added') : t('settings_tile_manual');
-        } catch (error) {
-            if (note) note.textContent = `${t('settings_tile_error')}: ${error}`;
-        }
-    });
-
-    document.getElementById('android-vpn-settings-btn')?.addEventListener('click', async () => {
-        try {
-            await invoke('open_android_vpn_settings');
-        } catch (error) {
-            alert(`${t('settings_android_vpn_settings_error')}: ${error}`);
-        }
+    document.getElementById('btn-open-permissions')?.addEventListener('click', () => {
+        openSubpage('subpage-permissions');
+        void refreshAndroidStabilityDiagnostics();
     });
 
     androidStabilityRefresh?.addEventListener('click', () => {
@@ -3120,6 +3274,7 @@ async function init() {
         if (document.visibilityState === 'hidden') {
             // Settings may have changed while the app was open: refresh what the native engine uses.
             scheduleScenarioSync(0);
+            scheduleGuardSync(0);
         }
 
         if (document.visibilityState === 'visible') {
@@ -3494,14 +3649,21 @@ function scenarioBakeSignature(): string {
 }
 
 async function bakeScenarioConnection(s: Scenario): Promise<void> {
-    const link = s.serverUrl ? appLinks.find(l => l.url === s.serverUrl) : null;
+    if (!s.serverUrl) throw new Error('server missing');
+    await bakeConnection(s.id, s.serverUrl);
+}
+
+// Builds the full Xray connection for a server ahead of time and hands it to the native side,
+// which cannot build it itself while the app is closed. Used by scenarios and the tunnel guard.
+async function bakeConnection(id: string, serverUrl: string): Promise<void> {
+    const link = appLinks.find(l => l.url === serverUrl);
     if (!link) throw new Error('server missing');
     if (appRoutingMode === 'allowlist' && selectedAppPackages.size === 0) throw new Error('app routing empty');
     const dDns = safeParse('karin_dns_dom', { type: 'doh', url: 'https://dns.yandex.ru/dns-query', ip: '77.88.8.8' });
     const rDns = safeParse('karin_dns_rem', { type: 'doh', url: 'https://1.1.1.1/dns-query', ip: '1.1.1.1' });
     const group = link.groupId ? appGroups.find(item => item.id === link.groupId) : undefined;
     await invoke('scenarios_prepare_connection', {
-        scenarioId: s.id,
+        scenarioId: id,
         vlessLink: link.url,
         routingState: group?.providerRouting || routingState,
         defaultOutbound: group?.providerRouting ? 'proxy' : defaultOutbound,
@@ -3855,6 +4017,367 @@ function initScenarios() {
     });
     // Start (or stop) the native watcher and rebuild the prepared connections when needed.
     scheduleScenarioSync(1200);
+}
+
+// **********************************
+// TUNNEL GUARD (check the tunnel, switch to a backup server)
+// **********************************
+// The check itself runs natively inside the VPN service, so it keeps working while the app is
+// closed. This module keeps the settings, prepares the backup connections ahead of time and
+// shows the state.
+type GuardAction = 'off' | 'profile' | 'best';
+interface GuardSettings { enabled: boolean; action: GuardAction; serverUrl: string | null; notify: boolean; interval: number; }
+interface GuardEvent { at: number; kind: 'off' | 'switch' | 'failed' | 'blocked'; from: string; to: string; }
+interface GuardStatus {
+    vpnUp?: boolean;
+    phase?: 'idle' | 'ok' | 'retry' | 'waiting' | 'switching';
+    fails?: number;
+    checkedAt?: number;
+    ms?: number;
+    events?: GuardEvent[];
+    seq?: number;
+    currentUrl?: string | null;
+}
+
+const GUARD_KEY = 'karin_guard';
+const GUARD_SEQ_KEY = 'karin_guard_seq';
+const GUARD_BAKE_KEY = 'karin_guard_bake_sig';
+const GUARD_INTERVALS = [15, 30, 60] as const; // how often a live tunnel is checked, seconds
+const GUARD_CONFIRM = 3;                       // a drop is this many failed checks in a row
+const GUARD_BEST_COUNT = 5;                    // backup servers prepared for "best by ping"
+
+function loadGuard(): GuardSettings {
+    const raw = safeParse(GUARD_KEY, {});
+    return {
+        enabled: raw.enabled !== false,
+        action: raw.action === 'profile' || raw.action === 'best' ? raw.action : 'off',
+        serverUrl: typeof raw.serverUrl === 'string' ? raw.serverUrl : null,
+        notify: raw.notify !== false,
+        interval: (GUARD_INTERVALS as readonly number[]).includes(raw.interval) ? raw.interval : 30,
+    };
+}
+
+let guard: GuardSettings = loadGuard();
+let guardStatus: GuardStatus = {};
+let guardSyncTimer: number | null = null;
+let guardSyncRunning = false;
+let guardSyncAgain = false;
+let guardStatusTimer: number | null = null;
+let guardStatusInFlight = false;
+
+function saveGuard() {
+    try { localStorage.setItem(GUARD_KEY, JSON.stringify(guard)); } catch { /* storage unavailable */ }
+    updateGuardCount();
+}
+
+function updateGuardCount() {
+    const el = document.getElementById('guard-settings-count');
+    if (!el) return;
+    el.textContent = !guard.enabled ? t('guard_count_off') : t('guard_act_' + guard.action);
+}
+
+function guardSeqSeen(): number {
+    try { return Number(localStorage.getItem(GUARD_SEQ_KEY)) || 0; } catch { return 0; }
+}
+
+function guardConnId(url: string): string {
+    let hash = 5381;
+    for (let i = 0; i < url.length; i++) hash = ((hash * 33) ^ url.charCodeAt(i)) >>> 0;
+    return 'guard_' + hash.toString(36);
+}
+
+// The servers the guard may switch to. "Best" takes the fastest by the last ping, one per server.
+function guardCandidates(): ProxyLink[] {
+    if (!guard.enabled) return [];
+    if (guard.action === 'profile') {
+        const link = guard.serverUrl ? appLinks.find(l => l.url === guard.serverUrl) : undefined;
+        return link ? [link] : [];
+    }
+    if (guard.action === 'best') {
+        const speed = (l: ProxyLink) => {
+            const result = serverPings.get(l.url);
+            return result && result.state === 'ok' ? result.ms : Number.MAX_SAFE_INTEGER;
+        };
+        const seen = new Set<string>();
+        return appLinks
+            .filter(l => serverPings.get(l.url)?.state !== 'fail')
+            .sort((a, b) => speed(a) - speed(b))
+            .filter(l => {
+                const id = linkIdentity(l.url);
+                if (seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            })
+            .slice(0, GUARD_BEST_COUNT);
+    }
+    return [];
+}
+
+// Everything a prepared backup connection depends on. When it changes the connections are rebuilt.
+function guardBakeSignature(list: ProxyLink[]): string {
+    return JSON.stringify({
+        servers: list.map(l => l.url),
+        links: appLinks.map(l => [l.url, l.groupId]),
+        groups: appGroups.map(g => [g.id, g.providerRouting || null]),
+        routing: routingState, defaultOutbound, zonePriority, allowProxyLan, appRoutingMode,
+        packages: Array.from(selectedAppPackages).sort(),
+        dns: [localStorage.getItem('karin_dns_dom'), localStorage.getItem('karin_dns_rem')],
+    });
+}
+
+async function runGuardSync() {
+    if (runtimeInfo.platform !== 'android') return;
+    if (guardSyncRunning) { guardSyncAgain = true; return; }
+    guardSyncRunning = true;
+    try {
+        const list = guardCandidates();
+        const signature = guardBakeSignature(list);
+        let stored: string | null = null;
+        try { stored = localStorage.getItem(GUARD_BAKE_KEY); } catch { /* storage unavailable */ }
+        const failed = new Set<string>();
+        if (list.length > 0 && signature !== stored) {
+            for (const link of list) {
+                try { await bakeConnection(guardConnId(link.url), link.url); } catch { failed.add(link.url); }
+            }
+            if (failed.size === 0) {
+                try { localStorage.setItem(GUARD_BAKE_KEY, signature); } catch { /* storage unavailable */ }
+            }
+        }
+        const current = activeLink || selectedProfileUrl;
+        await invoke('guard_sync', {
+            configJson: JSON.stringify({
+                enabled: guard.enabled,
+                action: guard.action,
+                interval: guard.interval,
+                notify: guard.notify,
+                confirm: GUARD_CONFIRM,
+                candidates: list
+                    .filter(l => !failed.has(l.url))
+                    .map(l => ({ id: guardConnId(l.url), url: l.url, label: getLinkDisplayName(l.url) })),
+                currentUrl: current || '',
+                currentLabel: current ? getLinkDisplayName(current) : '',
+                seqSeen: guardSeqSeen(),
+            }),
+        });
+    } catch (error) {
+        console.warn('guard sync failed', error);
+    } finally {
+        guardSyncRunning = false;
+        if (guardSyncAgain) { guardSyncAgain = false; scheduleGuardSync(); }
+    }
+    void refreshGuardStatus();
+}
+
+function scheduleGuardSync(delay = 400) {
+    if (runtimeInfo.platform !== 'android') return;
+    if (guardSyncTimer !== null) window.clearTimeout(guardSyncTimer);
+    guardSyncTimer = window.setTimeout(() => { guardSyncTimer = null; void runGuardSync(); }, delay);
+}
+
+// The guard can switch the server while the app is closed: the interface follows what is really running.
+function adoptGuardSwitch(status: GuardStatus) {
+    if (typeof status.seq !== 'number' || status.seq <= guardSeqSeen()) return;
+    try { localStorage.setItem(GUARD_SEQ_KEY, String(status.seq)); } catch { /* storage unavailable */ }
+    const url = status.currentUrl;
+    if (!url || !appLinks.some(l => l.url === url)) return;
+    selectedProfileUrl = url;
+    activeLink = url;
+    sessionStorage.setItem('karin_active_link', url);
+    saveData();
+    renderLinks();
+    updateHeroProfileName();
+    updateStatusUI();
+}
+
+async function refreshGuardStatus() {
+    if (runtimeInfo.platform !== 'android' || guardStatusInFlight) return;
+    guardStatusInFlight = true;
+    try {
+        const next = await invoke<GuardStatus>('guard_status');
+        guardStatus = next || {};
+        adoptGuardSwitch(guardStatus);
+        updateGuardLive();
+    } catch {
+        /* the status is only decoration */
+    } finally {
+        guardStatusInFlight = false;
+    }
+}
+
+function guardTimeText(at: number): string {
+    const d = new Date(at);
+    const time = d.toLocaleTimeString(currentLang, { hour: '2-digit', minute: '2-digit' });
+    if (new Date().toDateString() === d.toDateString()) return time;
+    return `${d.toLocaleDateString(currentLang, { day: '2-digit', month: '2-digit' })} ${time}`;
+}
+
+function guardEventText(e: GuardEvent): string {
+    const key = e.kind === 'switch' ? 'guard_ev_switch'
+        : e.kind === 'failed' ? 'guard_ev_failed'
+        : e.kind === 'blocked' ? 'guard_ev_blocked'
+        : 'guard_ev_off';
+    return t(key).replace('{server}', e.from).replace('{from}', e.from).replace('{to}', e.to);
+}
+
+function guardHealth(): { dot: string; title: string; sub: string } {
+    if (!guard.enabled) return { dot: 'off', title: t('guard_st_disabled'), sub: '' };
+    if (!guardStatus.vpnUp) return { dot: 'off', title: t('guard_st_idle'), sub: '' };
+    if (guardStatus.phase === 'switching') return { dot: 'warn', title: t('guard_st_switching'), sub: '' };
+    if (guardStatus.phase === 'waiting') return { dot: 'warn', title: t('guard_st_waiting'), sub: '' };
+    if ((guardStatus.fails || 0) > 0) {
+        return { dot: 'warn', title: t('guard_st_retry').replace('{n}', String(guardStatus.fails)).replace('{max}', String(GUARD_CONFIRM)), sub: '' };
+    }
+    if (guardStatus.checkedAt) {
+        const secs = Math.max(0, Math.round((Date.now() - guardStatus.checkedAt) / 1000));
+        const current = activeLink || selectedProfileUrl;
+        const sub = t('guard_st_checked')
+            .replace('{s}', String(secs))
+            .replace('{server}', current ? getLinkDisplayName(current) : '')
+            .replace('{ms}', String(guardStatus.ms || 0));
+        return { dot: 'ok', title: t('guard_st_ok'), sub };
+    }
+    return { dot: 'warn', title: t('guard_st_checking'), sub: '' };
+}
+
+// The live parts of the page are updated in place, so an open server list is not closed under the finger.
+function updateGuardLive() {
+    if (!document.getElementById('subpage-guard')?.classList.contains('open')) return;
+    const health = guardHealth();
+    const dot = document.getElementById('guard-dot');
+    if (dot) dot.className = `guard-dot ${health.dot}`;
+    const text = document.getElementById('guard-text');
+    if (text) text.innerHTML = `<b>${escapeHtml(health.title)}</b>${health.sub ? `<span>${escapeHtml(health.sub)}</span>` : ''}`;
+    const log = document.getElementById('guard-log');
+    if (log) {
+        const events = guardStatus.events || [];
+        log.innerHTML = events.length
+            ? events.map(e => `<div><i>${escapeHtml(guardTimeText(e.at))}</i> ${escapeHtml(guardEventText(e))}</div>`).join('')
+            : `<div>${escapeHtml(t('guard_log_empty'))}</div>`;
+    }
+}
+
+function guardActionDescription(): string {
+    if (guard.action === 'profile') return t('guard_desc_profile');
+    if (guard.action === 'best') return t('guard_desc_best');
+    return nativeVpnAlwaysOn ? `${t('guard_desc_off')} ${t('guard_desc_off_always_on')}` : t('guard_desc_off');
+}
+
+function guardDefaultServer(): string | null {
+    const other = appLinks.find(l => l.url !== selectedProfileUrl && l.url !== activeLink) || appLinks[0];
+    return other ? other.url : null;
+}
+
+function renderGuard() {
+    const host = document.getElementById('subpage-guard');
+    if (!host) return;
+    if (guard.action === 'profile' && !(guard.serverUrl && appLinks.some(l => l.url === guard.serverUrl)) && appLinks.length) {
+        guard.serverUrl = guardDefaultServer();
+        saveGuard();
+    }
+    const actions: GuardAction[] = ['off', 'profile', 'best'];
+    const serverPicker = guard.action === 'profile'
+        ? (appLinks.length
+            ? `<select id="guard-server" class="guard-select">${appLinks.map(l => `<option value="${escapeHtml(l.url)}"${l.url === guard.serverUrl ? ' selected' : ''}>${escapeHtml(getLinkDisplayName(l.url))}</option>`).join('')}</select>`
+            : `<div class="guard-warn">${escapeHtml(t('guard_no_servers'))}</div>`)
+        : '';
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${escapeHtml(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 22)}</button>
+            <div class="subpage-title">${escapeHtml(t('guard_title'))}</div>
+        </div>
+        <div class="subpage-body">
+            <div class="guard-health">
+                <span id="guard-dot" class="guard-dot off"></span>
+                <div id="guard-text" class="guard-health-text"></div>
+                <label class="switch"><input type="checkbox" id="guard-enabled" ${guard.enabled ? 'checked' : ''}><span class="slider"></span></label>
+            </div>
+            <div id="guard-log" class="guard-log"></div>
+            <div class="guard-h">${escapeHtml(t('guard_when'))}</div>
+            <div class="scn-seg" id="guard-action">
+                ${actions.map(a => `<button type="button" class="scn-seg-btn${guard.action === a ? ' active' : ''}" data-guard-action="${a}">${escapeHtml(t('guard_act_' + a))}</button>`).join('')}
+            </div>
+            <div class="guard-card">
+                <span class="guard-radio"></span>
+                <div class="guard-card-text">
+                    <b>${escapeHtml(t('guard_card_' + guard.action))}</b>
+                    <span>${escapeHtml(guardActionDescription())}</span>
+                    ${serverPicker}
+                </div>
+            </div>
+            <div class="guard-row">
+                <div class="guard-row-text"><b>${escapeHtml(t('guard_notify'))}</b><span>${escapeHtml(t('guard_notify_desc'))}</span></div>
+                <label class="switch"><input type="checkbox" id="guard-notify" ${guard.notify ? 'checked' : ''}><span class="slider"></span></label>
+            </div>
+            <div class="guard-row">
+                <div class="guard-row-text"><b>${escapeHtml(t('guard_interval'))}</b></div>
+                <div class="scn-seg guard-interval">
+                    ${GUARD_INTERVALS.map(n => `<button type="button" class="scn-seg-btn${guard.interval === n ? ' active' : ''}" data-guard-interval="${n}">${escapeHtml(t('guard_sec').replace('{n}', String(n)))}</button>`).join('')}
+                </div>
+            </div>
+            <p class="guard-note">${escapeHtml(t('guard_note_confirm').replace('{s}', String(guard.interval * GUARD_CONFIRM)))} ${escapeHtml(t('guard_note_internet'))}</p>
+        </div>`;
+    updateGuardLive();
+}
+
+function openGuardPage() {
+    renderGuard();
+    openSubpage('subpage-guard');
+    void refreshGuardStatus();
+    if (guardStatusTimer !== null) window.clearInterval(guardStatusTimer);
+    guardStatusTimer = window.setInterval(() => {
+        if (!document.getElementById('subpage-guard')?.classList.contains('open')) {
+            if (guardStatusTimer !== null) window.clearInterval(guardStatusTimer);
+            guardStatusTimer = null;
+            return;
+        }
+        void refreshGuardStatus();
+    }, 2000);
+}
+
+function initGuard() {
+    updateGuardCount();
+    document.getElementById('btn-open-guard')?.addEventListener('click', openGuardPage);
+    const page = document.getElementById('subpage-guard');
+    page?.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const every = target.closest<HTMLElement>('[data-guard-interval]');
+        if (every) {
+            const n = Number(every.dataset.guardInterval);
+            if (!(GUARD_INTERVALS as readonly number[]).includes(n)) return;
+            guard.interval = n;
+            saveGuard();
+            renderGuard();
+            scheduleGuardSync(100);
+            return;
+        }
+        const btn = target.closest<HTMLElement>('[data-guard-action]');
+        if (!btn) return;
+        const action = btn.dataset.guardAction;
+        if (action !== 'off' && action !== 'profile' && action !== 'best') return;
+        guard.action = action;
+        if (action === 'profile' && !(guard.serverUrl && appLinks.some(l => l.url === guard.serverUrl))) guard.serverUrl = guardDefaultServer();
+        saveGuard();
+        renderGuard();
+        scheduleGuardSync(100);
+        // "Best by ping" needs fresh measurements: take them right away if there are none yet.
+        if (action === 'best' && !appLinks.some(l => serverPings.get(l.url)?.state === 'ok')) void pingAllServers();
+    });
+    page?.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement | HTMLSelectElement;
+        if (target.id === 'guard-enabled') {
+            guard.enabled = (target as HTMLInputElement).checked;
+        } else if (target.id === 'guard-notify') {
+            guard.notify = (target as HTMLInputElement).checked;
+        } else if (target.id === 'guard-server') {
+            guard.serverUrl = (target as HTMLSelectElement).value || null;
+        } else {
+            return;
+        }
+        saveGuard();
+        updateGuardLive();
+        scheduleGuardSync(100);
+    });
+    scheduleGuardSync(1800);
 }
 
 // **********************************

@@ -70,7 +70,8 @@ internal class ScenarioStore(context: Context) {
         val secure = SecureStorage(appContext)
         val remaining = HashSet<String>()
         for (id in known) {
-            if (id in keepIds) remaining.add(id) else secure.remove(connectionKey(id))
+            // Backup servers of the tunnel guard are managed by GuardStore, not by the scenario list.
+            if (id in keepIds || id.startsWith(GuardStore.ID_PREFIX)) remaining.add(id) else secure.remove(connectionKey(id))
         }
 
         prefs.edit()
@@ -79,6 +80,16 @@ internal class ScenarioStore(context: Context) {
             .putStringSet(KEY_CONNECTION_IDS, remaining)
             .apply()
         return changed
+    }
+
+    /** Drops prepared backup connections the app no longer lists. */
+    fun pruneGuardConnections(keep: Set<String>) {
+        val known = prefs.getStringSet(KEY_CONNECTION_IDS, emptySet()) ?: emptySet()
+        val stale = known.filter { it.startsWith(GuardStore.ID_PREFIX) && it !in keep }
+        if (stale.isEmpty()) return
+        val secure = SecureStorage(appContext)
+        stale.forEach { secure.remove(connectionKey(it)) }
+        prefs.edit().putStringSet(KEY_CONNECTION_IDS, HashSet(known).apply { removeAll(stale.toSet()) }).apply()
     }
 
     fun saveConnection(id: String, payload: String) {

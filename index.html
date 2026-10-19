@@ -87,7 +87,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.46</div>
+      <div class="app-version-text">v 0.1.0-alpha.47</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -206,6 +206,7 @@
 
         <div class="drawer-section-label">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01"/><path d="M7 16.5h.01"/></svg><span data-i18n="config_servers">Мои серверы</span><span id="links-count" class="drawer-count"></span>
+          <button id="btn-sub-refresh" class="drawer-ping drawer-refresh" type="button" data-i18n-title="sub_refresh_title" title="Обновить подписки" aria-label="Обновить подписки"><svg class="icon-idle" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-15.5-6.2L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15.5 6.2L21 16"/><path d="M16 16h5v5"/></svg><svg class="icon-done" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><svg class="icon-fail" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v8"/><path d="M12 18h.01"/></svg></button>
           <button id="btn-ping-all" class="drawer-ping" type="button"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span id="btn-ping-label" data-i18n="ping_btn">Пинг</span></button>
         </div>
 
@@ -415,6 +416,13 @@
           <span class="slider"></span>
         </label>
       </div>
+      <div class="settings-row setting-card">
+        <label class="setting-card-title" data-i18n="settings_sub_autoupdate">Обновлять подписки при запуске:</label>
+        <label class="switch">
+          <input type="checkbox" id="sub-autoupdate-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
       <button id="btn-open-scenarios" class="setting-card settings-link-row" type="button">
         <span class="settings-link-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg></span>
         <span class="settings-link-text">
@@ -434,38 +442,24 @@
         </div>
         <div class="setting-card-description" data-i18n="settings_kill_switch_note">Блокирует весь трафик, если туннель неожиданно оборвётся.</div>
       </div>
-      <div id="android-system-vpn-section" class="setting-card settings-detail-card" style="display:none;">
-        <div class="setting-card-title" data-i18n="settings_android_kill_switch">Android Kill Switch</div>
-        <div class="setting-card-description" data-i18n="settings_android_kill_switch_note">Use Android Always-on VPN and Block connections without VPN for system-level protection.</div>
-        <div id="android-system-vpn-status" class="setting-card-note"></div>
-        <button id="android-vpn-settings-btn" class="small-btn setting-card-action" type="button" data-i18n="settings_android_open_vpn">Open VPN settings</button>
-      </div>
-      <div id="android-tile-section" class="setting-card settings-detail-card" style="display:none;">
-        <div class="setting-card-title" data-i18n="settings_tile_title">Quick settings tile</div>
-        <div class="setting-card-description" data-i18n="settings_tile_desc">Connect and disconnect from the notification shade without opening the app.</div>
-        <button id="android-tile-btn" class="small-btn setting-card-action" type="button" data-i18n="settings_tile_add">Add tile</button>
-        <div id="android-tile-note" class="setting-card-note"></div>
-      </div>
-      <div id="android-stability-section" class="setting-card settings-detail-card android-stability-card" style="display:none;">
-        <div class="setting-card-title" data-i18n="settings_stability_title">Permissions and stability</div>
-        <div class="setting-card-description" data-i18n="settings_stability_desc">Live diagnostics for Android settings that affect reliable background VPN operation.</div>
-        <div id="android-stability-summary" class="stability-summary" role="status" aria-live="polite"></div>
-        <div id="android-stability-list" class="stability-diagnostics"></div>
-        <button id="android-stability-refresh" class="small-btn stability-refresh" type="button" data-i18n="settings_stability_refresh">Check again</button>
-      </div>
-      <div id="android-app-routing-section" class="setting-card settings-detail-card" style="display:none;">
-        <div class="setting-card-title" data-i18n="settings_app_routing_title">Per-app VPN</div>
-        <div class="setting-card-description" data-i18n="settings_app_routing_desc">Choose which Android applications use the VPN tunnel.</div>
-        <div class="app-routing-controls">
-          <select id="android-app-routing-mode">
-            <option value="all" data-i18n="settings_app_routing_all">All apps</option>
-            <option value="allowlist" data-i18n="settings_app_routing_allowlist">Only selected</option>
-            <option value="denylist" data-i18n="settings_app_routing_denylist">Bypass selected</option>
-          </select>
-          <button id="android-app-routing-choose" class="small-btn" type="button" data-i18n="settings_app_routing_choose">Select apps</button>
-        </div>
-        <div id="android-app-routing-summary" class="setting-card-note"></div>
-      </div>
+      <button id="btn-open-guard" class="setting-card settings-link-row" type="button">
+        <span class="settings-link-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        <span class="settings-link-text">
+          <span class="settings-link-title" data-i18n="guard_title">При обрыве связи</span>
+          <span class="settings-link-desc" data-i18n="guard_settings_desc">Проверка туннеля и запасной сервер</span>
+        </span>
+        <span id="guard-settings-count" class="drawer-count"></span>
+        <span class="settings-link-chevron"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
+      </button>
+      <button id="btn-open-permissions" class="setting-card settings-link-row" type="button">
+        <span class="settings-link-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <span class="settings-link-text">
+          <span class="settings-link-title" data-i18n="perm_title">Разрешения</span>
+          <span class="settings-link-desc" data-i18n="perm_settings_desc">Настройки Android для стабильной работы VPN</span>
+        </span>
+        <span id="perm-settings-count" class="drawer-count"></span>
+        <span class="settings-link-chevron"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
+      </button>
     </div>
   </div>
   
@@ -481,6 +475,19 @@
   <div id="subpage-zone" class="subpage" aria-hidden="true"></div>
   <div id="subpage-patches" class="subpage" aria-hidden="true"></div>
   <div id="subpage-scenarios" class="subpage" aria-hidden="true"></div>
+  <div id="subpage-guard" class="subpage" aria-hidden="true"></div>
+  <div id="subpage-permissions" class="subpage" aria-hidden="true">
+    <div class="subpage-header">
+      <button type="button" class="subpage-back" data-subpage-close data-i18n-aria-label="nav_back" aria-label="Back"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+      <div class="subpage-title" data-i18n="perm_title">Разрешения</div>
+    </div>
+    <div class="subpage-body">
+      <p class="subpage-lead" data-i18n="perm_intro">Настройки Android, от которых зависит стабильная работа VPN в фоне.</p>
+      <div id="android-stability-summary" class="stability-summary" role="status" aria-live="polite"></div>
+      <div id="android-stability-list" class="stability-diagnostics"></div>
+      <button id="android-stability-refresh" class="small-btn stability-refresh" type="button" data-i18n="settings_stability_refresh">Check again</button>
+    </div>
+  </div>
 
   <div id="qr-overlay" class="qr-overlay" aria-hidden="true">
     <div class="qr-frame"><i></i><i></i><i></i><i></i></div>

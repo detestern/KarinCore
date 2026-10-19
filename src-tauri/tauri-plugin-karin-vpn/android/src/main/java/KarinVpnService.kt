@@ -322,6 +322,7 @@ class KarinVpnService : VpnService() {
             updateNotification(getString(R.string.notification_connected))
             updateHomeScreenWidget()
             recordLog("INFO", "VPN started, fd=${pfd.fd}, core=$coreVersion")
+            GuardEngine.onTunnelUp(this)
         }
     }
 
@@ -545,6 +546,7 @@ class KarinVpnService : VpnService() {
         updateHomeScreenWidget()
 
         if (stopService) {
+            GuardEngine.onTunnelDown()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -558,6 +560,7 @@ class KarinVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        GuardEngine.onTunnelDown()
         synchronized(stateLock) {
             stopTunnelLocked(stopService = false)
         }

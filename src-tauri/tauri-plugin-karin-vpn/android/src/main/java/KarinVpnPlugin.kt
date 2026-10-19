@@ -73,6 +73,11 @@ class ScenariosSyncArgs {
 }
 
 @InvokeArg
+class GuardSyncArgs {
+    lateinit var configJson: String
+}
+
+@InvokeArg
 class ScenarioConnectionArgs {
     lateinit var id: String
     lateinit var payload: String
@@ -627,6 +632,28 @@ class KarinVpnPlugin(private val activity: Activity) : Plugin(activity) {
             })
         } catch (ex: Exception) {
             invoke.reject(ex.message ?: "SCENARIOS_SYNC_FAILED")
+        }
+    }
+
+    @Command
+    fun guardSync(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(GuardSyncArgs::class.java)
+            GuardStore(activity).sync(args.configJson)
+            ScenarioNotifier.ensureChannels(activity)
+            GuardEngine.onSettingsChanged(activity)
+            invoke.resolve(JSObject(GuardEngine.status(activity).toString()))
+        } catch (ex: Exception) {
+            invoke.reject(ex.message ?: "GUARD_SYNC_FAILED")
+        }
+    }
+
+    @Command
+    fun guardStatus(invoke: Invoke) {
+        try {
+            invoke.resolve(JSObject(GuardEngine.status(activity).toString()))
+        } catch (ex: Exception) {
+            invoke.reject(ex.message ?: "GUARD_STATUS_FAILED")
         }
     }
 

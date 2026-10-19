@@ -38,4 +38,8 @@
     <string name="scenario_err_vpn_permission">Open KarinCore and allow the VPN connection first.</string>
     <string name="scenario_err_always_on">Always-on VPN is enabled in Android settings, so it cannot be turned off here.</string>
     <string name="scenario_err_start">Android did not allow starting this from the background. Open KarinCore.</string>
+    <string name="guard_note_switch">%1$s stopped answering → switched to %2$s</string>
+    <string name="guard_note_off">%1$s stopped answering → VPN turned off</string>
+    <string name="guard_note_failed">%1$s stopped answering, backups did not work → VPN turned off</string>
+    <string name="guard_note_blocked">%1$s stopped answering → VPN left on (Always-on VPN)</string>
 </resources>

@@ -23,8 +23,8 @@ use tauri_plugin_karin_vpn::SaveDocumentRequest;
 use tauri_plugin_karin_vpn::SecureStateRequest;
 #[cfg(target_os = "android")]
 use tauri_plugin_karin_vpn::{
-    KarinVpnExt, ScenarioConnectionRequest, ScenarioPermissionRequest, ScenariosSyncRequest,
-    StartRequest,
+    GuardSyncRequest, KarinVpnExt, ScenarioConnectionRequest, ScenarioPermissionRequest,
+    ScenariosSyncRequest, StartRequest,
 };
 
 // **********************************
@@ -3498,6 +3498,32 @@ fn scenarios_sync(_scenarios_json: String, _notify_level: String) -> Result<Valu
 
 #[cfg(target_os = "android")]
 #[tauri::command]
+fn guard_sync(app: tauri::AppHandle, config_json: String) -> Result<Value, String> {
+    app.karin_vpn()
+        .guard_sync(GuardSyncRequest { config_json })
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn guard_sync(_config_json: String) -> Result<Value, String> {
+    Ok(Value::Null)
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn guard_status(app: tauri::AppHandle) -> Result<Value, String> {
+    app.karin_vpn().guard_status().map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn guard_status() -> Result<Value, String> {
+    Ok(Value::Null)
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
 fn scenarios_status(app: tauri::AppHandle) -> Result<Value, String> {
     app.karin_vpn()
         .scenarios_status()
@@ -3943,6 +3969,8 @@ pub fn run() {
             request_android_vpn_permission,
             scenarios_prepare_connection,
             scenarios_sync,
+            guard_sync,
+            guard_status,
             scenarios_status,
             scenarios_request_permission
         ])
