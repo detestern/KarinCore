@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { exit, onBackButtonPress } from "@tauri-apps/api/app";
-import { readText as readClipboardText } from "@tauri-apps/plugin-clipboard-manager";
+import { readText as readClipboardText, writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { cancel as cancelBarcodeScan, checkPermissions as checkCameraPermission, Format as BarcodeFormat, openAppSettings as openCameraSettings, requestPermissions as requestCameraPermission, scan as scanBarcode } from "@tauri-apps/plugin-barcode-scanner";
 import projectChangelog from "../CHANGELOG.md?raw";
 import packageMetadata from "../package.json";
@@ -1540,6 +1540,7 @@ const finder = {
     polling: false,
     run: 0,                        // номер запуска: ответы от отменённого поиска игнорируются
     busy: false,                   // идёт переподключение ядра
+    diagCopied: false,
     restorePending: false,         // ядро ещё пишет debug-журнал и ждёт возврата в обычный режим
     snapshot: null as FinderSnapshot | null,
     bgCount: 0,
@@ -1583,9 +1584,9 @@ function finderStopTimer() {
 }
 
 /** Просит Rust стереть найденное и журнал; если ядро писало debug-журнал, помечает возврат. */
-async function finderStopCore() {
+async function finderStopCore(keepDiag = false) {
     try {
-        const restore = await invoke<boolean>('finder_stop');
+        const restore = await invoke<boolean>('finder_stop', { keepDiag });
         if (restore) finder.restorePending = true;
     } catch { /* сессии могло и не быть */ }
 }
@@ -1608,6 +1609,7 @@ async function finderReset(stage: FinderStage = 'bounds') {
     finder.choice.clear();
     finder.showAll = false;
     finder.timedOut = false;
+    finder.diagCopied = false;
     finder.error = '';
     await finderStopCore();
 }
@@ -1712,7 +1714,17 @@ async function finderShowResult(timedOut: boolean) {
     renderFinder();
     // Найденное уже у нас; из памяти и с диска адреса стираем сразу.
     // Обычный режим журнала ядро получит при добавлении правил, повторной проверке или выходе.
-    await finderStopCore();
+    await finderStopCore(true);
+}
+
+/** Копирует хвост журнала поиска в буфер обмена, чтобы его можно было отправить на разбор. */
+async function finderCopyDiag() {
+    try {
+        const text = await invoke<string>('finder_diag');
+        await writeClipboardText(text);
+        finder.diagCopied = true;
+        renderFinder();
+    } catch { /* буфер обмена недоступен */ }
 }
 
 async function finderRecheck() {
@@ -1919,6 +1931,7 @@ function finderResultHtml(): string {
         ${hint}
         ${items.length === 0 ? `<div class="finder-empty">${escapeHtml(t('fm_empty'))}</div>` : `<div class="finder-list">${rows}</div>`}
         ${hiddenMore > 0 ? `<button type="button" class="finder-more" data-finder-action="more">${escapeHtml(t('fm_more').replace('{n}', String(hiddenMore)))}</button>` : ''}
+        <button type="button" class="finder-diag" data-finder-action="diag">${escapeHtml(finder.diagCopied ? t('fm_diag_done') : t('fm_diag'))}</button>
         <div class="finder-foot">
             ${selectable.length > 0 ? `<div class="finder-seg" role="group">
                 <button type="button" class="${noneMoved ? 'is-on' : ''}" data-finder-action="keep" aria-pressed="${noneMoved}">${escapeHtml(t(finder.from === 'proxy' ? 'fm_via_proxy' : 'fm_via_direct'))}</button>
@@ -2032,6 +2045,7 @@ function initFinder() {
             case 'all': finderSetAll(true); break;
             case 'keep': finderSetAll(false); break;
             case 'more': finder.showAll = true; renderFinder(); break;
+            case 'diag': void finderCopyDiag(); break;
             case 'close': closeSubpages(); break;
         }
     });

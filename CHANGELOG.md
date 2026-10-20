@@ -4,6 +4,11 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.49] - 2026-10-21
+
+### Added
+- Routing Manager: a "Copy the log for diagnostics" link under the result list. It copies the last lines of the search log (kept in memory only until you leave the screen) so it can be sent for analysis. The lines contain the addresses opened during the search, so look before you share.
+
 ## [0.1.0-alpha.48] - 2026-10-21
 
 ### Added

@@ -3947,6 +3947,7 @@ pub fn run() {
             finder::finder_poll,
             finder::finder_result,
             finder::finder_stop,
+            finder::finder_diag,
             start_proxy,
             stop_proxy,
             fetch_subscription,

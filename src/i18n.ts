@@ -1,5 +1,7 @@
 export const translations: Record<string, Record<string, string>> = {
   en: {
+    fm_diag: "Copy the log for diagnostics",
+    fm_diag_done: "Log copied",
     fm_open: "Routing Manager",
     fm_title: "Routing Manager",
     profile_selected: "Selected",
@@ -495,6 +497,8 @@ export const translations: Record<string, Record<string, string>> = {
     perm_intro: "Android settings that keep the VPN running reliably in the background."
   },
   ru: {
+    fm_diag: "Скопировать журнал для диагностики",
+    fm_diag_done: "Журнал скопирован",
     fm_open: "Менеджер маршрутизации",
     fm_title: "Менеджер маршрутизации",
     profile_selected: "Выбран",
@@ -990,6 +994,8 @@ export const translations: Record<string, Record<string, string>> = {
     perm_intro: "Настройки Android, от которых зависит стабильная работа VPN в фоне."
   },
   fr: {
+    fm_diag: "Copier le journal pour le diagnostic",
+    fm_diag_done: "Journal copié",
     fm_open: "Gestionnaire de routage",
     fm_title: "Gestionnaire de routage",
     profile_selected: "Sélectionné",
@@ -1351,6 +1357,8 @@ logs_export_diagnostics: "Exporter le diagnostic", logs_exporting: "Exportation.
     perm_intro: "Réglages Android dont dépend le bon fonctionnement du VPN en arrière-plan."
   },
   zh: {
+    fm_diag: "复制日志用于诊断",
+    fm_diag_done: "日志已复制",
     fm_open: "路由管理器",
     fm_title: "路由管理器",
     profile_selected: "已选",
@@ -1712,6 +1720,8 @@ logs_export_diagnostics: "导出诊断", logs_exporting: "正在导出...", logs
     perm_intro: "影响 VPN 在后台稳定运行的 Android 设置。"
   },
   tr: {
+    fm_diag: "Tanılama için günlüğü kopyala",
+    fm_diag_done: "Günlük kopyalandı",
     fm_open: "Yönlendirme Yöneticisi",
     fm_title: "Yönlendirme Yöneticisi",
     profile_selected: "Seçili",

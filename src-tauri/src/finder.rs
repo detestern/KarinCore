@@ -30,6 +30,28 @@ const DEFAULT_GEOSITE_PATH: &str = "geosite.dat";
 
 static GEOSITE_PATH: Mutex<Option<String>> = Mutex::new(None);
 static LOG_OVERRIDE: Mutex<Option<String>> = Mutex::new(None);
+/// Хвост журнала последнего поиска для кнопки «Скопировать журнал». Хранится только в памяти
+/// и стирается при закрытии менеджера.
+static DIAG: Mutex<String> = Mutex::new(String::new());
+const DIAG_LINES: usize = 220;
+const DIAG_LINE_CHARS: usize = 260;
+
+fn set_diag(text: String) {
+    if let Ok(mut g) = DIAG.lock() {
+        *g = text;
+    }
+}
+
+fn diag_tail(path: &str) -> String {
+    let (text, _) = read_new(path, 0);
+    let lines: Vec<&str> = text.lines().collect();
+    let from = lines.len().saturating_sub(DIAG_LINES);
+    lines[from..]
+        .iter()
+        .map(|l| l.chars().take(DIAG_LINE_CHARS).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 /// Путь debug-журнала, который нужно включить в конфиге ядра, пока идёт поиск (только Android).
 pub fn log_override() -> Option<String> {
@@ -961,6 +983,7 @@ pub async fn finder_result(state: State<'_, FinderState>, rules: Value) -> Resul
     let mut guard = state.slot();
     let session = guard.as_mut().ok_or("session")?;
     session.ingest();
+    set_diag(diag_tail(&session.error_path));
     let c = session.classify(&m);
     Ok(Outcome {
         items: c.items,
@@ -972,7 +995,13 @@ pub async fn finder_result(state: State<'_, FinderState>, rules: Value) -> Resul
 /// Стереть всё найденное из памяти и журнал. Возвращает `true`, если ядро нужно
 /// переподключить, чтобы вернуть обычный режим журнала (Android).
 #[tauri::command]
-pub async fn finder_stop(state: State<'_, FinderState>) -> Result<bool, String> {
+pub async fn finder_stop(
+    state: State<'_, FinderState>,
+    keep_diag: Option<bool>,
+) -> Result<bool, String> {
+    if keep_diag != Some(true) {
+        set_diag(String::new());
+    }
     let path = state.slot().take().map(|s| s.error_path);
     let restore = log_override().is_some();
     set_log_override(None);
@@ -982,6 +1011,12 @@ pub async fn finder_stop(state: State<'_, FinderState>) -> Result<bool, String> 
         }
     }
     Ok(restore)
+}
+
+/// Последние строки журнала поиска, чтобы скопировать их для разбора (пока открыт экран результата).
+#[tauri::command]
+pub async fn finder_diag() -> Result<String, String> {
+    Ok(DIAG.lock().map(|g| g.clone()).unwrap_or_default())
 }
 
 #[cfg(test)]
