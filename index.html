@@ -87,7 +87,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 0.1.0-alpha.47</div>
+      <div class="app-version-text">v 0.1.0-alpha.48</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -223,7 +223,7 @@
       </div>
 
       <div class="routing-summary">
-        <div class="routing-summary-row">
+        <div id="btn-open-route-profiles" class="routing-profile-btn" role="button" tabindex="0">
           <div class="routing-summary-text">
             <span class="routing-summary-label" data-i18n="routing_selected_profile">Выбранный профиль</span>
             <span id="routing-profile-name" class="routing-summary-value">—</span>
@@ -231,11 +231,13 @@
           <button id="btn-route-action" class="route-share-btn" type="button" aria-label="Share">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share-icon lucide-share"><path d="M12 2v13"/><path d="m16 6-4-4-4 4"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/></svg>
           </button>
+          <svg class="routing-profile-chevron" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
         </div>
-        <div class="routing-summary-row">
-          <span class="routing-summary-label" data-i18n="routing_default_route">Маршрут по умолчанию</span>
-          <span id="default-outbound-label" class="routing-summary-value">Proxy</span>
-        </div>
+        <button id="btn-open-finder" class="finder-open-btn" type="button">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/></svg>
+          <span data-i18n="fm_open">Менеджер маршрутизации</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+        </button>
       </div>
 
       <p id="routing-description" class="section-description" data-i18n="routing_hint">
@@ -310,14 +312,6 @@
           </div>
         </div>
         
-        <div class="profiles-section">
-            <h3 style="font-size: 15px; display: flex; align-items: center; gap: 8px;" data-i18n="saved_profiles">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
-                Сохраненные профили
-            </h3>
-            <div id="routing-profiles-list"></div>
-        </div>
-
         <div class="routing-toggles">
         <div class="setting-card routing-option-card">
           <div class="setting-card-copy">
@@ -473,6 +467,8 @@
   </div>
 
   <div id="subpage-zone" class="subpage" aria-hidden="true"></div>
+  <div id="subpage-profiles" class="subpage" aria-hidden="true"></div>
+  <div id="subpage-finder" class="subpage" aria-hidden="true"></div>
   <div id="subpage-patches" class="subpage" aria-hidden="true"></div>
   <div id="subpage-scenarios" class="subpage" aria-hidden="true"></div>
   <div id="subpage-guard" class="subpage" aria-hidden="true"></div>

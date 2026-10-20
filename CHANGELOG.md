@@ -4,6 +4,17 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.48] - 2026-10-21
+
+### Added
+- Routing Manager (Routing -> Routing Manager). It finds the addresses that break a site or a video and adds them to your rules. Choose what is wrong ("the site blocks the VPN address" or "the site does not open without VPN") and when it happens (after the page loads, or when the site opens), then repeat the action that fails. The app records for at most 60 seconds per step, hides ads and analytics and addresses your rules already cover, groups the rest by site and puts the broken ones first. Pick the addresses, press Add rules and the connection is refreshed. Everything the search saw is erased as soon as it is done.
+- While the search runs, the app turns on a detailed core log in its private folder and reconnects the VPN once; when the search ends, the log file is deleted and the VPN reconnects once more with the normal log level. If you leave the screen or press Back, this happens at once.
+- Saved profiles have their own page: tap the "Selected profile" card on the Routing screen. The current profile is marked "Selected".
+
+### Changed
+- Routing screen is shorter: the saved profiles list moved to its own page, the "Default route" row is gone (the default zone carries the "Default" badge, now tinted in the zone colour), and a "Routing Manager" button took its place.
+- The Routing Manager is unavailable while the selected connection uses routing from its subscription, because those rules replace your own.
+
 ## [0.1.0-alpha.47] - 2026-10-19
 
 ### Added

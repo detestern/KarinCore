@@ -15,6 +15,7 @@ use tauri::{Manager, RunEvent};
 use url::Url;
 
 mod diag;
+mod finder;
 
 use tauri_plugin_karin_vpn::InstalledApp;
 #[cfg(target_os = "android")]
@@ -3325,8 +3326,13 @@ async fn build_android_start_request(
         1500
     };
 
+    // Менеджер маршрутизации включает debug-журнал только на время поиска.
+    let log_config = match finder::log_override() {
+        Some(path) => json!({ "loglevel": "debug", "error": path, "access": "none" }),
+        None => json!({ "loglevel": "warning" }),
+    };
     let config = json!({
-        "log": { "loglevel": "warning" },
+        "log": log_config,
         "dns": dns_config,
         "routing": runtime_routing,
         "inbounds": [
@@ -3934,7 +3940,13 @@ pub fn run() {
         .manage(ProxyState {
             auth_token: Mutex::new(None),
         })
+        .manage(finder::FinderState::default())
         .invoke_handler(tauri::generate_handler![
+            finder::finder_start,
+            finder::finder_mark_background,
+            finder::finder_poll,
+            finder::finder_result,
+            finder::finder_stop,
             start_proxy,
             stop_proxy,
             fetch_subscription,

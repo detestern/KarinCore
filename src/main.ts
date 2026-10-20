@@ -256,7 +256,6 @@ const btnDisconnect = document.getElementById('btn-disconnect') as HTMLButtonEle
 const btnPing = document.getElementById('btn-ping') as HTMLButtonElement | null;
 const statusIpBox = document.getElementById('status-ip-box') as HTMLDivElement | null;
 const statusIp = document.getElementById('status-ip') as HTMLSpanElement | null;
-const defaultOutboundLabel = document.getElementById('default-outbound-label') as HTMLSpanElement | null;
 const btnMenu = document.getElementById('btn-menu') as HTMLButtonElement | null;
 const sidebar = document.getElementById('sidebar') as HTMLDivElement | null;
 const overlay = document.getElementById('overlay') as HTMLDivElement | null;
@@ -543,6 +542,7 @@ function updateUIStrings() {
         if (key) el.setAttribute('aria-label', t(key));
     });
     diagnostics?.refreshText();
+    refreshFinderIfOpen();
 }
 
 // **********************************
@@ -1128,7 +1128,7 @@ function initSubscriptionUpdates() {
     if (subAutoEnabled()) window.setTimeout(() => { void refreshSubscriptions(false); }, 3000);
 }
 
-async function connectProxy(link: string) {
+async function connectProxy(link: string, reapply = false): Promise<boolean> {
     heroConnectInFlight = true;
     setHeroPhase('connecting');
     try {
@@ -1139,7 +1139,7 @@ async function connectProxy(link: string) {
         if (appRoutingMode === 'allowlist' && selectedAppPackages.size === 0) {
             alert(t('settings_app_routing_required'));
             if(statusText) statusText.innerText = t('status_inactive');
-            return;
+            return false;
         }
 
         const linkEntry = appLinks.find(item => item.url === link);
@@ -1175,12 +1175,15 @@ async function connectProxy(link: string) {
             renderLinks(); 
             renderRouting();
             scheduleGuardSync(800);
-            typeKarinMessage('karin_connect_ok');
+            if (!reapply) typeKarinMessage('karin_connect_ok');
+            return true;
         }
+        return false;
     } catch (error) { 
         alert(`Core Error: ${error}`); 
         if(statusText) statusText.innerText = t('status_inactive'); 
         typeKarinMessage('karin_connect_fail');
+        return false;
     } finally {
         heroConnectInFlight = false;
         setHeroPhase(computeHeroPhase());
@@ -1436,7 +1439,7 @@ function initPasteAndQr() {
 // **********************************
 // SUBPAGES (routing zone, patch notes) & SWIPES
 // **********************************
-type SubpageId = 'subpage-zone' | 'subpage-patches' | 'subpage-scenarios' | 'subpage-guard' | 'subpage-permissions';
+type SubpageId = 'subpage-zone' | 'subpage-profiles' | 'subpage-finder' | 'subpage-patches' | 'subpage-scenarios' | 'subpage-guard' | 'subpage-permissions';
 let openZone: ZoneKey | null = null;
 
 const ZONE_META: Record<ZoneKey, { label: string, color: string, descKey: string, icon: string }> = {
@@ -1475,11 +1478,563 @@ function isSubpageOpen(): boolean {
 }
 
 function closeSubpages() {
+    const finderWasOpen = document.getElementById('subpage-finder')?.classList.contains('open') === true;
     document.querySelectorAll<HTMLElement>('.subpage.open').forEach(el => {
         el.classList.remove('open');
         el.setAttribute('aria-hidden', 'true');
     });
     openZone = null;
+    if (finderWasOpen) onFinderPageClosed();
+}
+
+// **********************************
+// ROUTING: SAVED PROFILES PAGE
+// Список профилей спрятан за плашкой «Выбранный профиль» на странице маршрутизации.
+// **********************************
+function renderProfilesSubpage() {
+    const host = document.getElementById('subpage-profiles');
+    if (!host) return;
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${escapeHtml(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 22)}</button>
+            <div class="subpage-title">${escapeHtml(t('saved_profiles'))}</div>
+        </div>
+        <div class="subpage-body"><div id="routing-profiles-list" class="profiles-list"></div></div>
+    `;
+    renderRoutingProfiles();
+}
+
+function openProfilesPage() {
+    renderProfilesSubpage();
+    openSubpage('subpage-profiles');
+}
+
+// **********************************
+// ROUTING MANAGER (address finder)
+// Страница «Менеджер маршрутизации»: ищет адреса, из-за которых сайт или видео не работает.
+// Журнал читает и фильтрует Rust (finder.rs); здесь — шаги, таймер 60 секунд на этап
+// и выбор маршрута для каждого найденного адреса. На Android журнал ядра включается
+// только на время поиска: для этого туннель переподключается при старте и при выходе.
+// **********************************
+type FinderFrom = 'proxy' | 'direct';
+type FinderWhen = 'after' | 'open';
+type FinderStage = 'bounds' | 'background' | 'search' | 'result' | 'timeout' | 'done';
+
+interface FinderItem {
+    key: string; ruleType: string; ruleValue: string;
+    count: number; failed: number; shared: boolean; hosts: string[]; agoSecs: number;
+}
+interface FinderSnapshot { background: number; count: number; recent: { key: string; agoSecs: number }[]; more: number; }
+interface FinderOutcome { items: FinderItem[]; hiddenAds: number; hiddenCovered: number; }
+
+const FINDER_LIMIT_SECS = 60;
+const FINDER_WARN_SECS = 20;
+const FINDER_VISIBLE = 5;
+
+const finder = {
+    stage: 'bounds' as FinderStage,
+    from: 'proxy' as FinderFrom,   // откуда смотрим: адреса, что шли через VPN или напрямую
+    when: 'after' as FinderWhen,   // когда возникает проблема
+    startedAt: 0,
+    timer: null as number | null,
+    polling: false,
+    run: 0,                        // номер запуска: ответы от отменённого поиска игнорируются
+    busy: false,                   // идёт переподключение ядра
+    restorePending: false,         // ядро ещё пишет debug-журнал и ждёт возврата в обычный режим
+    snapshot: null as FinderSnapshot | null,
+    bgCount: 0,
+    outcome: null as FinderOutcome | null,
+    choice: new Map<string, FinderFrom>(),
+    showAll: false,
+    round: 0,
+    timedOut: false,
+    added: 0,
+    applied: false,
+    error: '',
+};
+
+function finderTarget(): FinderFrom { return finder.from === 'proxy' ? 'direct' : 'proxy'; }
+
+/** Подписка с собственной маршрутизацией переопределяет правила пользователя. */
+function finderBlockedByProvider(): boolean { return getProviderRoutingContext() !== null; }
+
+function finderPlural(n: number, key: string): string {
+    const forms = t(key).split('|');
+    let idx: number;
+    if (currentLang === 'ru') {
+        const m10 = n % 10, m100 = n % 100;
+        idx = (m10 === 1 && m100 !== 11) ? 0 : (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) ? 1 : 2;
+    } else {
+        idx = n === 1 ? 0 : 1;
+    }
+    return (forms[idx] ?? forms[forms.length - 1]).replace('{n}', String(n));
+}
+
+function finderElapsed(): number {
+    return Math.max(0, Math.floor((Date.now() - finder.startedAt) / 1000));
+}
+
+function finderClock(secs: number): string {
+    return `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+}
+
+function finderStopTimer() {
+    if (finder.timer !== null) { clearInterval(finder.timer); finder.timer = null; }
+}
+
+/** Просит Rust стереть найденное и журнал; если ядро писало debug-журнал, помечает возврат. */
+async function finderStopCore() {
+    try {
+        const restore = await invoke<boolean>('finder_stop');
+        if (restore) finder.restorePending = true;
+    } catch { /* сессии могло и не быть */ }
+}
+
+/** Возвращает ядро к обычному журналу (переподключение), если оно ещё в режиме поиска. */
+async function finderRestoreCore() {
+    if (!finder.restorePending) return;
+    finder.restorePending = false;
+    if (activeLink) await connectProxy(activeLink, true);
+}
+
+/** Полный сброс: останавливает таймер и стирает найденное. */
+async function finderReset(stage: FinderStage = 'bounds') {
+    finder.run++;
+    finderStopTimer();
+    finder.polling = false;
+    finder.stage = stage;
+    finder.snapshot = null;
+    finder.outcome = null;
+    finder.choice.clear();
+    finder.showAll = false;
+    finder.timedOut = false;
+    finder.error = '';
+    await finderStopCore();
+}
+
+function finderStartPhaseTimer() {
+    finderStopTimer();
+    finder.startedAt = Date.now();
+    finder.timer = window.setInterval(() => { void finderTick(); }, 1000);
+}
+
+async function finderTick() {
+    if (finder.stage !== 'background' && finder.stage !== 'search') { finderStopTimer(); return; }
+    if (finderElapsed() >= FINDER_LIMIT_SECS) { await finderTimeout(); return; }
+    if (!finder.polling) {
+        finder.polling = true;
+        const run = finder.run;
+        try {
+            const snapshot = await invoke<FinderSnapshot>('finder_poll', { rules: routingState });
+            if (run === finder.run) finder.snapshot = snapshot;
+        } catch { /* журнал мог быть пересоздан; пробуем на следующем тике */ }
+        finder.polling = false;
+    }
+    finderUpdateLive();
+}
+
+async function finderTimeout() {
+    finderStopTimer();
+    if (finder.stage === 'search') {
+        await finderShowResult(true);
+    } else {
+        await finderReset('timeout');
+        renderFinder();
+        await finderRestoreCore();
+    }
+}
+
+async function finderBegin() {
+    if (!activeLink || finder.busy || finderBlockedByProvider()) return;
+    await finderReset('bounds');
+    finder.busy = true;
+    renderFinder();
+    const run = finder.run;
+    try {
+        const restart = await invoke<boolean>('finder_start', { direction: finder.from });
+        // Ядро начинает писать журнал только после переподключения.
+        if (restart) {
+            finder.restorePending = true;
+            const ok = await connectProxy(activeLink, true);
+            if (!ok) throw new Error('reconnect');
+        }
+    } catch {
+        finder.busy = false;
+        finder.error = t('fm_log_err');
+        await finderStopCore();
+        renderFinder();
+        await finderRestoreCore();
+        return;
+    }
+    finder.busy = false;
+    if (run !== finder.run) return;
+    finder.stage = finder.when === 'after' ? 'background' : 'search';
+    finder.bgCount = 0;
+    finderStartPhaseTimer();
+    renderFinder();
+}
+
+async function finderMarkLoaded() {
+    if (finder.stage !== 'background') return;
+    finderStopTimer();
+    const run = finder.run;
+    try {
+        finder.bgCount = await invoke<number>('finder_mark_background', { rules: routingState });
+    } catch { finder.bgCount = finder.snapshot?.count ?? 0; }
+    if (run !== finder.run) return;
+    finder.snapshot = null;
+    finder.stage = 'search';
+    finderStartPhaseTimer();
+    renderFinder();
+}
+
+async function finderShowResult(timedOut: boolean) {
+    finderStopTimer();
+    const run = finder.run;
+    let outcome: FinderOutcome;
+    try {
+        outcome = await invoke<FinderOutcome>('finder_result', { rules: routingState });
+    } catch {
+        await finderReset('bounds');
+        finder.error = t('fm_log_err');
+        renderFinder();
+        await finderRestoreCore();
+        return;
+    }
+    if (run !== finder.run) return;
+    finder.outcome = outcome;
+    finder.choice.clear();
+    outcome.items.forEach(item => finder.choice.set(item.key, finder.from));
+    finder.showAll = false;
+    finder.timedOut = timedOut;
+    finder.round++;
+    finder.stage = 'result';
+    renderFinder();
+    // Найденное уже у нас; из памяти и с диска адреса стираем сразу.
+    // Обычный режим журнала ядро получит при добавлении правил, повторной проверке или выходе.
+    await finderStopCore();
+}
+
+async function finderRecheck() {
+    await finderBegin();
+}
+
+/** Массовый выбор: все адреса отправить по новому маршруту или оставить как есть. */
+function finderSetAll(moveAll: boolean) {
+    const target = finderTarget();
+    finder.outcome?.items.forEach(item => {
+        if (item.shared) return;
+        finder.choice.set(item.key, moveAll ? target : finder.from);
+    });
+    renderFinder();
+}
+
+async function finderApply() {
+    const outcome = finder.outcome;
+    if (!outcome || finder.busy) return;
+    const target = finderTarget();
+    const picked = outcome.items.filter(item => finder.choice.get(item.key) === target);
+    if (picked.length === 0) return;
+    const zones: ZoneKey[] = ['direct', 'proxy', 'block'];
+    for (const item of picked) {
+        zones.forEach(zone => {
+            routingState[zone] = (routingState[zone] || []).filter(rule => String(rule.value) !== item.ruleValue);
+        });
+        routingState[target].push({ type: item.ruleType, value: item.ruleValue });
+    }
+    renderRouting();
+    finder.added = picked.length;
+    finder.applied = false;
+    finder.busy = true;
+    renderFinder();
+    // Правила применяются при подключении; обычный журнал возвращается вместе с ними.
+    if (activeLink) {
+        finder.restorePending = false;
+        finder.applied = await connectProxy(activeLink, true);
+    }
+    finder.busy = false;
+    await finderReset('done');
+    renderFinder();
+}
+
+function finderIcon(name: 'info' | 'shield' | 'clock' | 'check' | 'alert'): string {
+    switch (name) {
+        case 'shield': return svgIcon('<path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6l8-3z"/>', 20);
+        case 'clock': return svgIcon('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/>', 30);
+        case 'check': return svgIcon('<path d="M5 12l5 5 9-10"/>', 30);
+        case 'alert': return svgIcon('<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>', 20);
+        default: return svgIcon('<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>', 20);
+    }
+}
+
+/** Шаги сверху: «Границы поиска» плюс шаги выбранного режима. */
+function finderStepsHtml(): string {
+    const steps: { id: FinderStage; label: string }[] = [{ id: 'bounds', label: t('fm_bounds') }];
+    if (finder.when === 'after') steps.push({ id: 'background', label: t('fm_step_bg') });
+    steps.push({ id: 'search', label: t('fm_step_search') }, { id: 'result', label: t('fm_step_result') });
+    const current = Math.max(0, steps.findIndex(s => s.id === finder.stage));
+    return steps.map((step, i) => {
+        const state = i < current ? 'is-done' : i === current ? 'is-current' : '';
+        // Подписи остальных шагов короткие; полное название показываем только у текущего.
+        const label = i === current || i > 0 ? step.label : '';
+        const line = i > 0 ? `<span class="finder-step-line ${i <= current ? 'is-done' : ''}"></span>` : '';
+        return `${line}<span class="finder-step ${state}">${label ? `<span>${escapeHtml(label)}</span>` : `<span class="finder-step-dot">${svgIcon('<path d="M5 12l5 5 9-10"/>', 12)}</span>`}</span>`;
+    }).join('');
+}
+
+function finderTopHtml(withTimer: boolean): string {
+    if (!withTimer) {
+        return `<div class="finder-top"><div class="finder-steps">${finderStepsHtml()}</div></div>`;
+    }
+    const e = finderElapsed();
+    const left = Math.max(0, FINDER_LIMIT_SECS - e);
+    return `
+        <div id="finder-top" class="finder-top${left <= FINDER_WARN_SECS ? ' is-warn' : ''}">
+            <div class="finder-steps">${finderStepsHtml()}</div>
+            <div class="finder-timer">
+                <span class="finder-rec-dot"></span>
+                <span id="finder-rec" class="finder-rec">${escapeHtml(t('fm_rec').replace('{t}', finderClock(e)))}</span>
+                <span id="finder-left" class="finder-left">${escapeHtml(t('fm_left').replace('{n}', String(left)))}</span>
+            </div>
+            <div class="finder-bar"><i id="finder-bar-fill" style="width:${Math.min(100, e / FINDER_LIMIT_SECS * 100)}%"></i></div>
+        </div>`;
+}
+
+function finderRecentHtml(snapshot: FinderSnapshot | null): string {
+    if (!snapshot || snapshot.recent.length === 0) return '';
+    const rows = snapshot.recent.map(r => `<div><b>${escapeHtml(r.key)}</b><span>${escapeHtml(r.agoSecs <= 1 ? t('fm_just_now') : t('fm_ago').replace('{n}', String(r.agoSecs)))}</span></div>`).join('');
+    const more = snapshot.more > 0 ? `<div><span>${escapeHtml(t('fm_and_more').replace('{n}', String(snapshot.more)))}</span></div>` : '';
+    return rows + more;
+}
+
+/** Обновляет только живые части экрана (таймер, счётчики), не перерисовывая страницу. */
+function finderUpdateLive() {
+    if (finder.stage !== 'background' && finder.stage !== 'search') return;
+    const e = finderElapsed();
+    const left = Math.max(0, FINDER_LIMIT_SECS - e);
+    document.getElementById('finder-top')?.classList.toggle('is-warn', left <= FINDER_WARN_SECS);
+    const rec = document.getElementById('finder-rec'); if (rec) rec.textContent = t('fm_rec').replace('{t}', finderClock(e));
+    const lf = document.getElementById('finder-left'); if (lf) lf.textContent = t('fm_left').replace('{n}', String(left));
+    const bar = document.getElementById('finder-bar-fill'); if (bar) bar.style.width = `${Math.min(100, e / FINDER_LIMIT_SECS * 100)}%`;
+    const snapshot = finder.snapshot;
+    const big = document.getElementById('finder-count');
+    if (big && snapshot) big.textContent = String(finder.stage === 'background' ? snapshot.background : snapshot.count);
+    const recent = document.getElementById('finder-recent');
+    if (recent) recent.innerHTML = finderRecentHtml(snapshot);
+}
+
+function finderBoundsHtml(): string {
+    const option = (attr: string, value: string, selected: boolean, title: string, desc: string) => `
+        <button type="button" class="finder-option${selected ? ' is-selected' : ''}" ${attr}="${value}" role="radio" aria-checked="${selected}">
+            <span class="finder-radio"></span>
+            <span class="finder-option-text"><span class="finder-option-title">${escapeHtml(title)}</span><span class="finder-option-desc">${escapeHtml(desc)}</span></span>
+        </button>`;
+    const blocked = finderBlockedByProvider();
+    const canStart = !!activeLink && !blocked && !finder.busy;
+    const warning = blocked ? t('fm_provider') : !activeLink ? t('fm_novpn') : finder.error;
+    return `
+        ${finderTopHtml(false)}
+        <p class="finder-lead">${escapeHtml(t('fm_sub'))}</p>
+        <div class="finder-options" role="radiogroup">
+            ${option('data-finder-from', 'proxy', finder.from === 'proxy', t('fm_goal_proxy_t'), t('fm_goal_proxy_d'))}
+            ${option('data-finder-from', 'direct', finder.from === 'direct', t('fm_goal_direct_t'), t('fm_goal_direct_d'))}
+        </div>
+        <h4 class="finder-question">${escapeHtml(t('fm_when_q'))}</h4>
+        <div class="finder-options" role="radiogroup">
+            ${option('data-finder-when', 'after', finder.when === 'after', t('fm_when_after_t'), t('fm_when_after_d'))}
+            ${option('data-finder-when', 'open', finder.when === 'open', t('fm_when_open_t'), t('fm_when_open_d'))}
+        </div>
+        <div class="finder-note">${finderIcon('shield')}<span>${escapeHtml(t('fm_note'))}</span></div>
+        <div class="finder-actions finder-actions-end">
+            ${warning ? `<span class="finder-warn-text">${escapeHtml(warning)}</span>` : ''}
+            <button type="button" class="finder-primary" data-finder-action="start" ${canStart ? '' : 'disabled'}>${escapeHtml(finder.busy ? t('fm_preparing') : t('fm_start'))}</button>
+        </div>`;
+}
+
+function finderPhaseHtml(): string {
+    const background = finder.stage === 'background';
+    const snapshot = finder.snapshot;
+    const title = background ? t('fm_bg_title') : finder.when === 'after' ? t('fm_s_title') : t('fm_so_title');
+    const text = background ? t('fm_bg_text') : finder.when === 'after' ? t('fm_s_text') : t('fm_so_text');
+    const info = !background && finder.when === 'after'
+        ? `<div class="finder-info">${finderIcon('info')}<span>${escapeHtml(t('fm_s_bgnote').replace('{n}', String(finder.bgCount)))}</span></div>` : '';
+    const mainButton = background
+        ? `<button type="button" class="finder-primary" data-finder-action="loaded">${escapeHtml(t('fm_loaded'))}</button>`
+        : `<button type="button" class="finder-primary" data-finder-action="show">${escapeHtml(t('fm_show'))}</button>`;
+    const card = background
+        ? `<div class="finder-card">
+                <div class="finder-card-head"><span>${escapeHtml(t('fm_bg_count'))}</span><span id="finder-count" class="finder-big">${snapshot ? snapshot.background : 0}</span></div>
+                <div class="finder-card-note">${escapeHtml(t('fm_bg_note'))}</div>
+           </div>`
+        : `<div class="finder-card is-live">
+                <div class="finder-card-head"><span>${escapeHtml(t('fm_new_count'))}</span><span id="finder-count" class="finder-big">${snapshot ? snapshot.count : 0}</span></div>
+                <div id="finder-recent" class="finder-recent">${finderRecentHtml(snapshot)}</div>
+           </div>`;
+    return `
+        ${finderTopHtml(true)}
+        <h3 class="finder-step-title">${escapeHtml(title)}</h3>
+        <p class="finder-step-text">${escapeHtml(text)}</p>
+        ${card}
+        ${info}
+        <div class="finder-actions finder-actions-end">${mainButton}<button type="button" class="finder-ghost" data-finder-action="cancel">${escapeHtml(t('fm_cancel'))}</button></div>`;
+}
+
+function finderResultHtml(): string {
+    const outcome = finder.outcome;
+    if (!outcome) return '';
+    const target = finderTarget();
+    const items = outcome.items;
+    const visible = finder.showAll ? items : items.slice(0, FINDER_VISIBLE);
+    const picked = items.filter(item => finder.choice.get(item.key) === target).length;
+    const selectable = items.filter(item => !item.shared);
+    const allMoved = selectable.length > 0 && selectable.every(item => finder.choice.get(item.key) === target);
+    const noneMoved = selectable.every(item => finder.choice.get(item.key) !== target);
+    const zoneName = t(target === 'direct' ? 'fm_via_direct' : 'fm_via_proxy');
+    const rows = visible.map(item => {
+        const on = finder.choice.get(item.key) === target;
+        return `
+        <button type="button" class="finder-row${on ? ' is-on' : ''}" data-finder-key="${escapeHtml(item.key)}" role="checkbox" aria-checked="${on}">
+            <span class="finder-row-main">
+                <span class="finder-row-line"><span class="finder-row-name">${escapeHtml(item.key)}</span><span class="finder-row-count">×${item.count}</span></span>
+                ${item.failed > 0 ? `<span class="finder-tag is-failed">${escapeHtml(t('fm_failed').replace('{n}', String(item.failed)))}</span>` : ''}
+                ${item.shared ? `<span class="finder-tag is-shared">${escapeHtml(t('fm_shared'))}</span>` : ''}
+            </span>
+            <span class="finder-check">${on ? svgIcon('<path d="M5 12l5 5 9-10"/>', 14) : ''}</span>
+        </button>`;
+    }).join('');
+    const hiddenMore = items.length - visible.length;
+    const showHint = finder.when === 'open' && finder.round >= 2 && items.length > 0;
+    const hint = showHint ? `
+        <div class="finder-banner">
+            <div class="finder-banner-text">${escapeHtml(t(finder.from === 'proxy' ? 'fm_hint_direct_t' : 'fm_hint_proxy_t'))}</div>
+            <button type="button" data-finder-action="all">${escapeHtml(t(finder.from === 'proxy' ? 'fm_hint_direct_b' : 'fm_hint_proxy_b'))}</button>
+        </div>` : '';
+    return `
+        ${finderTopHtml(false)}
+        <div class="finder-result-head">
+            <h3 class="finder-heading">${escapeHtml(t('fm_res_title'))}</h3>
+        </div>
+        <span class="finder-chip">${escapeHtml(t('fm_hidden').replace('{a}', String(outcome.hiddenAds)).replace('{c}', String(outcome.hiddenCovered)))}</span>
+        ${finder.timedOut ? `<div class="finder-timeout-note">${escapeHtml(t('fm_timeout_found'))}</div>` : ''}
+        ${hint}
+        ${items.length === 0 ? `<div class="finder-empty">${escapeHtml(t('fm_empty'))}</div>` : `<div class="finder-list">${rows}</div>`}
+        ${hiddenMore > 0 ? `<button type="button" class="finder-more" data-finder-action="more">${escapeHtml(t('fm_more').replace('{n}', String(hiddenMore)))}</button>` : ''}
+        <div class="finder-foot">
+            ${selectable.length > 0 ? `<div class="finder-seg" role="group">
+                <button type="button" class="${noneMoved ? 'is-on' : ''}" data-finder-action="keep" aria-pressed="${noneMoved}">${escapeHtml(t(finder.from === 'proxy' ? 'fm_via_proxy' : 'fm_via_direct'))}</button>
+                <button type="button" class="${allMoved ? 'is-on is-target' : ''}" data-finder-action="all" aria-pressed="${allMoved}">${escapeHtml(zoneName)}</button>
+            </div>` : ''}
+            <div class="finder-foot-text">${escapeHtml(t('fm_will_add').split('{rules}')[0].replace('{zone}', zoneName))}<b>${escapeHtml(finderPlural(picked, 'fm_rules'))}</b>${escapeHtml(t('fm_will_add').split('{rules}')[1] ?? '')}</div>
+            ${target === 'direct' ? `<div class="finder-foot-sub">${escapeHtml(t('fm_ip_note'))}</div>` : ''}
+            <div class="finder-foot-buttons">
+                <button type="button" class="finder-ghost" data-finder-action="recheck" ${finder.busy ? 'disabled' : ''}>${escapeHtml(t('fm_recheck'))}</button>
+                <button type="button" class="finder-primary" data-finder-action="add" ${picked === 0 || finder.busy ? 'disabled' : ''}>${escapeHtml(t('fm_add'))}</button>
+            </div>
+        </div>`;
+}
+
+function finderMessageHtml(kind: 'timeout' | 'done'): string {
+    if (kind === 'timeout') {
+        return `<div class="finder-center"><div class="finder-message is-bad">
+            <div class="finder-message-icon">${finderIcon('clock')}</div>
+            <h3 class="finder-heading">${escapeHtml(t('fm_timeout_lost').split('. ')[0])}</h3>
+            <p>${escapeHtml(t('fm_timeout_lost').split('. ').slice(1).join('. '))}</p>
+        </div></div>
+        <div class="finder-actions"><button type="button" class="finder-primary" data-finder-action="restart">${escapeHtml(t('fm_restart'))}</button></div>`;
+    }
+    return `<div class="finder-center"><div class="finder-message is-ok">
+        <div class="finder-message-icon">${finderIcon('check')}</div>
+        <p>${escapeHtml(t(finder.applied ? 'fm_done_text' : 'fm_done_saved').replace('{n}', String(finder.added)))}</p>
+    </div></div>
+    <div class="finder-actions"><button type="button" class="finder-primary" data-finder-action="close">${escapeHtml(t('fm_done_btn'))}</button></div>`;
+}
+
+function renderFinder() {
+    const host = document.getElementById('subpage-finder');
+    if (!host) return;
+    const previous = host.querySelector<HTMLElement>('.subpage-body');
+    const scroll = previous ? previous.scrollTop : 0;
+    let content: string;
+    switch (finder.stage) {
+        case 'background':
+        case 'search': content = finderPhaseHtml(); break;
+        case 'result': content = finderResultHtml(); break;
+        case 'timeout': content = finderMessageHtml('timeout'); break;
+        case 'done': content = finderMessageHtml('done'); break;
+        default: content = finderBoundsHtml();
+    }
+    host.classList.add('finder-page');
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${escapeHtml(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 22)}</button>
+            <div class="subpage-title">${escapeHtml(t('fm_title'))}</div>
+        </div>
+        <div class="subpage-body finder-body">${content}</div>
+    `;
+    const body = host.querySelector<HTMLElement>('.subpage-body');
+    if (body && previous) body.scrollTop = scroll;
+}
+
+function openFinderPage() {
+    finder.round = 0;
+    finder.busy = false;
+    void finderReset('bounds');
+    renderFinder();
+    openSubpage('subpage-finder');
+}
+
+/** Страница закрыта (кнопкой или системным «назад»): стираем найденное и возвращаем журнал. */
+function onFinderPageClosed() {
+    finder.busy = false;
+    void finderReset('bounds').then(() => finderRestoreCore());
+}
+
+function refreshFinderIfOpen() {
+    if (document.getElementById('subpage-finder')?.classList.contains('open')) renderFinder();
+    if (document.getElementById('subpage-profiles')?.classList.contains('open')) renderProfilesSubpage();
+}
+
+function initFinder() {
+    document.getElementById('btn-open-finder')?.addEventListener('click', openFinderPage);
+    const profilesBtn = document.getElementById('btn-open-route-profiles');
+    profilesBtn?.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('#btn-route-action')) return;
+        openProfilesPage();
+    });
+    profilesBtn?.addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target === profilesBtn) { e.preventDefault(); openProfilesPage(); }
+    });
+    document.getElementById('subpage-finder')?.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const from = target.closest<HTMLElement>('[data-finder-from]');
+        if (from) { finder.from = from.dataset.finderFrom as FinderFrom; renderFinder(); return; }
+        const when = target.closest<HTMLElement>('[data-finder-when]');
+        if (when) { finder.when = when.dataset.finderWhen as FinderWhen; renderFinder(); return; }
+        const row = target.closest<HTMLElement>('[data-finder-key]');
+        if (row && row.dataset.finderKey) {
+            const item = finder.outcome?.items.find(i => i.key === row.dataset.finderKey);
+            if (item && !item.shared) {
+                const on = finder.choice.get(item.key) === finderTarget();
+                finder.choice.set(item.key, on ? finder.from : finderTarget());
+                renderFinder();
+            }
+            return;
+        }
+        const action = target.closest<HTMLElement>('[data-finder-action]')?.dataset.finderAction;
+        switch (action) {
+            case 'start': finder.round = 0; void finderBegin(); break;
+            case 'restart': void finderBegin(); break;
+            case 'loaded': void finderMarkLoaded(); break;
+            case 'show': void finderShowResult(false); break;
+            case 'cancel': finder.round = 0; void finderReset('bounds').then(() => { renderFinder(); return finderRestoreCore(); }); break;
+            case 'recheck': void finderRecheck(); break;
+            case 'add': void finderApply(); break;
+            case 'all': finderSetAll(true); break;
+            case 'keep': finderSetAll(false); break;
+            case 'more': finder.showAll = true; renderFinder(); break;
+            case 'close': closeSubpages(); break;
+        }
+    });
 }
 
 function renderZoneCards() {
@@ -2008,14 +2563,7 @@ function updateDefaultOutboundUI() {
         const zone = col.dataset.zone; 
         if (zone === effectiveDefaultOutbound) col.classList.add('active-default');
         else col.classList.remove('active-default'); 
-    }); 
-    
-    if (defaultOutboundLabel) { 
-        defaultOutboundLabel.innerText = effectiveDefaultOutbound.charAt(0).toUpperCase() + effectiveDefaultOutbound.slice(1);
-        if(effectiveDefaultOutbound === 'direct') defaultOutboundLabel.style.color = 'var(--success)';
-        if(effectiveDefaultOutbound === 'proxy') defaultOutboundLabel.style.color = 'var(--accent)';
-        if(effectiveDefaultOutbound === 'block') defaultOutboundLabel.style.color = 'var(--danger)';
-    } 
+    });
 }
 
 function formatProxyInfo(linkUrl: string): string {
@@ -2481,17 +3029,28 @@ function updateRoutingProfileName() {
 }
 
 function renderRoutingProfiles() {
+    updateRoutingProfileName();
     const list = document.getElementById('routing-profiles-list');
     if (!list) return;
     resetListInteractionState(list);
     list.replaceChildren();
+    if (routeProfiles.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'profiles-empty';
+        empty.textContent = t('profiles_empty');
+        list.appendChild(empty);
+        return;
+    }
     routeProfiles.forEach(p => {
+        const selected = p.id === activeRouteProfileId;
         const wrapper = document.createElement('div');
         wrapper.innerHTML = `
-            <div class="profile-item">
-                <span>${escapeHtml(p.name)}</span>
+            <div class="profile-item${selected ? ' profile-item-active' : ''}">
+                <span class="profile-item-name">${escapeHtml(p.name)}</span>
                 <div class="link-actions">
-                    <button class="secondary btn-load-profile" data-id="${escapeHtml(p.id)}" style="padding: 6px 12px; font-size: 13px;">${escapeHtml(t('btn_select'))}</button>
+                    ${selected
+                        ? `<span class="profile-selected-label">${escapeHtml(t('profile_selected'))}</span>`
+                        : `<button class="secondary btn-load-profile" data-id="${escapeHtml(p.id)}">${escapeHtml(t('btn_select'))}</button>`}
                     <button class="btn-menu-dots btn-route-menu-dots" data-index="${escapeHtml(p.id)}">⋮</button>
                     <div class="dropdown-menu" id="route-menu-${escapeHtml(p.id)}">
                         <button class="btn-edit-profile" data-id="${escapeHtml(p.id)}">${escapeHtml(t('btn_rename'))}</button>
@@ -2502,12 +3061,8 @@ function renderRoutingProfiles() {
             </div>
         `;
         const row = wrapper.firstElementChild;
-        if (row) {
-            if (p.id === activeRouteProfileId) row.classList.add('profile-item-active');
-            list.appendChild(row);
-        }
+        if (row) list.appendChild(row);
     });
-    updateRoutingProfileName();
 }
 
 function renderAboutPage() {
@@ -3125,6 +3680,7 @@ async function init() {
     renderRoutingProfiles();
     void initAndroidAppRouting();
     initScenarios();
+    initFinder();
     initGuard();
     initSubscriptionUpdates();
     
@@ -4545,10 +5101,6 @@ document.addEventListener('click', async (e) => {
                 setActiveRouteProfile(p.id);
                 renderRouting();
                 renderRoutingProfiles();
-                
-                const orig = loadBtn.innerText;
-                loadBtn.innerText = t('status_applied');
-                setTimeout(() => { loadBtn.innerText = orig; }, 1500);
             }
         } catch (err) {
             console.error(err); alert(t('err_apply_profile'));

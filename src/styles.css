@@ -3976,3 +3976,202 @@ dialog.scenario-modal { width: min(420px, calc(100vw - 32px)); max-height: calc(
 .guard-row-text span { font-size: 12px; color: var(--text-dim); }
 .guard-row .scn-seg { flex: 1 1 100%; }
 .guard-note { margin: 12px 2px 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+
+/* **********************************
+   ALPHA.48: routing page rework, saved profiles page, routing manager
+   ********************************** */
+:root { --warn: #f9e2af; }
+:root[data-theme="light"] { --warn: #c9871f; }
+
+.routing-summary {
+    gap: 10px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+
+.routing-profile-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 64px;
+    padding: 8px 12px 8px 16px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    color: var(--text-color);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.routing-profile-btn:active { background: var(--input-bg); }
+.routing-profile-btn .routing-summary-text { flex: 1; }
+.routing-profile-btn .route-share-btn,
+.platform-android .routing-profile-btn .route-share-btn {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border-radius: 11px;
+}
+.routing-profile-chevron { flex: 0 0 auto; color: var(--text-dim); }
+
+.finder-open-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    height: 56px;
+    padding: 0 14px 0 16px;
+    text-align: left;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--panel-bg));
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-color));
+    border-radius: 14px;
+    -webkit-tap-highlight-color: transparent;
+}
+.finder-open-btn:hover { background: color-mix(in srgb, var(--accent) 8%, var(--panel-bg)); }
+.finder-open-btn:active { background: color-mix(in srgb, var(--accent) 16%, var(--panel-bg)); }
+.finder-open-btn span { flex: 1; }
+
+/* Метка «По умолчанию» окрашена в цвет зоны. */
+.zone-badge {
+    color: var(--zone-color, var(--text-dim));
+    background: color-mix(in srgb, var(--zone-color, var(--text-dim)) 14%, transparent);
+    border-color: color-mix(in srgb, var(--zone-color, var(--text-dim)) 50%, transparent);
+}
+
+/* Страница «Сохранённые профили» */
+.profiles-list { display: flex; flex-direction: column; gap: 10px; }
+.profiles-list .profile-item { margin-top: 0; padding: 8px 4px 8px 14px; min-height: 64px; gap: 8px; border-radius: 14px; border-left-width: 1px; border: 1px solid var(--border-color); background: var(--panel-bg); }
+.profiles-list .profile-item-active { border-color: color-mix(in srgb, var(--accent) 55%, var(--border-color)); background: color-mix(in srgb, var(--accent) 7%, var(--panel-bg)); box-shadow: none; }
+.profile-item-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profiles-list .link-actions { position: relative; display: flex; align-items: center; gap: 2px; }
+.profiles-list .btn-load-profile { height: 36px; padding: 0 14px; font-size: 13px; font-weight: 600; border-radius: 10px; }
+.profiles-list .btn-menu-dots { background: transparent; width: 44px; height: 44px; padding: 0; font-size: 20px; }
+.profile-selected-label {
+    font-size: 11px; font-weight: 600; color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-radius: 999px; padding: 1px 9px;
+}
+.profiles-empty { padding: 28px 8px; text-align: center; color: var(--text-dim); font-size: 14px; }
+.profiles-list .dropdown-menu { top: 100%; width: 190px; }
+.profiles-list .dropdown-menu button { min-height: 44px; font-size: 14px; }
+
+/* Менеджер маршрутизации */
+.finder-body { display: flex; flex-direction: column; gap: 14px; }
+.finder-top { display: flex; flex-direction: column; gap: 10px; }
+.finder-steps { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); }
+.finder-step.is-done { color: var(--success); }
+.finder-step.is-current { color: var(--accent); font-weight: 600; }
+.finder-step-dot { display: inline-grid; place-items: center; }
+.finder-step-line { flex: 0 0 10px; height: 1px; background: var(--border-color); }
+.finder-step-line.is-done { background: color-mix(in srgb, var(--success) 60%, var(--border-color)); }
+.finder-steps .finder-step:last-child { margin-right: 0; }
+.finder-timer { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.finder-rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); }
+.finder-rec { font-family: ui-monospace, "JetBrains Mono", monospace; color: var(--text-color); }
+.finder-left { margin-left: auto; color: var(--text-dim); font-size: 12.5px; }
+.finder-top.is-warn .finder-left { color: var(--warn); }
+.finder-bar { height: 4px; border-radius: 2px; background: var(--input-bg); overflow: hidden; }
+.finder-bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.9s linear; }
+.finder-top.is-warn .finder-bar i { background: var(--warn); }
+
+.finder-lead { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-dim); }
+.finder-question { margin: 8px 2px 0; font-size: 15px; font-weight: 600; color: var(--text-color); }
+.finder-options { display: flex; flex-direction: column; gap: 10px; }
+.finder-option {
+    display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 14px; text-align: left;
+    background: var(--panel-bg); color: var(--text-color); font-weight: 400;
+    border: 1px solid var(--border-color); border-radius: 14px; -webkit-tap-highlight-color: transparent;
+}
+.finder-option:hover { background: var(--panel-bg); }
+.finder-option.is-selected { border-color: color-mix(in srgb, var(--accent) 55%, var(--border-color)); background: color-mix(in srgb, var(--accent) 7%, var(--panel-bg)); }
+.finder-radio { flex: 0 0 20px; width: 20px; height: 20px; margin-top: 1px; box-sizing: border-box; border: 2px solid var(--border-hover); border-radius: 50%; display: grid; place-items: center; }
+.finder-option.is-selected .finder-radio { border-color: var(--accent); }
+.finder-option.is-selected .finder-radio::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.finder-option-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.finder-option-title { font-size: 14.5px; font-weight: 600; line-height: 1.35; }
+.finder-option-desc { font-size: 12px; line-height: 1.4; color: var(--text-dim); }
+.finder-note, .finder-info { display: flex; gap: 10px; align-items: flex-start; padding: 0 4px; font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
+.finder-note svg, .finder-info svg { flex: 0 0 auto; margin-top: 1px; }
+
+.finder-actions { display: flex; flex-direction: column; gap: 10px; }
+.finder-actions-end { margin-top: auto; padding-top: 6px; }
+.finder-primary, .finder-ghost { width: 100%; min-height: 52px; border-radius: 14px; font-size: 16px; font-weight: 600; }
+.finder-primary { background: var(--accent); color: #1a1020; border: none; }
+.finder-primary:hover { background: var(--accent); }
+.finder-primary:disabled { opacity: 0.4; }
+.finder-ghost { min-height: 48px; font-size: 15px; font-weight: 500; background: transparent; color: var(--text-color); border: 1px solid var(--border-hover); }
+.finder-ghost:hover { background: transparent; }
+.finder-warn-text { font-size: 12.5px; line-height: 1.45; color: var(--warn); text-align: center; }
+
+.finder-step-title { margin: 6px 0 0; font-size: 18px; line-height: 1.3; font-weight: 600; color: var(--text-color); }
+.finder-step-text { margin: -6px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-dim); }
+.finder-card { padding: 16px; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 14px; display: flex; flex-direction: column; gap: 12px; }
+.finder-card-head { display: flex; align-items: baseline; justify-content: space-between; font-size: 14px; }
+.finder-big { font-size: 30px; font-weight: 600; color: var(--text-color); }
+.finder-card-note { font-size: 12px; color: var(--text-dim); }
+.finder-recent { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-color); padding-top: 12px; }
+.finder-recent:empty { display: none; }
+.finder-recent div { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.finder-recent b { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.finder-recent span { color: var(--text-dim); flex: 0 0 auto; }
+
+.finder-result-head { display: flex; align-items: baseline; justify-content: space-between; }
+.finder-heading { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-color); }
+.finder-chip { align-self: flex-start; font-size: 12px; color: var(--text-dim); background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 999px; padding: 4px 12px; }
+.finder-timeout-note { font-size: 12.5px; color: var(--warn); }
+.finder-banner { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border-color)); background: color-mix(in srgb, var(--warn) 8%, var(--panel-bg)); border-radius: 14px; }
+.finder-banner-text { font-size: 13px; line-height: 1.45; }
+.finder-banner button { min-height: 38px; padding: 0 16px; font-size: 13.5px; font-weight: 600; background: transparent; color: var(--warn); border: 1px solid var(--warn); border-radius: 10px; }
+.finder-banner button:hover { background: transparent; }
+.finder-list { display: flex; flex-direction: column; gap: 8px; }
+.finder-row {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; text-align: left;
+    background: var(--panel-bg); color: var(--text-color); font-weight: 400;
+    border: 1px solid var(--border-color); border-radius: 12px; -webkit-tap-highlight-color: transparent;
+}
+.finder-row:hover { background: var(--panel-bg); }
+.finder-row.is-on { border-color: color-mix(in srgb, var(--accent) 55%, var(--border-color)); background: color-mix(in srgb, var(--accent) 7%, var(--panel-bg)); }
+.finder-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.finder-row-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.finder-row-name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.finder-row-count { flex: 0 0 auto; font-size: 11.5px; color: var(--text-dim); }
+.finder-tag { font-size: 11.5px; }
+.finder-tag.is-failed { color: var(--danger); }
+.finder-tag.is-shared { color: var(--warn); }
+.finder-check { flex: 0 0 22px; width: 22px; height: 22px; box-sizing: border-box; border: 2px solid var(--border-hover); border-radius: 6px; display: grid; place-items: center; color: #1a1020; }
+.finder-row.is-on .finder-check { background: var(--accent); border-color: var(--accent); }
+.finder-more { height: 40px; font-size: 13px; background: transparent; color: var(--text-color); border: 1px dashed var(--border-hover); border-radius: 12px; }
+.finder-more:hover { background: transparent; }
+.finder-empty { padding: 24px 8px; text-align: center; color: var(--text-dim); font-size: 14px; }
+
+.finder-foot {
+    position: sticky; bottom: -16px; margin: auto -16px -16px; padding: 12px 16px 16px;
+    display: flex; flex-direction: column; gap: 10px;
+    background: var(--bg-color); border-top: 1px solid var(--border-color);
+}
+.finder-seg { display: flex; padding: 3px; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 12px; }
+.finder-seg button { flex: 1; height: 38px; font-size: 13.5px; font-weight: 500; background: transparent; color: var(--text-dim); border: none; border-radius: 9px; }
+.finder-seg button:hover { background: transparent; }
+.finder-seg button.is-on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
+.finder-seg button.is-on.is-target { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.finder-foot-text { font-size: 12.5px; color: var(--text-dim); }
+.finder-foot-text b { color: var(--text-color); font-weight: 600; }
+.finder-foot-sub { font-size: 12px; color: var(--text-dim); margin-top: -6px; }
+.finder-foot-buttons { display: flex; gap: 10px; }
+.finder-foot-buttons .finder-ghost { flex: 1; min-height: 48px; font-size: 14px; }
+.finder-foot-buttons .finder-primary { flex: 1.2; min-height: 48px; font-size: 14.5px; }
+
+.finder-center { flex: 1; display: flex; align-items: center; justify-content: center; }
+.finder-message { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 0 18px; }
+.finder-message p { margin: 0; max-width: 290px; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
+.finder-message-icon { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; }
+.finder-message.is-bad .finder-message-icon { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.finder-message.is-ok .finder-message-icon { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
+.finder-message.is-ok p { color: var(--text-color); }

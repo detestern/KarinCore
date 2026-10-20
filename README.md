@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-0.1.0--alpha.47-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-0.1.0--alpha.48-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-android-dc8add?style=flat-square&labelColor=11111b&logo=android&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -30,6 +30,7 @@ KarinCore Android brings the same interface and the same Direct / Proxy / Block 
 - **Subscriptions:** add a URL, the servers appear grouped under it and can be refreshed in one tap.
 - **Routing profiles from subscriptions:** routing delivered with a subscription (Happ / V2RayTun headers, full-JSON subscriptions) is saved as a separate profile named after the provider. Pick it with **Select** — your own rules and DNS are never replaced automatically.
 - **Direct / Proxy / Block zones** with domain, `geosite` and `geoip` rules, zone priority and custom DNS (DoH or plain). `geoip.dat` and `geosite.dat` are bundled, no extra download.
+- **Routing Manager:** finds the addresses that break a site or a video (a stream that will not play, a site that blocks the VPN address) and adds them to your rules. It records for at most 60 seconds, hides ads and addresses already covered by your rules, and erases everything it saw as soon as it is done.
 - **Per-app split tunneling:** all apps, only selected, or bypass selected.
 - **Quick settings tile** and a **home-screen widget**: connect and disconnect the last working profile in one tap, without opening the app.
 - **Connection scenarios:** switch the VPN automatically by Wi-Fi name or mobile network (turn it off or connect to a chosen server), top to bottom, first match wins. Works with the app closed and can notify when a scenario runs.

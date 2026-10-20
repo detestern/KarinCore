@@ -7,7 +7,7 @@
 </p>
 
 <p>
-<img src="https://img.shields.io/badge/version-0.1.0--alpha.47-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-0.1.0--alpha.48-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-android-dc8add?style=flat-square&labelColor=11111b&logo=android&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Built with Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -30,6 +30,7 @@ KarinCore Android переносит на Android тот же интерфейс
 - **Подписки:** добавь URL — серверы появятся группой, обновить её можно одним нажатием.
 - **Профили маршрутизации из подписок:** маршрутизация, которую отдаёт подписка (заголовки Happ / V2RayTun, полные JSON-подписки), сохраняется отдельным профилем с именем провайдера. Выбери его кнопкой **«Выбрать»** — твои правила и DNS сами никогда не заменяются.
 - **Зоны Direct / Proxy / Block** с правилами по доменам, `geosite` и `geoip`, приоритетом зон и своим DNS (DoH или обычный). `geoip.dat` и `geosite.dat` уже внутри, отдельно качать не нужно.
+- **Менеджер маршрутизации:** находит адреса, из-за которых не работает сайт или видео (трансляция не идёт, сайт не пускает с адреса VPN), и добавляет их в твои правила. Запись идёт не дольше 60 секунд, реклама и уже покрытые адреса скрываются, всё увиденное стирается сразу после поиска.
 - **Раздельное туннелирование по приложениям:** все приложения, только выбранные или все, кроме выбранных.
 - **Плитка в шторке** и **виджет на рабочем столе** — включают и выключают последний рабочий профиль одним нажатием, не открывая приложение.
 - **Сценарии подключений:** VPN переключается автоматически по имени Wi-Fi или по мобильной сети (выключается или подключается к выбранному серверу), сверху вниз, срабатывает первый подходящий. Работает при закрытом приложении и может уведомлять о срабатывании.
