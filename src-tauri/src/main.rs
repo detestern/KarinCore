@@ -5,6 +5,7 @@
 // **********************************
 mod bridge;
 mod diag;
+mod finder;
 mod helper_client;
 mod subjson;
 mod token;
@@ -1603,6 +1604,7 @@ fn main() {
             }
         }))
         .manage(ProxyState { auth_token: Mutex::new(None) })
+        .manage(finder::FinderState::default())
         .manage(bridge::BridgeState::new(env!("CARGO_PKG_VERSION"), std::process::id(), bridge::state_file_path()))
         .setup(move |app| {
             // Первый экземпляр запущен с `--disconnect`: ничего не делаем и не пишем статус-файл.
@@ -1618,7 +1620,8 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            start_proxy, stop_proxy, fetch_subscription, notify_desktop, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, diag_internet, diag_resolve, diag_tcp, diag_core, diag_tunnel, wifi_scan, wifi_current, diag_verdict, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update
+            start_proxy, stop_proxy, fetch_subscription, notify_desktop, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, diag_internet, diag_resolve, diag_tcp, diag_core, diag_tunnel, wifi_scan, wifi_current, diag_verdict, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update,
+            finder::finder_start, finder::finder_mark_background, finder::finder_poll, finder::finder_result, finder::finder_stop
         ]).build(tauri::generate_context!()).expect("error while building tauri application");
     app.run(|app_handle, event| {
         if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {

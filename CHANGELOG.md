@@ -5,6 +5,17 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.8.0 — Pathfinder
+
+<sub>2026-10-20</sub>
+
+* **Added:** Routing Manager. A new button on the Routing tab opens a helper that finds the addresses that make a site or a video fail and adds them to your rules. First choose what to look for: addresses that went through the VPN (to send them directly) or addresses that went directly (to send them through the VPN). Then choose when the problem happens: after the page loads, or right when the site opens.
+* **Added:** for a problem after the page loads, the manager first records the background (open the site, wait for it to load, press "The page has loaded"). Then you repeat the action that fails, and only the addresses that appeared after that are shown. For a site that fails on open it records from the very start. Each step is limited to 60 seconds and stops on its own, with a timer and a progress bar on the screen.
+* **Added:** the list is cleaned up for you. Ads and analytics (the `category-ads-all` list) and addresses already covered by your rules are hidden and only counted. Addresses are grouped by site (`cdn.example.com` and `www.example.com` become `example.com`), those whose connection dropped come first, and shared CDNs are kept as separate entries marked "shared CDN", unchanged by default, because a rule for them would touch other sites.
+* **Added:** pick a route for every address (Through VPN or Directly), see how many rules will be added, and press "Add rules". They land in the chosen zone and the tunnel reconnects once to apply them. For a site that fails on open, "Check again" repeats the search, and from the second try a hint offers to send everything the other way at once.
+* **Added:** privacy. The manager reads only what the tunnel logs after you press "Start", keeps it in memory while the search runs, and forgets it as soon as it stops. Nothing is written to disk by the manager itself.
+* **Changed:** the Routing tab. The "Selected profile" plaque is now a button that opens the saved profiles on a page of their own, where the selected one is marked "Selected"; the list no longer sits under the DNS blocks. The "Default route" cell is replaced by the "Routing Manager" button. The default zone is still shown on its card, and the "Default" badge now takes the colour of that zone (green for Direct, purple for Proxy, red for Block).
+
 ## v1.7.0 — Lifeline
 
 <sub>2026-10-19</sub>

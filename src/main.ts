@@ -103,7 +103,6 @@ const btnDisconnect = document.getElementById('btn-disconnect') as HTMLButtonEle
 const btnPing = document.getElementById('btn-ping') as HTMLButtonElement | null;
 const statusIpBox = document.getElementById('status-ip-box') as HTMLDivElement | null;
 const statusIp = document.getElementById('status-ip') as HTMLSpanElement | null;
-const defaultOutboundLabel = document.getElementById('default-outbound-label') as HTMLSpanElement | null;
 const btnMenu = document.getElementById('btn-menu') as HTMLButtonElement | null;
 const sidebar = document.getElementById('sidebar') as HTMLDivElement | null;
 const overlay = document.getElementById('overlay') as HTMLDivElement | null;
@@ -374,6 +373,7 @@ function updateUIStrings() {
     updateScenarioCount();
     updateGuardCount();
     if (document.getElementById('subpage-guard')?.classList.contains('open')) renderGuard();
+    refreshFinderIfOpen();
 }
 
 // **********************************
@@ -931,13 +931,6 @@ function updateDefaultOutboundUI() {
         if (zone === defaultOutbound) col.classList.add('active-default'); 
         else col.classList.remove('active-default'); 
     }); 
-    
-    if (defaultOutboundLabel) { 
-        defaultOutboundLabel.innerText = defaultOutbound.charAt(0).toUpperCase() + defaultOutbound.slice(1); 
-        if(defaultOutbound === 'direct') defaultOutboundLabel.style.color = 'var(--success)'; 
-        if(defaultOutbound === 'proxy') defaultOutboundLabel.style.color = 'var(--accent)'; 
-        if(defaultOutbound === 'block') defaultOutboundLabel.style.color = 'var(--danger)'; 
-    } 
 }
 
 // Всё, что приходит извне (имена профилей и групп, ссылки, подписки, импортированные
@@ -1387,7 +1380,537 @@ function closeAnySubpage(): boolean {
     const zone = closeZonePage();
     const scn = closeScenariosPage();
     const grd = closeGuardPage();
-    return zone || scn || grd;
+    const prf = closeProfilesPage();
+    const fnd = closeFinderPage();
+    return zone || scn || grd || prf || fnd;
+}
+
+// **********************************
+// ROUTING: SAVED PROFILES PAGE
+// Список профилей спрятан за плашкой «Выбранный профиль» на странице маршрутизации.
+// **********************************
+function renderProfilesSubpage() {
+    const host = document.getElementById('subpage-profiles');
+    if (!host) return;
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${esc(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 20)}</button>
+            <div class="subpage-title">${esc(t('saved_profiles'))}</div>
+        </div>
+        <div class="subpage-body"><div id="routing-profiles-list" class="profiles-list"></div></div>
+    `;
+    renderRoutingProfiles();
+}
+
+function openProfilesPage() {
+    renderProfilesSubpage();
+    const el = document.getElementById('subpage-profiles');
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+}
+
+function closeProfilesPage(): boolean {
+    const el = document.getElementById('subpage-profiles');
+    if (!el || !el.classList.contains('open')) return false;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+    return true;
+}
+
+// **********************************
+// ROUTING MANAGER (address finder)
+// Страница «Менеджер маршрутизации»: ищет адреса, из-за которых сайт или видео не работает.
+// Журналы читает и фильтрует Rust (finder.rs); здесь — шаги, таймер 60 секунд на этап
+// и выбор маршрута для каждого найденного адреса.
+// **********************************
+type FinderFrom = 'proxy' | 'direct';
+type FinderWhen = 'after' | 'open';
+type FinderStage = 'bounds' | 'background' | 'search' | 'result' | 'timeout' | 'done';
+
+interface FinderItem {
+    key: string; ruleType: string; ruleValue: string;
+    count: number; failed: number; shared: boolean; hosts: string[]; agoSecs: number;
+}
+interface FinderSnapshot { background: number; count: number; recent: { key: string; agoSecs: number }[]; more: number; }
+interface FinderOutcome { items: FinderItem[]; hiddenAds: number; hiddenCovered: number; }
+
+const FINDER_LIMIT_SECS = 60;
+const FINDER_WARN_SECS = 20;
+const FINDER_VISIBLE = 6;
+
+const finder = {
+    stage: 'bounds' as FinderStage,
+    from: 'proxy' as FinderFrom,   // откуда смотрим: адреса, что шли через VPN или напрямую
+    when: 'after' as FinderWhen,   // когда возникает проблема
+    startedAt: 0,
+    timer: null as number | null,
+    polling: false,
+    run: 0,                        // номер запуска: ответы от отменённого поиска игнорируются
+    snapshot: null as FinderSnapshot | null,
+    bgCount: 0,
+    outcome: null as FinderOutcome | null,
+    choice: new Map<string, FinderFrom>(),
+    showAll: false,
+    round: 0,
+    timedOut: false,
+    added: 0,
+    applied: false,
+    error: '',
+};
+
+function finderTarget(): FinderFrom { return finder.from === 'proxy' ? 'direct' : 'proxy'; }
+
+function finderPlural(n: number, key: string): string {
+    const forms = t(key).split('|');
+    let idx: number;
+    if (currentLang === 'ru') {
+        const m10 = n % 10, m100 = n % 100;
+        idx = (m10 === 1 && m100 !== 11) ? 0 : (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) ? 1 : 2;
+    } else {
+        idx = n === 1 ? 0 : 1;
+    }
+    return (forms[idx] ?? forms[forms.length - 1]).replace('{n}', String(n));
+}
+
+function finderElapsed(): number {
+    return Math.max(0, Math.floor((Date.now() - finder.startedAt) / 1000));
+}
+
+function finderClock(secs: number): string {
+    return `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+}
+
+function finderStopTimer() {
+    if (finder.timer !== null) { clearInterval(finder.timer); finder.timer = null; }
+}
+
+/** Полный сброс: останавливает таймер и просит Rust стереть найденное из памяти. */
+function finderReset(stage: FinderStage = 'bounds') {
+    finder.run++;
+    finderStopTimer();
+    finder.polling = false;
+    finder.stage = stage;
+    finder.snapshot = null;
+    finder.outcome = null;
+    finder.choice.clear();
+    finder.showAll = false;
+    finder.timedOut = false;
+    finder.error = '';
+    invoke('finder_stop').catch(() => { /* сессии могло и не быть */ });
+}
+
+function finderStartPhaseTimer() {
+    finderStopTimer();
+    finder.startedAt = Date.now();
+    finder.timer = window.setInterval(() => { void finderTick(); }, 1000);
+}
+
+async function finderTick() {
+    if (finder.stage !== 'background' && finder.stage !== 'search') { finderStopTimer(); return; }
+    if (finderElapsed() >= FINDER_LIMIT_SECS) { await finderTimeout(); return; }
+    if (!finder.polling) {
+        finder.polling = true;
+        const run = finder.run;
+        try {
+            const snapshot = await invoke<FinderSnapshot>('finder_poll', { rules: routingState });
+            if (run === finder.run) finder.snapshot = snapshot;
+        } catch { /* журнал мог быть пересоздан; пробуем на следующем тике */ }
+        finder.polling = false;
+    }
+    finderUpdateLive();
+}
+
+async function finderTimeout() {
+    finderStopTimer();
+    if (finder.stage === 'search') {
+        await finderShowResult(true);
+    } else {
+        finderReset('timeout');
+        renderFinder();
+    }
+}
+
+async function finderBegin() {
+    if (!activeLink) return;
+    finderReset('bounds');
+    try {
+        await invoke('finder_start', { direction: finder.from });
+    } catch {
+        finder.error = t('fm_log_err');
+        renderFinder();
+        return;
+    }
+    finder.stage = finder.when === 'after' ? 'background' : 'search';
+    finder.bgCount = 0;
+    finderStartPhaseTimer();
+    renderFinder();
+}
+
+async function finderMarkLoaded() {
+    if (finder.stage !== 'background') return;
+    finderStopTimer();
+    const run = finder.run;
+    try {
+        finder.bgCount = await invoke<number>('finder_mark_background', { rules: routingState });
+    } catch { finder.bgCount = finder.snapshot?.count ?? 0; }
+    if (run !== finder.run) return;
+    finder.snapshot = null;
+    finder.stage = 'search';
+    finderStartPhaseTimer();
+    renderFinder();
+}
+
+async function finderShowResult(timedOut: boolean) {
+    finderStopTimer();
+    const run = finder.run;
+    let outcome: FinderOutcome;
+    try {
+        outcome = await invoke<FinderOutcome>('finder_result', { rules: routingState });
+    } catch {
+        finderReset('bounds');
+        finder.error = t('fm_log_err');
+        renderFinder();
+        return;
+    }
+    if (run !== finder.run) return;
+    finder.outcome = outcome;
+    finder.choice.clear();
+    outcome.items.forEach(item => finder.choice.set(item.key, finder.from));
+    finder.showAll = false;
+    finder.timedOut = timedOut;
+    finder.round++;
+    finder.stage = 'result';
+    renderFinder();
+    // Найденное уже у нас; из памяти Rust адреса стираем сразу.
+    invoke('finder_stop').catch(() => { /* ignore */ });
+}
+
+async function finderRecheck() {
+    await finderBegin();
+}
+
+function finderSetAll() {
+    const target = finderTarget();
+    finder.outcome?.items.forEach(item => { if (!item.shared) finder.choice.set(item.key, target); });
+    renderFinder();
+}
+
+async function finderApply() {
+    const outcome = finder.outcome;
+    if (!outcome) return;
+    const target = finderTarget();
+    const picked = outcome.items.filter(item => finder.choice.get(item.key) === target);
+    if (picked.length === 0) return;
+    const zones: ZoneKey[] = ['direct', 'proxy', 'block'];
+    for (const item of picked) {
+        zones.forEach(zone => {
+            routingState[zone] = (routingState[zone] || []).filter(rule => String(rule.value) !== item.ruleValue);
+        });
+        routingState[target].push({ type: item.ruleType, value: item.ruleValue });
+    }
+    renderRouting();
+    finder.added = picked.length;
+    finder.applied = false;
+    // Правила применяются при подключении: переподключаем туннель с новыми правилами.
+    if (activeLink) finder.applied = await connectProxy(activeLink, true);
+    finderReset('done');
+    renderFinder();
+}
+
+function finderIcon(name: 'info' | 'shield' | 'clock' | 'check' | 'alert'): string {
+    switch (name) {
+        case 'shield': return svgIcon('<path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6l8-3z"/>', 20);
+        case 'clock': return svgIcon('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/>', 28);
+        case 'check': return svgIcon('<path d="M5 12l5 5 9-10"/>', 28);
+        case 'alert': return svgIcon('<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>', 20);
+        default: return svgIcon('<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>', 20);
+    }
+}
+
+function finderStepsHtml(): string {
+    const steps: { id: FinderStage; label: string }[] = finder.when === 'after'
+        ? [{ id: 'background', label: t('fm_step_bg') }, { id: 'search', label: t('fm_step_search') }, { id: 'result', label: t('fm_step_result') }]
+        : [{ id: 'search', label: t('fm_step_search') }, { id: 'result', label: t('fm_step_result') }];
+    const current = steps.findIndex(s => s.id === finder.stage);
+    return steps.map((step, i) => {
+        const state = i < current ? 'is-done' : i === current ? 'is-current' : '';
+        const dot = state === 'is-done' ? svgIcon('<path d="M5 12l5 5 9-10"/>', 14) : String(i + 1);
+        const line = i > 0 ? `<span class="finder-step-line ${i <= current ? 'is-done' : ''}"></span>` : '';
+        return `${line}<span class="finder-step ${state}"><span class="finder-step-dot">${dot}</span><span>${esc(step.label)}</span></span>`;
+    }).join('');
+}
+
+function finderTopHtml(): string {
+    const e = finderElapsed();
+    const left = Math.max(0, FINDER_LIMIT_SECS - e);
+    return `
+        <div id="finder-top" class="finder-top${left <= FINDER_WARN_SECS ? ' is-warn' : ''}">
+            <div class="finder-topline">
+                <div class="finder-steps">${finderStepsHtml()}</div>
+                <div class="finder-timer">
+                    <span id="finder-rec" class="finder-rec">${esc(t('fm_rec').replace('{t}', finderClock(e)))}</span>
+                    <span class="finder-timer-sep"></span>
+                    <span id="finder-left" class="finder-left">${esc(t('fm_left').replace('{n}', String(left)))}</span>
+                </div>
+            </div>
+            <div class="finder-bar"><i id="finder-bar-fill" style="width:${Math.min(100, e / FINDER_LIMIT_SECS * 100)}%"></i></div>
+        </div>`;
+}
+
+function finderRecentHtml(snapshot: FinderSnapshot | null): string {
+    if (!snapshot || snapshot.recent.length === 0) return '';
+    const rows = snapshot.recent.map(r => `<div><b>${esc(r.key)}</b><span>${esc(r.agoSecs <= 1 ? t('fm_just_now') : t('fm_ago').replace('{n}', String(r.agoSecs)))}</span></div>`).join('');
+    const more = snapshot.more > 0 ? `<div><span>${esc(t('fm_and_more').replace('{n}', String(snapshot.more)))}</span></div>` : '';
+    return rows + more;
+}
+
+/** Обновляет только живые части экрана (таймер, счётчики), не перерисовывая страницу. */
+function finderUpdateLive() {
+    if (finder.stage !== 'background' && finder.stage !== 'search') return;
+    const e = finderElapsed();
+    const left = Math.max(0, FINDER_LIMIT_SECS - e);
+    document.getElementById('finder-top')?.classList.toggle('is-warn', left <= FINDER_WARN_SECS);
+    const rec = document.getElementById('finder-rec'); if (rec) rec.textContent = t('fm_rec').replace('{t}', finderClock(e));
+    const lf = document.getElementById('finder-left'); if (lf) lf.textContent = t('fm_left').replace('{n}', String(left));
+    const bar = document.getElementById('finder-bar-fill'); if (bar) bar.style.width = `${Math.min(100, e / FINDER_LIMIT_SECS * 100)}%`;
+    const snapshot = finder.snapshot;
+    const big = document.getElementById('finder-count');
+    if (big && snapshot) big.textContent = String(finder.stage === 'background' ? snapshot.background : snapshot.count);
+    const recent = document.getElementById('finder-recent');
+    if (recent) recent.innerHTML = finderRecentHtml(snapshot);
+}
+
+function finderBoundsHtml(): string {
+    const option = (attr: string, value: string, selected: boolean, title: string, desc: string) => `
+        <button type="button" class="finder-option${selected ? ' is-selected' : ''}" ${attr}="${value}" role="radio" aria-checked="${selected}">
+            <span class="finder-radio"></span>
+            <span class="finder-option-text"><span class="finder-option-title">${esc(title)}</span><span class="finder-option-desc">${esc(desc)}</span></span>
+        </button>`;
+    const canStart = !!activeLink;
+    return `
+        <p class="finder-lead">${esc(t('fm_sub'))}</p>
+        <h4 class="subpage-section-title">${esc(t('fm_bounds'))}</h4>
+        <div class="finder-options" role="radiogroup">
+            ${option('data-finder-from', 'proxy', finder.from === 'proxy', t('fm_goal_proxy_t'), t('fm_goal_proxy_d'))}
+            ${option('data-finder-from', 'direct', finder.from === 'direct', t('fm_goal_direct_t'), t('fm_goal_direct_d'))}
+        </div>
+        <h4 class="subpage-section-title">${esc(t('fm_when_q'))}</h4>
+        <div class="finder-options" role="radiogroup">
+            ${option('data-finder-when', 'after', finder.when === 'after', t('fm_when_after_t'), t('fm_when_after_d'))}
+            ${option('data-finder-when', 'open', finder.when === 'open', t('fm_when_open_t'), t('fm_when_open_d'))}
+        </div>
+        <div class="finder-note">${finderIcon('shield')}<span>${esc(t('fm_note'))}</span></div>
+        <div class="finder-actions">
+            <button type="button" class="finder-primary" data-finder-action="start" ${canStart ? '' : 'disabled'}>${esc(t('fm_start'))}</button>
+            ${canStart ? '' : `<span class="finder-warn-text">${esc(t('fm_novpn'))}</span>`}
+            ${finder.error ? `<span class="finder-warn-text">${esc(finder.error)}</span>` : ''}
+        </div>`;
+}
+
+function finderPhaseHtml(): string {
+    const background = finder.stage === 'background';
+    const snapshot = finder.snapshot;
+    const title = background ? t('fm_bg_title') : finder.when === 'after' ? t('fm_s_title') : t('fm_so_title');
+    const text = background ? t('fm_bg_text') : finder.when === 'after' ? t('fm_s_text') : t('fm_so_text');
+    const info = !background && finder.when === 'after'
+        ? `<div class="finder-info">${finderIcon('info')}<span>${esc(t('fm_s_bgnote').replace('{n}', String(finder.bgCount)))}</span></div>` : '';
+    const mainButton = background
+        ? `<button type="button" class="finder-primary" data-finder-action="loaded">${esc(t('fm_loaded'))}</button>`
+        : `<button type="button" class="finder-primary" data-finder-action="show">${esc(t('fm_show'))}</button>`;
+    const card = background
+        ? `<div class="finder-card">
+                <div class="finder-card-head"><span>${esc(t('fm_bg_count'))}</span><span id="finder-count" class="finder-big">${snapshot ? snapshot.background : 0}</span></div>
+                <div class="finder-card-note">${esc(t('fm_bg_note'))}</div>
+           </div>`
+        : `<div class="finder-card is-live">
+                <div class="finder-card-head"><span>${esc(t('fm_new_count'))}</span><span id="finder-count" class="finder-big">${snapshot ? snapshot.count : 0}</span></div>
+                <div id="finder-recent" class="finder-recent">${finderRecentHtml(snapshot)}</div>
+           </div>`;
+    return `
+        ${finderTopHtml()}
+        <div class="finder-split">
+            <div class="finder-left-col">
+                <h3 class="finder-step-title">${esc(title)}</h3>
+                <p class="finder-step-text">${esc(text)}</p>
+                ${info}
+                <div class="finder-actions">${mainButton}<button type="button" class="finder-ghost" data-finder-action="cancel">${esc(t('fm_cancel'))}</button></div>
+            </div>
+            ${card}
+        </div>`;
+}
+
+function finderResultHtml(): string {
+    const outcome = finder.outcome;
+    if (!outcome) return '';
+    const target = finderTarget();
+    const items = outcome.items;
+    const visible = finder.showAll ? items : items.slice(0, FINDER_VISIBLE);
+    const picked = items.filter(item => finder.choice.get(item.key) === target).length;
+    const zoneName = t(target === 'direct' ? 'fm_via_direct' : 'fm_via_proxy');
+    const routeBtn = (item: FinderItem, route: FinderFrom) => {
+        const on = (finder.choice.get(item.key) ?? finder.from) === route;
+        return `<button type="button" class="${on ? 'is-on' : ''}${on && route === target ? ' is-target' : ''}" data-finder-key="${esc(item.key)}" data-finder-route="${route}" aria-pressed="${on}">${esc(t(route === 'proxy' ? 'fm_via_proxy' : 'fm_via_direct'))}</button>`;
+    };
+    const rows = visible.map(item => `
+        <div class="finder-row">
+            <div class="finder-row-main">
+                <span class="finder-row-name">${esc(item.key)}</span>
+                <span class="finder-row-sub">${esc(item.shared ? t('fm_shared_warn') : item.ruleValue)}</span>
+            </div>
+            <div class="finder-row-meta">
+                <span>×${item.count}</span>
+                ${item.failed > 0 ? `<span class="finder-tag is-failed">${esc(t('fm_failed').replace('{n}', String(item.failed)))}</span>` : ''}
+                ${item.shared ? `<span class="finder-tag is-shared">${esc(t('fm_shared'))}</span>` : ''}
+            </div>
+            <div class="finder-seg" role="group">${routeBtn(item, 'proxy')}${routeBtn(item, 'direct')}</div>
+        </div>`).join('');
+    const hiddenMore = items.length - visible.length;
+    const showHint = finder.when === 'open' && finder.round >= 2 && items.length > 0;
+    const hint = showHint ? `
+        <div class="finder-banner">
+            ${finderIcon('alert')}
+            <div class="finder-banner-text">
+                <b>${esc(t(finder.from === 'proxy' ? 'fm_hint_direct_t' : 'fm_hint_proxy_t'))}</b>
+                ${target === 'direct' ? `<span>${esc(t('fm_ip_note'))}</span>` : ''}
+            </div>
+            <button type="button" data-finder-action="all">${esc(t(finder.from === 'proxy' ? 'fm_hint_direct_b' : 'fm_hint_proxy_b'))}</button>
+        </div>` : '';
+    return `
+        ${finderTopHtmlResult()}
+        <div class="finder-result-head">
+            <h3 class="finder-heading">${esc(t('fm_res_title'))}</h3>
+            <span class="finder-chip">${esc(t('fm_hidden').replace('{a}', String(outcome.hiddenAds)).replace('{c}', String(outcome.hiddenCovered)))}</span>
+        </div>
+        <p class="finder-lead">${esc(t(finder.when === 'after' ? 'fm_res_sub_after' : 'fm_res_sub_open'))}</p>
+        ${finder.timedOut ? `<div class="finder-timeout-note">${esc(t('fm_timeout_found'))}</div>` : ''}
+        ${hint}
+        ${items.length === 0 ? `<div class="finder-empty">${esc(t('fm_empty'))}</div>` : `<div class="finder-list">${rows}</div>`}
+        ${hiddenMore > 0 ? `<button type="button" class="finder-more" data-finder-action="more">${esc(t('fm_more').replace('{n}', String(hiddenMore)))}</button>` : ''}
+        <div class="finder-foot">
+            <div class="finder-foot-text">${esc(t('fm_will_add').split('{rules}')[0].replace('{zone}', zoneName))}<b>${esc(finderPlural(picked, 'fm_rules'))}</b>${esc(t('fm_will_add').split('{rules}')[1] ?? '')}${target === 'direct' ? `<span class="finder-foot-sub">${esc(t('fm_ip_note'))}</span>` : ''}</div>
+            <button type="button" class="finder-ghost" data-finder-action="recheck">${esc(t('fm_recheck'))}</button>
+            <button type="button" class="finder-primary" data-finder-action="add" ${picked === 0 ? 'disabled' : ''}>${esc(t('fm_add'))}</button>
+        </div>`;
+}
+
+function finderTopHtmlResult(): string {
+    return `<div class="finder-top"><div class="finder-topline"><div class="finder-steps">${finderStepsHtmlResult()}</div></div></div>`;
+}
+
+function finderStepsHtmlResult(): string {
+    const labels = finder.when === 'after'
+        ? [t('fm_step_bg'), t('fm_step_search'), t('fm_step_result')]
+        : [t('fm_step_search'), t('fm_step_result')];
+    return labels.map((label, i) => {
+        const last = i === labels.length - 1;
+        const dot = last ? String(i + 1) : svgIcon('<path d="M5 12l5 5 9-10"/>', 14);
+        const line = i > 0 ? `<span class="finder-step-line is-done"></span>` : '';
+        return `${line}<span class="finder-step ${last ? 'is-current' : 'is-done'}"><span class="finder-step-dot">${dot}</span><span>${esc(label)}</span></span>`;
+    }).join('');
+}
+
+function finderMessageHtml(kind: 'timeout' | 'done'): string {
+    if (kind === 'timeout') {
+        return `<div class="finder-center"><div class="finder-message is-bad">
+            <div class="finder-message-icon">${finderIcon('clock')}</div>
+            <p>${esc(t('fm_timeout_lost'))}</p>
+            <button type="button" class="finder-primary" data-finder-action="restart">${esc(t('fm_restart'))}</button>
+        </div></div>`;
+    }
+    return `<div class="finder-center"><div class="finder-message is-ok">
+        <div class="finder-message-icon">${finderIcon('check')}</div>
+        <p>${esc(t(finder.applied ? 'fm_done_text' : 'fm_done_saved').replace('{n}', String(finder.added)))}</p>
+        <button type="button" class="finder-primary" data-finder-action="close">${esc(t('fm_done_btn'))}</button>
+    </div></div>`;
+}
+
+function renderFinder() {
+    const host = document.getElementById('subpage-finder');
+    if (!host) return;
+    const previous = host.querySelector<HTMLElement>('.subpage-body');
+    const scroll = previous ? previous.scrollTop : 0;
+    let content: string;
+    switch (finder.stage) {
+        case 'background':
+        case 'search': content = finderPhaseHtml(); break;
+        case 'result': content = finderResultHtml(); break;
+        case 'timeout': content = finderMessageHtml('timeout'); break;
+        case 'done': content = finderMessageHtml('done'); break;
+        default: content = finderBoundsHtml();
+    }
+    host.classList.add('finder-page');
+    host.innerHTML = `
+        <div class="subpage-header">
+            <button type="button" class="subpage-back" data-subpage-close aria-label="${esc(t('nav_back'))}">${svgIcon('<path d="m15 18-6-6 6-6"/>', 20)}</button>
+            <div class="subpage-title">${esc(t('fm_title'))}</div>
+        </div>
+        <div class="subpage-body finder-body">${content}</div>
+    `;
+    const body = host.querySelector<HTMLElement>('.subpage-body');
+    if (body && previous) body.scrollTop = scroll;
+}
+
+function openFinderPage() {
+    finder.round = 0;
+    finderReset('bounds');
+    renderFinder();
+    const el = document.getElementById('subpage-finder');
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+}
+
+function closeFinderPage(): boolean {
+    const el = document.getElementById('subpage-finder');
+    if (!el || !el.classList.contains('open')) return false;
+    finderReset('bounds');
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+    return true;
+}
+
+function refreshFinderIfOpen() {
+    if (document.getElementById('subpage-finder')?.classList.contains('open')) renderFinder();
+    if (document.getElementById('subpage-profiles')?.classList.contains('open')) renderProfilesSubpage();
+}
+
+function initFinder() {
+    document.getElementById('btn-open-finder')?.addEventListener('click', openFinderPage);
+    const profilesBtn = document.getElementById('btn-open-route-profiles');
+    profilesBtn?.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('#btn-route-action')) return;
+        openProfilesPage();
+    });
+    profilesBtn?.addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target === profilesBtn) { e.preventDefault(); openProfilesPage(); }
+    });
+    document.getElementById('subpage-finder')?.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const from = target.closest<HTMLElement>('[data-finder-from]');
+        if (from) { finder.from = from.dataset.finderFrom as FinderFrom; renderFinder(); return; }
+        const when = target.closest<HTMLElement>('[data-finder-when]');
+        if (when) { finder.when = when.dataset.finderWhen as FinderWhen; renderFinder(); return; }
+        const route = target.closest<HTMLElement>('[data-finder-route]');
+        if (route && route.dataset.finderKey) {
+            finder.choice.set(route.dataset.finderKey, route.dataset.finderRoute as FinderFrom);
+            renderFinder();
+            return;
+        }
+        const action = target.closest<HTMLElement>('[data-finder-action]')?.dataset.finderAction;
+        switch (action) {
+            case 'start': finder.round = 0; void finderBegin(); break;
+            case 'restart': void finderBegin(); break;
+            case 'loaded': void finderMarkLoaded(); break;
+            case 'show': void finderShowResult(false); break;
+            case 'cancel': finder.round = 0; finderReset('bounds'); renderFinder(); break;
+            case 'recheck': void finderRecheck(); break;
+            case 'add': void finderApply(); break;
+            case 'all': finderSetAll(); break;
+            case 'more': finder.showAll = true; renderFinder(); break;
+            case 'close': closeAnySubpage(); break;
+        }
+    });
 }
 
 function setActiveRouteProfile(id: string | null) {
@@ -1504,16 +2027,23 @@ function initZoneCardDragAndDrop() {
 }
 
 function renderRoutingProfiles() {
+    updateRoutingProfileName();
     const list = document.getElementById('routing-profiles-list');
     if (!list) return;
-    list.innerHTML = '';
+    if (routeProfiles.length === 0) {
+        list.innerHTML = `<div class="profiles-empty">${esc(t('profiles_empty'))}</div>`;
+        return;
+    }
     let profilesHtml = '';
     routeProfiles.forEach(p => {
+        const selected = p.id === activeRouteProfileId;
         profilesHtml += `
-            <div class="profile-item">
+            <div class="profile-item${selected ? ' is-selected' : ''}">
                 <span>${esc(p.name)}</span>
                 <div class="link-actions">
-                    <button class="secondary btn-load-profile" data-id="${esc(p.id)}" style="padding: 6px 12px; font-size: 13px;">${t('btn_select')}</button>
+                    ${selected
+                        ? `<span class="profile-selected-label">${esc(t('profile_selected'))}</span>`
+                        : `<button class="secondary btn-load-profile" data-id="${esc(p.id)}" style="padding: 6px 12px; font-size: 13px;">${t('btn_select')}</button>`}
                     <button class="btn-menu-dots btn-route-menu-dots" data-index="${esc(p.id)}">⋮</button>
                     <div class="dropdown-menu" id="route-menu-${esc(p.id)}" style="display:none;">
                         <button class="btn-edit-profile" data-id="${esc(p.id)}">${t('btn_rename')}</button>
@@ -1525,7 +2055,6 @@ function renderRoutingProfiles() {
         `;
     });
     list.innerHTML = profilesHtml;
-    updateRoutingProfileName();
 }
 
 function renderAboutPage() {
@@ -1668,7 +2197,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.7.0";
+        const CURRENT_VERSION = "1.8.0";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -2071,6 +2600,7 @@ function init() {
     });
     void initBridge();
     initScenarios();
+    initFinder();
     initGuard();
     initSubscriptionUpdates();
     checkApplicationUpdates();
@@ -3045,10 +3575,7 @@ document.addEventListener('click', async (e) => {
             if (p) {
                 applyRouteProfile(p);
                 setActiveRouteProfile(p.id);
-                
-                const orig = loadBtn.innerText;
-                loadBtn.innerText = t('status_applied');
-                setTimeout(() => { loadBtn.innerText = orig; }, 1500);
+                renderRoutingProfiles();
             }
         } catch (err) {
             console.error(err); alert(t('err_apply_profile'));

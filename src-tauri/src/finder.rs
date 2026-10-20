@@ -1,0 +1,847 @@
+//! Менеджер маршрутизации: поиск адресов, из-за которых сайт или видео не работает.
+//!
+//! Xray всегда пишет access.log и error.log (уровень debug), поэтому поиск ничего не
+//! перезапускает: он читает только то, что дописано в журналы после его старта, держит
+//! счётчики в памяти и сбрасывает их при остановке. Адреса нигде не сохраняются.
+//!
+//! Отсев шума:
+//! - реклама и аналитика (geosite `category-ads-all` плюс небольшой встроенный список);
+//! - адреса, которые уже покрыты правилами пользователя (domain/full/keyword/geosite/ip);
+//! - «фон» — всё, что открылось до действия, из-за которого возникла проблема.
+//! Остальное группируется по домену верхнего уровня (`cdn.example.com` -> `example.com`).
+//! Общие CDN не группируются: правило на них заденет чужие сайты.
+
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use tauri::State;
+
+const GEOSITE_PATH: &str = "/etc/karin-proxy/geo/geosite.dat";
+/// За один опрос читаем не больше этого объёма новых байт (остальное пропускаем с начала).
+const MAX_READ: u64 = 16 * 1024 * 1024;
+const MAX_SESSIONS: usize = 200_000;
+const MAX_HOSTS: usize = 20_000;
+const ADS_TAG: &str = "category-ads-all";
+
+/// Резерв на случай, если geosite.dat ещё не скачан.
+const BUILTIN_ADS: &[&str] = &[
+    "doubleclick.net", "googlesyndication.com", "google-analytics.com", "googletagmanager.com",
+    "googleadservices.com", "adservice.google.com", "mc.yandex.ru", "an.yandex.ru",
+    "yandexadexchange.net", "scorecardresearch.com", "hotjar.com", "clarity.ms", "adnxs.com",
+    "criteo.com", "taboola.com", "outbrain.com", "top-fwz1.mail.ru", "counter.yadro.ru",
+];
+
+/// Составные публичные суффиксы (минимальный список, без полной базы PSL).
+const MULTI_SUFFIXES: &[&str] = &[
+    "co.uk", "org.uk", "ac.uk", "gov.uk", "com.au", "net.au", "org.au", "co.jp", "co.kr", "co.in",
+    "co.za", "co.nz", "com.br", "com.cn", "com.hk", "com.tw", "com.tr", "com.ua", "com.mx",
+    "com.ar", "com.sg", "com.pl", "com.ru", "spb.ru", "msk.ru",
+    // Платформы, где каждый поддомен — отдельный чужой сайт.
+    "github.io", "gitlab.io", "pages.dev", "workers.dev", "vercel.app", "netlify.app",
+    "herokuapp.com", "appspot.com", "blogspot.com", "web.app", "firebaseapp.com", "azurewebsites.net",
+];
+
+/// Общие CDN и облака: правило на них заденет чужие сайты.
+const SHARED_HOSTS: &[&str] = &[
+    "cloudfront.net", "akamaihd.net", "akamaized.net", "akamai.net", "edgekey.net", "edgesuite.net",
+    "fastly.net", "fastlylb.net", "azureedge.net", "amazonaws.com", "googleusercontent.com",
+    "gstatic.com", "googleapis.com", "b-cdn.net", "cdn77.org", "stackpathcdn.com", "jsdelivr.net",
+    "unpkg.com", "cdnjs.cloudflare.com", "cloudflare.net", "llnwd.net", "edgecastcdn.net",
+    "hwcdn.net", "cdn.jsdelivr.net", "sharedhost.net",
+];
+
+// **********************************
+// РАЗБОР ЖУРНАЛОВ
+// **********************************
+const OUT_PROXY: usize = 0;
+const OUT_DIRECT: usize = 1;
+const OUT_BLOCK: usize = 2;
+
+const FAIL_MARKERS: &[&str] = &[
+    "failed to process outbound traffic",
+    "failed to open connection",
+    "i/o timeout",
+    "connection refused",
+    "connection reset",
+    "no route to host",
+    "handshake",
+];
+
+fn strip_target(token: &str) -> Option<String> {
+    let token = token.trim_matches(|c| c == '[' || c == ']' || c == ',' || c == '"');
+    let rest = token.strip_prefix("tcp:").or_else(|| token.strip_prefix("udp:"))?;
+    let host = if let Some(inner) = rest.strip_prefix('[') {
+        inner.split(']').next()?
+    } else {
+        match rest.rsplit_once(':') {
+            Some((h, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => h,
+            _ => rest,
+        }
+    };
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty() { None } else { Some(host) }
+}
+
+/// `2025/01/01 12:00:00 from tcp:1.2.3.4:5 accepted tcp:example.com:443 [tun-in >> proxy]`
+/// (в разных версиях Xray стрелка бывает `>>` или `->`). Только входящие из TUN.
+fn parse_access(line: &str) -> Option<(String, usize)> {
+    let after = line.split_once(" accepted ")?.1;
+    let (target, tail) = after.split_once(' ')?;
+    let route = tail.trim().strip_prefix('[')?.split(']').next()?;
+    let (inbound, outbound) = route.split_once(">>").or_else(|| route.split_once("->"))?;
+    if inbound.trim() != "tun-in" { return None; }
+    let out = match outbound.trim() {
+        "proxy" => OUT_PROXY,
+        "direct" => OUT_DIRECT,
+        "block" => OUT_BLOCK,
+        _ => return None,
+    };
+    Some((strip_target(target)?, out))
+}
+
+struct ErrorLine {
+    session: String,
+    host: Option<String>,
+    failed: bool,
+}
+
+/// `... [Info] [3141592653] app/dispatcher: ... tcp:example.com:443` — адрес и признак обрыва
+/// связываются по номеру сессии в квадратных скобках.
+fn parse_error(line: &str) -> Option<ErrorLine> {
+    let mut session = None;
+    let mut rest = line;
+    while let Some(start) = rest.find('[') {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find(']') else { break };
+        let inner = &after[..end];
+        if inner.len() >= 3 && inner.bytes().all(|b| b.is_ascii_digit()) {
+            session = Some(inner.to_string());
+            break;
+        }
+        rest = &after[end + 1..];
+    }
+    let session = session?;
+    let mut host = None;
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    for (i, token) in tokens.iter().enumerate() {
+        if let Some(h) = strip_target(token) { host = Some(h); break; }
+        if *token == "domain:" {
+            if let Some(next) = tokens.get(i + 1) {
+                host = Some(next.trim_matches(|c| c == '[' || c == ']').to_ascii_lowercase());
+                break;
+            }
+        }
+    }
+    let lower = line.to_ascii_lowercase();
+    let failed = FAIL_MARKERS.iter().any(|m| lower.contains(m));
+    Some(ErrorLine { session, host, failed })
+}
+
+/// Новые байты журнала после позиции `pos` (до последнего перевода строки) и новая позиция.
+fn read_new(path: &str, pos: u64) -> (String, u64) {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut file) = std::fs::File::open(path) else { return (String::new(), pos) };
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut start = if len >= pos { pos } else { 0 };
+    if len - start > MAX_READ { start = len - MAX_READ; }
+    if file.seek(SeekFrom::Start(start)).is_err() { return (String::new(), pos); }
+    let mut bytes = Vec::new();
+    if file.take(len - start).read_to_end(&mut bytes).is_err() { return (String::new(), pos); }
+    // Недописанную последнюю строку оставляем на следующий опрос.
+    let cut = bytes.iter().rposition(|b| *b == b'\n').map(|i| i + 1).unwrap_or(0);
+    let text = String::from_utf8_lossy(&bytes[..cut]).into_owned();
+    (text, start + cut as u64)
+}
+
+fn file_len(path: &str) -> u64 {
+    std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+}
+
+// **********************************
+// ИМЕНА: ГРУППИРОВКА, ЛОКАЛЬНЫЕ АДРЕСА
+// **********************************
+fn is_ip(host: &str) -> bool {
+    host.parse::<std::net::IpAddr>().is_ok()
+}
+
+fn is_local(host: &str) -> bool {
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return match ip {
+            std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() || v4.is_broadcast(),
+            std::net::IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified() || (v6.segments()[0] & 0xfe00) == 0xfc00 || (v6.segments()[0] & 0xffc0) == 0xfe80,
+        };
+    }
+    !host.contains('.')
+        || host.ends_with(".local") || host.ends_with(".lan") || host.ends_with(".internal")
+        || host.ends_with(".home") || host.ends_with(".arpa")
+}
+
+fn ends_with_domain(host: &str, domain: &str) -> bool {
+    host == domain || (host.len() > domain.len() && host.ends_with(domain) && host.as_bytes()[host.len() - domain.len() - 1] == b'.')
+}
+
+/// Ключ группы, значение правила и признак «общий CDN».
+fn group_of(host: &str) -> (String, String, bool, &'static str) {
+    if is_ip(host) {
+        return (host.to_string(), host.to_string(), false, "ip");
+    }
+    if SHARED_HOSTS.iter().any(|s| ends_with_domain(host, s)) {
+        return (host.to_string(), format!("full:{}", host), true, "domain");
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    let take = if labels.len() >= 3 && MULTI_SUFFIXES.iter().any(|s| ends_with_domain(host, s)) { 3 } else { 2 };
+    let key = if labels.len() <= take { host.to_string() } else { labels[labels.len() - take..].join(".") };
+    let rule = format!("domain:{}", key);
+    (key, rule, false, "domain")
+}
+
+// **********************************
+// ПРАВИЛА: СОВПАДЕНИЕ АДРЕСА С ПРАВИЛАМИ И С GEOSITE
+// **********************************
+#[derive(Default)]
+struct Matcher {
+    suffix: HashSet<String>,
+    full: HashSet<String>,
+    plain: Vec<String>,
+    ips: HashSet<String>,
+    cidrs: Vec<(u32, u32)>,
+}
+
+impl Matcher {
+    fn add_domain(&mut self, kind: u8, value: &str) {
+        let value = value.trim().to_ascii_lowercase();
+        if value.is_empty() { return; }
+        match kind {
+            2 => { self.suffix.insert(value); }
+            3 => { self.full.insert(value); }
+            0 => self.plain.push(value),
+            _ => {}
+        }
+    }
+
+    fn add_ip(&mut self, value: &str) {
+        let value = value.trim();
+        if let Some((addr, bits)) = value.split_once('/') {
+            if let (Ok(a), Ok(b)) = (addr.parse::<std::net::Ipv4Addr>(), bits.parse::<u32>()) {
+                if b <= 32 {
+                    let mask = if b == 0 { 0 } else { u32::MAX << (32 - b) };
+                    self.cidrs.push((u32::from(a) & mask, mask));
+                }
+            }
+        } else if !value.is_empty() {
+            self.ips.insert(value.to_ascii_lowercase());
+        }
+    }
+
+    fn matches(&self, host: &str) -> bool {
+        if is_ip(host) {
+            if self.ips.contains(host) { return true; }
+            if let Ok(v4) = host.parse::<std::net::Ipv4Addr>() {
+                let n = u32::from(v4);
+                return self.cidrs.iter().any(|(net, mask)| n & mask == *net);
+            }
+            return false;
+        }
+        if self.full.contains(host) || self.suffix.contains(host) { return true; }
+        let mut rest = host;
+        while let Some(i) = rest.find('.') {
+            rest = &rest[i + 1..];
+            if self.suffix.contains(rest) { return true; }
+        }
+        self.plain.iter().any(|p| host.contains(p.as_str()))
+    }
+}
+
+struct GeoDomain {
+    kind: u8,
+    value: String,
+    attrs: Vec<String>,
+}
+
+enum Field<'a> {
+    Varint(u64),
+    Bytes(&'a [u8]),
+}
+
+fn read_varint(buf: &[u8], i: &mut usize) -> Option<u64> {
+    let mut result = 0u64;
+    let mut shift = 0u32;
+    loop {
+        let byte = *buf.get(*i)?;
+        *i += 1;
+        result |= ((byte & 0x7f) as u64) << shift;
+        if byte & 0x80 == 0 { return Some(result); }
+        shift += 7;
+        if shift > 63 { return None; }
+    }
+}
+
+fn parse_fields(buf: &[u8]) -> Vec<(u32, Field<'_>)> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < buf.len() {
+        let Some(key) = read_varint(buf, &mut i) else { break };
+        let number = (key >> 3) as u32;
+        match key & 7 {
+            0 => { let Some(v) = read_varint(buf, &mut i) else { break }; out.push((number, Field::Varint(v))); }
+            1 => i += 8,
+            2 => {
+                let Some(len) = read_varint(buf, &mut i) else { break };
+                let end = i.saturating_add(len as usize);
+                if end > buf.len() { break; }
+                out.push((number, Field::Bytes(&buf[i..end])));
+                i = end;
+            }
+            5 => i += 4,
+            _ => break,
+        }
+    }
+    out
+}
+
+/// Читает из geosite.dat только запрошенные теги (нижний регистр, без `@атрибута`).
+fn load_geosite_tags(data: &[u8], wanted: &HashSet<String>) -> HashMap<String, Vec<GeoDomain>> {
+    let mut result: HashMap<String, Vec<GeoDomain>> = HashMap::new();
+    if wanted.is_empty() { return result; }
+    for (number, field) in parse_fields(data) {
+        let (1, Field::Bytes(entry)) = (number, field) else { continue };
+        let fields = parse_fields(entry);
+        let code = fields.iter().find_map(|(n, f)| match (n, f) {
+            (1, Field::Bytes(b)) => Some(String::from_utf8_lossy(b).to_ascii_lowercase()),
+            _ => None,
+        });
+        let Some(code) = code else { continue };
+        if !wanted.contains(&code) { continue; }
+        let mut domains = Vec::new();
+        for (n, f) in fields {
+            let (2, Field::Bytes(raw)) = (n, f) else { continue };
+            let mut kind = 0u8;
+            let mut value = String::new();
+            let mut attrs = Vec::new();
+            for (dn, df) in parse_fields(raw) {
+                match (dn, df) {
+                    (1, Field::Varint(v)) => kind = v as u8,
+                    (2, Field::Bytes(b)) => value = String::from_utf8_lossy(b).into_owned(),
+                    (3, Field::Bytes(b)) => {
+                        for (an, af) in parse_fields(b) {
+                            if let (1, Field::Bytes(k)) = (an, af) {
+                                attrs.push(String::from_utf8_lossy(k).to_ascii_lowercase());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            domains.push(GeoDomain { kind, value, attrs });
+        }
+        result.insert(code, domains);
+    }
+    result
+}
+
+/// `geosite:google@ads` -> ("google", Some("ads"))
+fn split_tag(raw: &str) -> (String, Option<String>) {
+    let raw = raw.trim().trim_start_matches("geosite:").to_ascii_lowercase();
+    match raw.split_once('@') {
+        Some((tag, attr)) => (tag.to_string(), Some(attr.to_string())),
+        None => (raw, None),
+    }
+}
+
+fn add_geo_tag(matcher: &mut Matcher, geo: &HashMap<String, Vec<GeoDomain>>, tag: &str, attr: &Option<String>) {
+    let Some(list) = geo.get(tag) else { return };
+    for d in list {
+        if let Some(a) = attr {
+            if !d.attrs.iter().any(|x| x == a) { continue; }
+        }
+        matcher.add_domain(d.kind, &d.value);
+    }
+}
+
+fn read_geosite() -> Option<Vec<u8>> {
+    std::fs::read(GEOSITE_PATH).ok()
+}
+
+/// Матчер правил пользователя (все три зоны). Для geosite-тегов нужен geosite.dat.
+fn build_rules_matcher(rules: &Value, geo_data: Option<&[u8]>) -> Matcher {
+    let mut matcher = Matcher::default();
+    let mut tags: Vec<(String, Option<String>)> = Vec::new();
+    for zone in ["direct", "proxy", "block"] {
+        let Some(list) = rules.get(zone).and_then(|v| v.as_array()) else { continue };
+        for rule in list {
+            let kind = rule.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let value = rule.get("value").and_then(|v| v.as_str()).unwrap_or("").trim();
+            if value.is_empty() { continue; }
+            match kind {
+                "geosite" => tags.push(split_tag(value)),
+                "ip" => matcher.add_ip(value),
+                "keyword" => matcher.add_domain(0, value),
+                "domain" => {
+                    if let Some(v) = value.strip_prefix("domain:") { matcher.add_domain(2, v); }
+                    else if let Some(v) = value.strip_prefix("full:") { matcher.add_domain(3, v); }
+                    else if let Some(v) = value.strip_prefix("keyword:") { matcher.add_domain(0, v); }
+                    else if value.starts_with("regexp:") { /* регулярные выражения не вычисляем */ }
+                    else if value.starts_with("geosite:") { tags.push(split_tag(value)); }
+                    else { matcher.add_domain(0, value); }
+                }
+                _ => {}
+            }
+        }
+    }
+    if let (Some(data), false) = (geo_data, tags.is_empty()) {
+        let wanted: HashSet<String> = tags.iter().map(|(t, _)| t.clone()).collect();
+        let geo = load_geosite_tags(data, &wanted);
+        for (tag, attr) in &tags { add_geo_tag(&mut matcher, &geo, tag, attr); }
+    }
+    matcher
+}
+
+fn build_ads_matcher(geo_data: Option<&[u8]>) -> (Matcher, bool) {
+    let mut matcher = Matcher::default();
+    for host in BUILTIN_ADS { matcher.add_domain(2, host); }
+    let mut loaded = false;
+    if let Some(data) = geo_data {
+        let wanted: HashSet<String> = [ADS_TAG.to_string()].into_iter().collect();
+        let geo = load_geosite_tags(data, &wanted);
+        loaded = geo.contains_key(ADS_TAG);
+        add_geo_tag(&mut matcher, &geo, ADS_TAG, &None);
+    }
+    (matcher, loaded)
+}
+
+struct Matchers {
+    ads: Arc<Matcher>,
+    covered: Arc<Matcher>,
+}
+
+/// Матчеры кэшируются: опрос идёт раз в секунду, а geosite.dat — несколько мегабайт.
+static ADS_CACHE: Mutex<Option<Arc<Matcher>>> = Mutex::new(None);
+static RULES_CACHE: Mutex<Option<(String, Arc<Matcher>)>> = Mutex::new(None);
+
+fn matchers_for(rules: &Value) -> Matchers {
+    let mut geo: Option<Vec<u8>> = None;
+    let ads = {
+        let mut cache = ADS_CACHE.lock().unwrap();
+        if let Some(m) = cache.as_ref() { m.clone() } else {
+            geo = read_geosite();
+            let (matcher, loaded) = build_ads_matcher(geo.as_deref());
+            let arc = Arc::new(matcher);
+            if loaded { *cache = Some(arc.clone()); }
+            arc
+        }
+    };
+    let key = rules.to_string();
+    let covered = {
+        let mut cache = RULES_CACHE.lock().unwrap();
+        match cache.as_ref() {
+            Some((k, m)) if *k == key => m.clone(),
+            _ => {
+                if geo.is_none() { geo = read_geosite(); }
+                let arc = Arc::new(build_rules_matcher(rules, geo.as_deref()));
+                *cache = Some((key, arc.clone()));
+                arc
+            }
+        }
+    };
+    Matchers { ads, covered }
+}
+
+// **********************************
+// СЕССИЯ ПОИСКА
+// **********************************
+#[derive(Default)]
+struct HostStat {
+    out: [u32; 3],
+    failed: u32,
+    last_seen: Option<Instant>,
+}
+
+struct Session {
+    direction: usize,
+    access_path: String,
+    error_path: String,
+    access_pos: u64,
+    error_pos: u64,
+    hosts: HashMap<String, HostStat>,
+    sessions: HashMap<String, String>,
+    failed_sessions: HashSet<String>,
+    background: HashSet<String>,
+    bg_count: u32,
+}
+
+#[derive(Default)]
+pub struct FinderState(Mutex<Option<Session>>);
+
+impl FinderState {
+    fn slot(&self) -> std::sync::MutexGuard<'_, Option<Session>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Item {
+    pub key: String,
+    pub rule_type: String,
+    pub rule_value: String,
+    pub count: u32,
+    pub failed: u32,
+    pub shared: bool,
+    pub hosts: Vec<String>,
+    pub ago_secs: u64,
+}
+
+struct Classified {
+    items: Vec<Item>,
+    hidden_ads: u32,
+    hidden_covered: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Recent {
+    pub key: String,
+    pub ago_secs: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Snapshot {
+    /// Сколько адресов ушло в «фон» (после отметки), либо сколько их сейчас, пока фон идёт.
+    pub background: u32,
+    pub count: u32,
+    pub recent: Vec<Recent>,
+    pub more: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Outcome {
+    pub items: Vec<Item>,
+    pub hidden_ads: u32,
+    pub hidden_covered: u32,
+}
+
+impl Session {
+    fn new(direction: usize, access_path: String, error_path: String) -> Session {
+        let access_pos = file_len(&access_path);
+        let error_pos = file_len(&error_path);
+        Session {
+            direction, access_path, error_path, access_pos, error_pos,
+            hosts: HashMap::new(), sessions: HashMap::new(), failed_sessions: HashSet::new(),
+            background: HashSet::new(), bg_count: 0,
+        }
+    }
+
+    fn ingest(&mut self) {
+        let (text, pos) = read_new(&self.access_path, self.access_pos);
+        self.access_pos = pos;
+        let now = Instant::now();
+        for line in text.lines() {
+            let Some((host, out)) = parse_access(line) else { continue };
+            if self.hosts.len() >= MAX_HOSTS && !self.hosts.contains_key(&host) { continue; }
+            let stat = self.hosts.entry(host).or_default();
+            stat.out[out] = stat.out[out].saturating_add(1);
+            stat.last_seen = Some(now);
+        }
+        let (text, pos) = read_new(&self.error_path, self.error_pos);
+        self.error_pos = pos;
+        for line in text.lines() {
+            let Some(parsed) = parse_error(line) else { continue };
+            if let Some(host) = parsed.host {
+                if self.sessions.len() >= MAX_SESSIONS { self.sessions.clear(); self.failed_sessions.clear(); }
+                self.sessions.entry(parsed.session.clone()).or_insert(host);
+            }
+            if parsed.failed {
+                if let Some(host) = self.sessions.get(&parsed.session).cloned() {
+                    if self.failed_sessions.insert(parsed.session) {
+                        if let Some(stat) = self.hosts.get_mut(&host) {
+                            stat.failed = stat.failed.saturating_add(1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn classify(&self, m: &Matchers) -> Classified {
+        let now = Instant::now();
+        let mut groups: HashMap<String, Item> = HashMap::new();
+        let (mut hidden_ads, mut hidden_covered) = (0u32, 0u32);
+        for (host, stat) in &self.hosts {
+            let count = stat.out[self.direction];
+            if count == 0 || self.background.contains(host) || is_local(host) { continue; }
+            if m.ads.matches(host) { hidden_ads += 1; continue; }
+            if m.covered.matches(host) { hidden_covered += 1; continue; }
+            let (key, rule_value, shared, rule_type) = group_of(host);
+            let ago = stat.last_seen.map(|t| now.duration_since(t).as_secs()).unwrap_or(0);
+            let item = groups.entry(key.clone()).or_insert_with(|| Item {
+                key, rule_type: rule_type.to_string(), rule_value, count: 0, failed: 0,
+                shared, hosts: Vec::new(), ago_secs: u64::MAX,
+            });
+            item.count = item.count.saturating_add(count);
+            item.failed = item.failed.saturating_add(stat.failed);
+            item.ago_secs = item.ago_secs.min(ago);
+            if item.hosts.len() < 3 { item.hosts.push(host.clone()); }
+        }
+        let mut items: Vec<Item> = groups.into_values().collect();
+        for item in &mut items { item.hosts.sort(); }
+        // Сначала оборвавшиеся, потом обычные, общие CDN в конце; внутри — по числу обращений.
+        items.sort_by(|a, b| {
+            (b.failed > 0).cmp(&(a.failed > 0))
+                .then(a.shared.cmp(&b.shared))
+                .then(b.count.cmp(&a.count))
+                .then(a.key.cmp(&b.key))
+        });
+        Classified { items, hidden_ads, hidden_covered }
+    }
+}
+
+fn parse_direction(direction: &str) -> Result<usize, String> {
+    match direction {
+        "proxy" => Ok(OUT_PROXY),
+        "direct" => Ok(OUT_DIRECT),
+        _ => Err("direction".into()),
+    }
+}
+
+// **********************************
+// КОМАНДЫ
+// **********************************
+/// Начать поиск: запоминаем текущий конец журналов. `direction` — какие адреса смотрим:
+/// «proxy» (шли через VPN) или «direct» (шли напрямую).
+#[tauri::command]
+pub async fn finder_start(state: State<'_, FinderState>, direction: String) -> Result<(), String> {
+    let direction = parse_direction(&direction)?;
+    let (err_path, acc_path) = crate::get_log_paths();
+    if !std::path::Path::new(&acc_path).exists() {
+        return Err("log".into());
+    }
+    *state.slot() = Some(Session::new(direction, acc_path, err_path));
+    Ok(())
+}
+
+/// Конец фона: всё, что видели до сих пор, больше не попадёт в список. Возвращает,
+/// сколько подходящих адресов ушло в фон.
+#[tauri::command]
+pub async fn finder_mark_background(state: State<'_, FinderState>, rules: Value) -> Result<u32, String> {
+    let m = matchers_for(&rules);
+    let mut guard = state.slot();
+    let session = guard.as_mut().ok_or("session")?;
+    session.ingest();
+    let relevant = session.classify(&m).items.len() as u32;
+    let hosts: Vec<String> = session.hosts.keys().cloned().collect();
+    session.background.extend(hosts);
+    session.bg_count = relevant;
+    Ok(relevant)
+}
+
+/// Короткая сводка для экрана поиска.
+#[tauri::command]
+pub async fn finder_poll(state: State<'_, FinderState>, rules: Value) -> Result<Snapshot, String> {
+    let m = matchers_for(&rules);
+    let mut guard = state.slot();
+    let session = guard.as_mut().ok_or("session")?;
+    session.ingest();
+    let classified = session.classify(&m);
+    let mut recent: Vec<&Item> = classified.items.iter().collect();
+    recent.sort_by_key(|i| i.ago_secs);
+    let count = classified.items.len() as u32;
+    Ok(Snapshot {
+        background: if session.background.is_empty() { count } else { session.bg_count },
+        count,
+        recent: recent.iter().take(3).map(|i| Recent { key: i.key.clone(), ago_secs: i.ago_secs }).collect(),
+        more: count.saturating_sub(3),
+    })
+}
+
+#[tauri::command]
+pub async fn finder_result(state: State<'_, FinderState>, rules: Value) -> Result<Outcome, String> {
+    let m = matchers_for(&rules);
+    let mut guard = state.slot();
+    let session = guard.as_mut().ok_or("session")?;
+    session.ingest();
+    let c = session.classify(&m);
+    Ok(Outcome { items: c.items, hidden_ads: c.hidden_ads, hidden_covered: c.hidden_covered })
+}
+
+/// Стереть всё найденное из памяти.
+#[tauri::command]
+pub async fn finder_stop(state: State<'_, FinderState>) -> Result<(), String> {
+    *state.slot() = None;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn varint(mut v: u64) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let byte = (v & 0x7f) as u8;
+            v >>= 7;
+            if v == 0 { out.push(byte); return out; }
+            out.push(byte | 0x80);
+        }
+    }
+
+    fn bytes_field(number: u32, data: &[u8]) -> Vec<u8> {
+        let mut out = varint(((number as u64) << 3) | 2);
+        out.extend(varint(data.len() as u64));
+        out.extend_from_slice(data);
+        out
+    }
+
+    fn domain(kind: u64, value: &str, attr: Option<&str>) -> Vec<u8> {
+        let mut d = varint(8);
+        d.extend(varint(kind));
+        d.extend(bytes_field(2, value.as_bytes()));
+        if let Some(a) = attr { d.extend(bytes_field(3, &bytes_field(1, a.as_bytes()))); }
+        d
+    }
+
+    fn site(code: &str, domains: Vec<Vec<u8>>) -> Vec<u8> {
+        let mut body = bytes_field(1, code.as_bytes());
+        for d in domains { body.extend(bytes_field(2, &d)); }
+        bytes_field(1, &body)
+    }
+
+    fn geo_fixture() -> Vec<u8> {
+        let mut data = site("CATEGORY-ADS-ALL", vec![domain(2, "adserver.test", None), domain(3, "px.example.org", None)]);
+        data.extend(site("RU-LIKE", vec![domain(2, "yandex.ru", None), domain(2, "tracker.yandex.ru", Some("ads"))]));
+        data
+    }
+
+    #[test]
+    fn access_line_both_arrows_and_ipv6() {
+        let a = "2025/01/01 12:00:00 from tcp:172.19.0.1:5555 accepted tcp:Example.com:443 [tun-in >> proxy]";
+        assert_eq!(parse_access(a), Some(("example.com".to_string(), OUT_PROXY)));
+        let b = "2025/01/01 12:00:00.123 from 172.19.0.1:5555 accepted udp:cdn.example.com:443 [tun-in -> direct]";
+        assert_eq!(parse_access(b), Some(("cdn.example.com".to_string(), OUT_DIRECT)));
+        let c = "x accepted tcp:[2001:db8::1]:443 [tun-in >> proxy]";
+        assert_eq!(parse_access(c), Some(("2001:db8::1".to_string(), OUT_PROXY)));
+        // трафик самого приложения (проверки связи) не считается
+        let d = "x accepted tcp:cp.cloudflare.com:80 [ping-in >> proxy]";
+        assert_eq!(parse_access(d), None);
+        assert_eq!(parse_access("random line"), None);
+    }
+
+    #[test]
+    fn error_lines_link_by_session() {
+        let a = parse_error("2025/01/01 12:00:00 [Info] [3141592653] app/dispatcher: taking detour [proxy] for [tcp:video.example.com:443]").unwrap();
+        assert_eq!(a.session, "3141592653");
+        assert_eq!(a.host.as_deref(), Some("video.example.com"));
+        assert!(!a.failed);
+        let b = parse_error("2025/01/01 12:00:09 [Info] [3141592653] app/proxyman/outbound: failed to process outbound traffic > dial tcp: i/o timeout").unwrap();
+        assert!(b.failed);
+        assert!(b.host.is_none());
+        assert!(parse_error("2025/01/01 12:00:00 [Warning] core: no session here").is_none());
+    }
+
+    #[test]
+    fn grouping_and_shared_hosts() {
+        assert_eq!(group_of("cdn.video.example.com").0, "example.com");
+        assert_eq!(group_of("a.b.example.co.uk").0, "example.co.uk");
+        assert_eq!(group_of("user.github.io").0, "user.github.io");
+        let shared = group_of("d111.cloudfront.net");
+        assert!(shared.2);
+        assert_eq!(shared.0, "d111.cloudfront.net");
+        assert_eq!(shared.1, "full:d111.cloudfront.net");
+        let ip = group_of("1.2.3.4");
+        assert_eq!((ip.1.as_str(), ip.3), ("1.2.3.4", "ip"));
+        assert_eq!(group_of("example.com").1, "domain:example.com");
+    }
+
+    #[test]
+    fn local_hosts_are_skipped() {
+        for h in ["localhost", "192.168.1.5", "10.0.0.1", "printer.local", "172.19.0.2", "::1"] { assert!(is_local(h), "{}", h); }
+        for h in ["example.com", "8.8.8.8"] { assert!(!is_local(h), "{}", h); }
+    }
+
+    #[test]
+    fn geosite_tags_and_attributes() {
+        let data = geo_fixture();
+        let wanted: HashSet<String> = ["category-ads-all".to_string(), "ru-like".to_string()].into_iter().collect();
+        let geo = load_geosite_tags(&data, &wanted);
+        assert_eq!(geo["category-ads-all"].len(), 2);
+        assert_eq!(geo["ru-like"][1].attrs, vec!["ads".to_string()]);
+        let (ads, loaded) = build_ads_matcher(Some(&data));
+        assert!(loaded);
+        assert!(ads.matches("x.adserver.test"));
+        assert!(ads.matches("px.example.org"));
+        assert!(!ads.matches("other.example.org"));
+        assert!(ads.matches("stats.doubleclick.net"));
+    }
+
+    #[test]
+    fn rules_matcher_covers_all_rule_kinds() {
+        let data = geo_fixture();
+        let rules = json!({
+            "direct": [ {"type":"geosite","value":"ru-like"}, {"type":"domain","value":"domain:covered.test"} ],
+            "proxy": [ {"type":"domain","value":"full:exact.test"}, {"type":"keyword","value":"stream"}, {"type":"ip","value":"203.0.113.0/24"}, {"type":"domain","value":"plain.test"} ],
+            "block": [ {"type":"domain","value":"regexp:.*\\.never$"} ]
+        });
+        let m = build_rules_matcher(&rules, Some(&data));
+        assert!(m.matches("www.yandex.ru"));
+        assert!(m.matches("a.covered.test"));
+        assert!(m.matches("exact.test") && !m.matches("sub.exact.test"));
+        assert!(m.matches("live-stream.example.com"));
+        assert!(m.matches("203.0.113.9") && !m.matches("203.0.114.9"));
+        assert!(m.matches("xplain.testy.com"));
+        assert!(!m.matches("example.com"));
+        // без geosite.dat теги просто не срабатывают, ошибки нет
+        assert!(!build_rules_matcher(&rules, None).matches("www.yandex.ru"));
+    }
+
+    #[test]
+    fn session_end_to_end() {
+        let dir = std::env::temp_dir().join(format!("karin-finder-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acc = dir.join("access.log").to_string_lossy().into_owned();
+        let err = dir.join("error.log").to_string_lossy().into_owned();
+        std::fs::write(&acc, "old accepted tcp:old.test:443 [tun-in >> proxy]\n").unwrap();
+        std::fs::write(&err, "").unwrap();
+        let mut s = Session::new(OUT_PROXY, acc.clone(), err.clone());
+        let mut log = String::new();
+        for _ in 0..3 { log.push_str("t from x accepted tcp:www.site.test:443 [tun-in >> proxy]\n"); }
+        log.push_str("t from x accepted tcp:cdn.site.test:443 [tun-in >> direct]\n");
+        log.push_str("t from x accepted tcp:ads.adserver.test:443 [tun-in >> proxy]\n");
+        log.push_str("t from x accepted tcp:covered.test:443 [tun-in >> proxy]\n");
+        log.push_str("t from x accepted tcp:192.168.0.2:80 [tun-in >> proxy]");
+        std::fs::write(&acc, format!("old accepted tcp:old.test:443 [tun-in >> proxy]\n{}", log)).unwrap();
+        let m = Matchers {
+            ads: Arc::new(build_ads_matcher(None).0),
+            covered: Arc::new(build_rules_matcher(&json!({"direct":[{"type":"domain","value":"domain:covered.test"}]}), None)),
+        };
+        s.ingest();
+        // строка без перевода строки в конце ещё не прочитана, старая строка до старта не видна
+        assert!(!s.hosts.contains_key("old.test"));
+        assert!(!s.hosts.contains_key("192.168.0.2"));
+        // фон: то, что уже открылось
+        s.background.extend(s.hosts.keys().cloned());
+        let mut more = String::from("\n");
+        more.push_str("t from x accepted tcp:video.live.test:443 [tun-in >> proxy]\n");
+        more.push_str("t from x accepted tcp:video.live.test:443 [tun-in >> proxy]\n");
+        more.push_str("t from x accepted tcp:api.live.test:443 [tun-in >> proxy]\n");
+        more.push_str("t from x accepted tcp:d9.cloudfront.net:443 [tun-in >> proxy]\n");
+        more.push_str("t from x accepted tcp:x.covered.test:443 [tun-in >> proxy]\n");
+        more.push_str("t from x accepted tcp:mc.yandex.ru:443 [tun-in >> proxy]\n");
+        use std::io::Write;
+        std::fs::OpenOptions::new().append(true).open(&acc).unwrap().write_all(more.as_bytes()).unwrap();
+        std::fs::write(&err, "x [Info] [777001] app/dispatcher: tcp:video.live.test:443\nx [Info] [777001] outbound: i/o timeout\nx [Info] [777001] outbound: connection reset\n").unwrap();
+        s.ingest();
+        let c = s.classify(&m);
+        assert_eq!(c.items.len(), 2, "{:?}", c.items);
+        assert_eq!(c.items[0].key, "live.test");
+        assert_eq!(c.items[0].count, 3);
+        assert_eq!(c.items[0].failed, 1, "одна сессия считается один раз");
+        assert_eq!(c.items[0].rule_value, "domain:live.test");
+        assert!(c.items[1].shared);
+        assert_eq!((c.hidden_ads, c.hidden_covered), (1, 1));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
