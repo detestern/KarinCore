@@ -69,46 +69,42 @@ const FAIL_MARKERS: &[&str] = &[
     "handshake",
 ];
 
-fn strip_target(token: &str) -> Option<String> {
+/// `tcp:host:port` / `udp:[v6]:port` -> (хост в нижнем регистре, порт).
+fn split_target(token: &str) -> Option<(String, Option<u16>)> {
     let token = token.trim_matches(|c| c == '[' || c == ']' || c == ',' || c == '"');
     let rest = token.strip_prefix("tcp:").or_else(|| token.strip_prefix("udp:"))?;
-    let host = if let Some(inner) = rest.strip_prefix('[') {
-        inner.split(']').next()?
+    let (host, port) = if let Some(inner) = rest.strip_prefix('[') {
+        let (h, tail) = inner.split_once(']')?;
+        (h, tail.strip_prefix(':').and_then(|p| p.parse().ok()))
     } else {
         match rest.rsplit_once(':') {
-            Some((h, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => h,
-            _ => rest,
+            Some((h, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => (h, port.parse().ok()),
+            _ => (rest, None),
         }
     };
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
-    if host.is_empty() { None } else { Some(host) }
+    if host.is_empty() { None } else { Some((host, port)) }
 }
 
-/// `2025/01/01 12:00:00 from tcp:1.2.3.4:5 accepted tcp:example.com:443 [tun-in >> proxy]`
-/// (в разных версиях Xray стрелка бывает `>>` или `->`). Только входящие из TUN.
-fn parse_access(line: &str) -> Option<(String, usize)> {
-    let after = line.split_once(" accepted ")?.1;
-    let (target, tail) = after.split_once(' ')?;
-    let route = tail.trim().strip_prefix('[')?.split(']').next()?;
-    let (inbound, outbound) = route.split_once(">>").or_else(|| route.split_once("->"))?;
-    if inbound.trim() != "tun-in" { return None; }
-    let out = match outbound.trim() {
-        "proxy" => OUT_PROXY,
-        "direct" => OUT_DIRECT,
-        "block" => OUT_BLOCK,
-        _ => return None,
-    };
-    Some((strip_target(target)?, out))
+enum Event {
+    /// `[sid] proxy/tun: processing from ... to ...` — соединение пришло из TUN (а не от самого приложения).
+    Tun,
+    /// `[sid] app/dispatcher: sniffed domain: example.com`
+    Sniffed(String),
+    /// `[sid] app/dispatcher: taking detour [proxy] for [tcp:example.com:443]` — итоговый маршрут.
+    Detour { out: usize, host: String, port: Option<u16> },
+    /// Любая другая строка сессии (нужна только для признака обрыва).
+    Other,
 }
 
 struct ErrorLine {
     session: String,
-    host: Option<String>,
+    event: Event,
     failed: bool,
 }
 
-/// `... [Info] [3141592653] app/dispatcher: ... tcp:example.com:443` — адрес и признак обрыва
-/// связываются по номеру сессии в квадратных скобках.
+/// Строки error.log (уровень debug) несут и имя сайта, и маршрут, и номер сессии в скобках:
+/// в access.log при TUN почти всегда только IP, поэтому берём всё отсюда.
 fn parse_error(line: &str) -> Option<ErrorLine> {
     let mut session = None;
     let mut rest = line;
@@ -123,20 +119,29 @@ fn parse_error(line: &str) -> Option<ErrorLine> {
         rest = &after[end + 1..];
     }
     let session = session?;
-    let mut host = None;
-    let tokens: Vec<&str> = line.split_whitespace().collect();
-    for (i, token) in tokens.iter().enumerate() {
-        if let Some(h) = strip_target(token) { host = Some(h); break; }
-        if *token == "domain:" {
-            if let Some(next) = tokens.get(i + 1) {
-                host = Some(next.trim_matches(|c| c == '[' || c == ']').to_ascii_lowercase());
-                break;
-            }
-        }
-    }
+    let event = if line.contains("proxy/tun: processing from") {
+        Event::Tun
+    } else if let Some(domain) = line.split_once("sniffed domain:").map(|(_, d)| d.trim()) {
+        Event::Sniffed(domain.trim_end_matches('.').to_ascii_lowercase())
+    } else if let Some((_, tail)) = line.split_once("taking detour [") {
+        let detour = tail.split_once(']').and_then(|(tag, after)| {
+            let out = match tag {
+                "proxy" => OUT_PROXY,
+                "direct" => OUT_DIRECT,
+                "block" => OUT_BLOCK,
+                _ => return None,
+            };
+            let target = after.split_once(" for [")?.1.split(']').next()?;
+            let (host, port) = split_target(target)?;
+            Some(Event::Detour { out, host, port })
+        });
+        detour.unwrap_or(Event::Other)
+    } else {
+        Event::Other
+    };
     let lower = line.to_ascii_lowercase();
     let failed = FAIL_MARKERS.iter().any(|m| lower.contains(m));
-    Some(ErrorLine { session, host, failed })
+    Some(ErrorLine { session, event, failed })
 }
 
 /// Новые байты журнала после позиции `pos` (до последнего перевода строки) и новая позиция.
@@ -460,12 +465,11 @@ struct HostStat {
 
 struct Session {
     direction: usize,
-    access_path: String,
     error_path: String,
-    access_pos: u64,
     error_pos: u64,
     hosts: HashMap<String, HostStat>,
-    sessions: HashMap<String, String>,
+    /// Сессии TUN: номер -> маршрутизированный хост (когда он уже известен).
+    sessions: HashMap<String, Option<String>>,
     failed_sessions: HashSet<String>,
     background: HashSet<String>,
     bg_count: u32,
@@ -525,37 +529,37 @@ pub struct Outcome {
 }
 
 impl Session {
-    fn new(direction: usize, access_path: String, error_path: String) -> Session {
-        let access_pos = file_len(&access_path);
+    fn new(direction: usize, error_path: String) -> Session {
         let error_pos = file_len(&error_path);
         Session {
-            direction, access_path, error_path, access_pos, error_pos,
+            direction, error_path, error_pos,
             hosts: HashMap::new(), sessions: HashMap::new(), failed_sessions: HashSet::new(),
             background: HashSet::new(), bg_count: 0,
         }
     }
 
     fn ingest(&mut self) {
-        let (text, pos) = read_new(&self.access_path, self.access_pos);
-        self.access_pos = pos;
-        let now = Instant::now();
-        for line in text.lines() {
-            let Some((host, out)) = parse_access(line) else { continue };
-            if self.hosts.len() >= MAX_HOSTS && !self.hosts.contains_key(&host) { continue; }
-            let stat = self.hosts.entry(host).or_default();
-            stat.out[out] = stat.out[out].saturating_add(1);
-            stat.last_seen = Some(now);
-        }
         let (text, pos) = read_new(&self.error_path, self.error_pos);
         self.error_pos = pos;
+        let now = Instant::now();
         for line in text.lines() {
             let Some(parsed) = parse_error(line) else { continue };
-            if let Some(host) = parsed.host {
-                if self.sessions.len() >= MAX_SESSIONS { self.sessions.clear(); self.failed_sessions.clear(); }
-                self.sessions.entry(parsed.session.clone()).or_insert(host);
+            if self.sessions.len() >= MAX_SESSIONS { self.sessions.clear(); self.failed_sessions.clear(); }
+            match parsed.event {
+                Event::Tun => { self.sessions.entry(parsed.session.clone()).or_insert(None); }
+                Event::Detour { out, host, port } => {
+                    // Только соединения из TUN; DNS (порт 53) не интересен.
+                    if !self.sessions.contains_key(&parsed.session) || port == Some(53) { continue; }
+                    if self.hosts.len() >= MAX_HOSTS && !self.hosts.contains_key(&host) { continue; }
+                    let stat = self.hosts.entry(host.clone()).or_default();
+                    stat.out[out] = stat.out[out].saturating_add(1);
+                    stat.last_seen = Some(now);
+                    self.sessions.insert(parsed.session.clone(), Some(host));
+                }
+                Event::Sniffed(_) | Event::Other => {}
             }
             if parsed.failed {
-                if let Some(host) = self.sessions.get(&parsed.session).cloned() {
+                if let Some(Some(host)) = self.sessions.get(&parsed.session).cloned() {
                     if self.failed_sessions.insert(parsed.session) {
                         if let Some(stat) = self.hosts.get_mut(&host) {
                             stat.failed = stat.failed.saturating_add(1);
@@ -615,11 +619,11 @@ fn parse_direction(direction: &str) -> Result<usize, String> {
 #[tauri::command]
 pub async fn finder_start(state: State<'_, FinderState>, direction: String) -> Result<(), String> {
     let direction = parse_direction(&direction)?;
-    let (err_path, acc_path) = crate::get_log_paths();
-    if !std::path::Path::new(&acc_path).exists() {
+    let (err_path, _) = crate::get_log_paths();
+    if !std::path::Path::new(&err_path).exists() {
         return Err("log".into());
     }
-    *state.slot() = Some(Session::new(direction, acc_path, err_path));
+    *state.slot() = Some(Session::new(direction, err_path));
     Ok(())
 }
 
@@ -716,30 +720,29 @@ mod tests {
         data
     }
 
-    #[test]
-    fn access_line_both_arrows_and_ipv6() {
-        let a = "2025/01/01 12:00:00 from tcp:172.19.0.1:5555 accepted tcp:Example.com:443 [tun-in >> proxy]";
-        assert_eq!(parse_access(a), Some(("example.com".to_string(), OUT_PROXY)));
-        let b = "2025/01/01 12:00:00.123 from 172.19.0.1:5555 accepted udp:cdn.example.com:443 [tun-in -> direct]";
-        assert_eq!(parse_access(b), Some(("cdn.example.com".to_string(), OUT_DIRECT)));
-        let c = "x accepted tcp:[2001:db8::1]:443 [tun-in >> proxy]";
-        assert_eq!(parse_access(c), Some(("2001:db8::1".to_string(), OUT_PROXY)));
-        // трафик самого приложения (проверки связи) не считается
-        let d = "x accepted tcp:cp.cloudflare.com:80 [ping-in >> proxy]";
-        assert_eq!(parse_access(d), None);
-        assert_eq!(parse_access("random line"), None);
-    }
+    // Реальные строки из error.log Xray (уровень debug), присланные пользователем.
+    const L_TUN: &str = "2026/10/20 17:38:09.238587 [Info] [63787514] proxy/tun: processing from tcp:172.19.0.2:38304 to tcp:178.253.6.178:443";
+    const L_SNIFF: &str = "2026/10/20 17:38:09.240103 [Info] [63787514] app/dispatcher: sniffed domain: maruwlkzoh.top";
+    const L_DETOUR: &str = "2026/10/20 17:38:09.240228 [Info] [63787514] app/dispatcher: taking detour [proxy] for [tcp:maruwlkzoh.top:443]";
 
     #[test]
-    fn error_lines_link_by_session() {
-        let a = parse_error("2025/01/01 12:00:00 [Info] [3141592653] app/dispatcher: taking detour [proxy] for [tcp:video.example.com:443]").unwrap();
-        assert_eq!(a.session, "3141592653");
-        assert_eq!(a.host.as_deref(), Some("video.example.com"));
-        assert!(!a.failed);
-        let b = parse_error("2025/01/01 12:00:09 [Info] [3141592653] app/proxyman/outbound: failed to process outbound traffic > dial tcp: i/o timeout").unwrap();
-        assert!(b.failed);
-        assert!(b.host.is_none());
-        assert!(parse_error("2025/01/01 12:00:00 [Warning] core: no session here").is_none());
+    fn real_error_log_lines_are_parsed() {
+        assert!(matches!(parse_error(L_TUN).unwrap().event, Event::Tun));
+        assert!(matches!(parse_error(L_SNIFF).unwrap().event, Event::Sniffed(ref d) if d == "maruwlkzoh.top"));
+        let e = parse_error(L_DETOUR).unwrap();
+        assert_eq!(e.session, "63787514");
+        match e.event {
+            Event::Detour { out, host, port } => { assert_eq!((out, host.as_str(), port), (OUT_PROXY, "maruwlkzoh.top", Some(443))); }
+            _ => panic!("detour expected"),
+        }
+        // DNS-маршруты и строки без сессии не считаются маршрутом сайта
+        let dns = parse_error("2026/10/20 17:38:09.136412 [Info] [665337853] app/dispatcher: taking detour [dns-out] for [udp:1.1.1.1:53]").unwrap();
+        assert!(matches!(dns.event, Event::Other));
+        assert!(parse_error("2026/10/20 17:38:09.136706 [Info] app/dispatcher: taking detour [direct] for [tcp:dns.yandex.ru:443]").is_none());
+        let fail = parse_error("2026/10/20 17:38:10 [Info] [63787514] proxy/vless/outbound: failed to process outbound traffic > i/o timeout").unwrap();
+        assert!(fail.failed);
+        let v6 = split_target("tcp:[2001:db8::1]:443").unwrap();
+        assert_eq!((v6.0.as_str(), v6.1), ("2001:db8::1", Some(443)));
     }
 
     #[test]
@@ -801,38 +804,37 @@ mod tests {
     fn session_end_to_end() {
         let dir = std::env::temp_dir().join(format!("karin-finder-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let acc = dir.join("access.log").to_string_lossy().into_owned();
         let err = dir.join("error.log").to_string_lossy().into_owned();
-        std::fs::write(&acc, "old accepted tcp:old.test:443 [tun-in >> proxy]\n").unwrap();
-        std::fs::write(&err, "").unwrap();
-        let mut s = Session::new(OUT_PROXY, acc.clone(), err.clone());
+        std::fs::write(&err, "[Info] [1111] proxy/tun: processing from a to b\n[Info] [1111] app/dispatcher: taking detour [proxy] for [tcp:old.test:443]\n").unwrap();
+        let mut s = Session::new(OUT_PROXY, err.clone());
+        let sess = |id: &str, host: &str, tag: &str, port: u16| format!(
+            "t [Info] [{id}] proxy/tun: processing from tcp:172.19.0.2:1 to tcp:9.9.9.9:{port}\nt [Info] [{id}] app/dispatcher: sniffed domain: {host}\nt [Info] [{id}] app/dispatcher: taking detour [{tag}] for [tcp:{host}:{port}]\n");
         let mut log = String::new();
-        for _ in 0..3 { log.push_str("t from x accepted tcp:www.site.test:443 [tun-in >> proxy]\n"); }
-        log.push_str("t from x accepted tcp:cdn.site.test:443 [tun-in >> direct]\n");
-        log.push_str("t from x accepted tcp:ads.adserver.test:443 [tun-in >> proxy]\n");
-        log.push_str("t from x accepted tcp:covered.test:443 [tun-in >> proxy]\n");
-        log.push_str("t from x accepted tcp:192.168.0.2:80 [tun-in >> proxy]");
-        std::fs::write(&acc, format!("old accepted tcp:old.test:443 [tun-in >> proxy]\n{}", log)).unwrap();
+        log.push_str(&sess("2001", "www.site.test", "proxy", 443));
+        log.push_str(&sess("2002", "cdn.site.test", "direct", 443));
+        // сессия приложения (не из TUN) и DNS-трафик не считаются
+        log.push_str("t [Info] [2003] app/dispatcher: taking detour [proxy] for [tcp:cp.cloudflare.com:80]\n");
+        log.push_str(&sess("2004", "dns.google", "proxy", 53));
+        std::fs::write(&err, format!("[Info] [1111] proxy/tun: processing from a to b\n[Info] [1111] app/dispatcher: taking detour [proxy] for [tcp:old.test:443]\n{}", log)).unwrap();
         let m = Matchers {
             ads: Arc::new(build_ads_matcher(None).0),
             covered: Arc::new(build_rules_matcher(&json!({"direct":[{"type":"domain","value":"domain:covered.test"}]}), None)),
         };
         s.ingest();
-        // строка без перевода строки в конце ещё не прочитана, старая строка до старта не видна
-        assert!(!s.hosts.contains_key("old.test"));
-        assert!(!s.hosts.contains_key("192.168.0.2"));
-        // фон: то, что уже открылось
+        assert!(!s.hosts.contains_key("old.test"), "строки до старта не видны");
+        assert!(!s.hosts.contains_key("cp.cloudflare.com") && !s.hosts.contains_key("dns.google"));
         s.background.extend(s.hosts.keys().cloned());
-        let mut more = String::from("\n");
-        more.push_str("t from x accepted tcp:video.live.test:443 [tun-in >> proxy]\n");
-        more.push_str("t from x accepted tcp:video.live.test:443 [tun-in >> proxy]\n");
-        more.push_str("t from x accepted tcp:api.live.test:443 [tun-in >> proxy]\n");
-        more.push_str("t from x accepted tcp:d9.cloudfront.net:443 [tun-in >> proxy]\n");
-        more.push_str("t from x accepted tcp:x.covered.test:443 [tun-in >> proxy]\n");
-        more.push_str("t from x accepted tcp:mc.yandex.ru:443 [tun-in >> proxy]\n");
+        let mut more = String::new();
+        more.push_str(&sess("3001", "video.live.test", "proxy", 443));
+        more.push_str(&sess("3002", "video.live.test", "proxy", 443));
+        more.push_str(&sess("3003", "api.live.test", "proxy", 443));
+        more.push_str(&sess("3004", "d9.cloudfront.net", "proxy", 443));
+        more.push_str(&sess("3005", "x.covered.test", "proxy", 443));
+        more.push_str(&sess("3006", "mc.yandex.ru", "proxy", 443));
+        more.push_str("t [Info] [3001] proxy/vless/outbound: failed to process outbound traffic > i/o timeout\n");
+        more.push_str("t [Info] [3001] proxy/vless/outbound: connection reset\n");
         use std::io::Write;
-        std::fs::OpenOptions::new().append(true).open(&acc).unwrap().write_all(more.as_bytes()).unwrap();
-        std::fs::write(&err, "x [Info] [777001] app/dispatcher: tcp:video.live.test:443\nx [Info] [777001] outbound: i/o timeout\nx [Info] [777001] outbound: connection reset\n").unwrap();
+        std::fs::OpenOptions::new().append(true).open(&err).unwrap().write_all(more.as_bytes()).unwrap();
         s.ingest();
         let c = s.classify(&m);
         assert_eq!(c.items.len(), 2, "{:?}", c.items);
