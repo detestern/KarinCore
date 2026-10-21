@@ -90,7 +90,7 @@ enum Event {
     /// `[sid] proxy/tun: processing from ... to ...` — соединение пришло из TUN (а не от самого приложения).
     Tun,
     /// `[sid] app/dispatcher: sniffed domain: example.com`
-    Sniffed(String),
+    Sniffed,
     /// `[sid] app/dispatcher: taking detour [proxy] for [tcp:example.com:443]` — итоговый маршрут.
     Detour { out: usize, host: String, port: Option<u16> },
     /// Любая другая строка сессии (нужна только для признака обрыва).
@@ -121,8 +121,8 @@ fn parse_error(line: &str) -> Option<ErrorLine> {
     let session = session?;
     let event = if line.contains("proxy/tun: processing from") {
         Event::Tun
-    } else if let Some(domain) = line.split_once("sniffed domain:").map(|(_, d)| d.trim()) {
-        Event::Sniffed(domain.trim_end_matches('.').to_ascii_lowercase())
+    } else if line.contains("sniffed domain:") {
+        Event::Sniffed
     } else if let Some((_, tail)) = line.split_once("taking detour [") {
         let detour = tail.split_once(']').and_then(|(tag, after)| {
             let out = match tag {
@@ -556,7 +556,7 @@ impl Session {
                     stat.last_seen = Some(now);
                     self.sessions.insert(parsed.session.clone(), Some(host));
                 }
-                Event::Sniffed(_) | Event::Other => {}
+                Event::Sniffed | Event::Other => {}
             }
             if parsed.failed {
                 if let Some(Some(host)) = self.sessions.get(&parsed.session).cloned() {
@@ -728,7 +728,7 @@ mod tests {
     #[test]
     fn real_error_log_lines_are_parsed() {
         assert!(matches!(parse_error(L_TUN).unwrap().event, Event::Tun));
-        assert!(matches!(parse_error(L_SNIFF).unwrap().event, Event::Sniffed(ref d) if d == "maruwlkzoh.top"));
+        assert!(matches!(parse_error(L_SNIFF).unwrap().event, Event::Sniffed));
         let e = parse_error(L_DETOUR).unwrap();
         assert_eq!(e.session, "63787514");
         match e.event {

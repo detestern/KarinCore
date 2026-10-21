@@ -1009,25 +1009,23 @@ button.danger {
 .hero-profile-name.has-profile::after {
     content: "";
     position: absolute;
+    inset: -26px -24px;
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.6s ease;
+    -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 0%, rgba(0, 0, 0, 0) 100%);
+    mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 0%, rgba(0, 0, 0, 0) 100%);
 }
 
+/* Свечение без filter и mix-blend-mode: они на время перерисовки (например при наведении
+   на кнопку) превращали его в прямоугольник с резкими краями. Градиент с плавным спадом
+   плюс едва заметный шум против полос, оба обрезаны эллиптической маской. */
 .hero-profile-name.has-profile::before {
-    left: 8px;
-    right: 8px;
-    top: 6px;
-    bottom: 6px;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    filter: blur(22px);
+    background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(220, 138, 221, 0.240) 0%, rgba(220, 138, 221, 0.233) 10%, rgba(220, 138, 221, 0.215) 20%, rgba(220, 138, 221, 0.188) 30%, rgba(220, 138, 221, 0.156) 40%, rgba(220, 138, 221, 0.120) 50%, rgba(220, 138, 221, 0.084) 60%, rgba(220, 138, 221, 0.052) 70%, rgba(220, 138, 221, 0.025) 80%, rgba(220, 138, 221, 0.007) 90%, rgba(220, 138, 221, 0.000) 100%);
 }
 
 .hero-profile-name.has-profile::after {
-    inset: 0;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    mix-blend-mode: overlay;
 }
 
 .hero-profile-name.has-profile.is-on::before {
@@ -1035,7 +1033,7 @@ button.danger {
 }
 
 .hero-profile-name.has-profile.is-on::after {
-    opacity: 0.05;
+    opacity: 0.04;
 }
 
 .hero-profile-title,
