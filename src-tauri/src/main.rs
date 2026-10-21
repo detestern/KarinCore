@@ -746,6 +746,21 @@ fn ip_list_param(ips: &[String]) -> String {
 // **********************************
 // TAURI COMMANDS: PROXY & NETWORK MANAGEMENT
 // **********************************
+// DNS в режимах OpenVPN и WireGuard. route.sh направляет системный DNS на 127.0.0.1:53, а Xray-конфиги
+// этих режимов раньше такого слушателя не имели: интернет был, а имена не разрешались. Теперь Xray
+// слушает 127.0.0.1:53 и пересылает запросы на 1.1.1.1 через туннель (outbound "proxy", то есть
+// через интерфейс VPN), как обычный режим пересылает их через свой DNS-модуль.
+const VPN_MODE_DNS_UPSTREAM: &str = "1.1.1.1";
+
+fn vpn_mode_dns_inbound() -> Value {
+    json!({ "tag": "dns-in", "listen": "127.0.0.1", "port": 53, "protocol": "dokodemo-door",
+            "settings": { "address": VPN_MODE_DNS_UPSTREAM, "port": 53, "network": "tcp,udp" } })
+}
+
+fn vpn_mode_dns_rule() -> Value {
+    json!({ "type": "field", "inboundTag": ["dns-in"], "outboundTag": "proxy" })
+}
+
 #[tauri::command]
 async fn fetch_subscription(url: String) -> Result<SubscriptionResult, String> {
     let client = reqwest::Client::builder()
@@ -968,6 +983,7 @@ async fn start_openvpn_proxy(
 
     let mut all_rules = vec![];
     all_rules.push(json!({ "type": "field", "inboundTag": ["ping-in"], "outboundTag": "proxy" }));
+    all_rules.push(vpn_mode_dns_rule());
     let mut local_ips = vec!["127.0.0.0/8".to_string()];
     if !proxy_lan {
         local_ips.extend(vec![
@@ -990,6 +1006,7 @@ async fn start_openvpn_proxy(
         "inbounds": [
             { "port": 2080, "listen": "127.0.0.1", "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": "openvpn_mode" } ] } },
             { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1500, "gateway": ["172.19.0.1/30"] }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } },
+            vpn_mode_dns_inbound(),
             { "tag": "ping-in", "listen": "127.0.0.1", "port": 2082, "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": "openvpn_mode" } ] } }
         ],
         "outbounds": [
@@ -1104,6 +1121,7 @@ async fn start_wireguard_proxy(
 
     let mut all_rules = vec![];
     all_rules.push(json!({ "type": "field", "inboundTag": ["ping-in"], "outboundTag": "proxy" }));
+    all_rules.push(vpn_mode_dns_rule());
     let mut local_ips = vec!["127.0.0.0/8".to_string()];
     if !proxy_lan {
         local_ips.extend(vec![
@@ -1126,6 +1144,7 @@ async fn start_wireguard_proxy(
         "inbounds": [
             { "port": 2080, "listen": "127.0.0.1", "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": "wireguard_mode" } ] } },
             { "tag": "tun-in", "port": 2081, "listen": "127.0.0.1", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1420, "gateway": ["172.19.0.1/30"] }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] } },
+            vpn_mode_dns_inbound(),
             { "tag": "ping-in", "listen": "127.0.0.1", "port": 2082, "protocol": "mixed", "settings": { "accounts": [ { "user": "karin", "pass": "wireguard_mode" } ] } }
         ],
         "outbounds": [
@@ -1206,6 +1225,7 @@ async fn start_proxy(
     all_rules.push(json!({ "type": "field", "inboundTag": ["dns-in"], "outboundTag": "dns-out" }));
     all_rules.extend(dns_routing_rules());
     all_rules.push(json!({ "type": "field", "inboundTag": ["ping-in"], "outboundTag": "proxy" }));
+    all_rules.push(vpn_mode_dns_rule());
     let mut local_ips = vec!["127.0.0.0/8".to_string()];
     if !proxy_lan {
         local_ips.extend(vec![
@@ -1726,6 +1746,19 @@ mod tests {
         assert_eq!(parse_xray_version("Xray v26.1.23 (go1.25)"), Some((26, 1, 23)));
         assert_eq!(parse_xray_version("garbage"), None);
         assert!((26, 1, 12) < XRAY_MIN_VERSION && (26, 1, 13) >= XRAY_MIN_VERSION && (25, 6, 8) < XRAY_MIN_VERSION);
+    }
+
+    #[test]
+    fn vpn_modes_get_a_local_dns_listener_routed_through_the_tunnel() {
+        let inbound = vpn_mode_dns_inbound();
+        assert_eq!(inbound["listen"], "127.0.0.1");
+        assert_eq!(inbound["port"], 53);
+        assert_eq!(inbound["protocol"], "dokodemo-door");
+        assert_eq!(inbound["tag"], "dns-in");
+        assert_eq!(inbound["settings"]["address"], VPN_MODE_DNS_UPSTREAM);
+        let rule = vpn_mode_dns_rule();
+        assert_eq!(rule["inboundTag"][0], "dns-in");
+        assert_eq!(rule["outboundTag"], "proxy");
     }
 
     #[test]

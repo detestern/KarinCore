@@ -5,6 +5,12 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.8.3 — DNS
+
+<sub>2026-10-22</sub>
+
+* **Fixed:** in OpenVPN and WireGuard modes the system resolver was pointed at `127.0.0.1`, but nothing listened there, so DNS did not work through the tunnel. KarinCore now starts a local DNS listener on `127.0.0.1:53` in these modes; queries go through the VPN interface to `1.1.1.1`.
+
 ## v1.8.2 — Safeguard
 
 <sub>2026-10-22</sub>

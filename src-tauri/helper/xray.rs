@@ -479,6 +479,31 @@ mod tests {
         error: "/var/log/karin-proxy/error.log",
     };
 
+    // Конфиг режимов OpenVPN/WireGuard: свой DNS-слушатель на 127.0.0.1:53 и outbound "proxy" через интерфейс VPN.
+    #[test]
+    fn vpn_mode_config_with_dns_listener_is_accepted() {
+        let cfg = r#"{
+          "log": {"loglevel":"debug","access":"/home/u/a.log","error":"/home/u/e.log"},
+          "routing": {"domainStrategy":"AsIs","rules":[
+            {"type":"field","inboundTag":["ping-in"],"outboundTag":"proxy"},
+            {"type":"field","inboundTag":["dns-in"],"outboundTag":"proxy"},
+            {"type":"field","ip":["127.0.0.0/8"],"outboundTag":"direct"},
+            {"type":"field","network":"tcp,udp","outboundTag":"proxy"}]},
+          "inbounds": [
+            {"port":2080,"listen":"127.0.0.1","protocol":"mixed","settings":{"accounts":[{"user":"karin","pass":"openvpn_mode"}]}},
+            {"tag":"tun-in","port":2081,"listen":"127.0.0.1","protocol":"tun","settings":{"name":"tun0","mtu":1500,"gateway":["172.19.0.1/30"]},"sniffing":{"enabled":true,"destOverride":["http","tls","quic"]}},
+            {"tag":"dns-in","listen":"127.0.0.1","port":53,"protocol":"dokodemo-door","settings":{"address":"1.1.1.1","port":53,"network":"tcp,udp"}},
+            {"tag":"ping-in","listen":"127.0.0.1","port":2082,"protocol":"mixed","settings":{"accounts":[{"user":"karin","pass":"openvpn_mode"}]}}],
+          "outbounds": [
+            {"tag":"proxy","protocol":"freedom","streamSettings":{"sockopt":{"mark":111,"interface":"tun-ovpn"}}},
+            {"tag":"direct","protocol":"freedom","streamSettings":{"sockopt":{"mark":255}}},
+            {"tag":"block","protocol":"blackhole"}]
+        }"#;
+        let out = validate(cfg, &LOGS).unwrap();
+        assert!(out.contains("\"dns-in\""));
+        assert!(out.contains("/var/log/karin-proxy/error.log"));
+    }
+
     // Конфиг в том виде, в каком его генерирует GUI в обычном (VLESS) режиме.
     fn gui_config() -> String {
         r#"{
