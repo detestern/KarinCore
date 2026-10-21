@@ -4,6 +4,13 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.50] - 2026-10-21
+
+### Changed
+- The main screen shows the profile in two lines: the profile name on top, large, and the server address under it in a smaller monospace font, instead of "name (server)" in one line.
+- While the VPN is on, a soft glow appears behind the profile name; when it is off, there is no glow.
+- In the profiles list, a profile inside a subscription group no longer repeats the server in brackets when the group title already shows the same server.
+
 ## [0.1.0-alpha.49] - 2026-10-21
 
 ### Added

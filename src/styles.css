@@ -1438,6 +1438,82 @@ button.danger {
     margin-top: 4px;
 }
 
+/* Профиль на главной: имя крупно, сервер строкой ниже. При подключении за текстом
+   появляется мягкое свечение (размытый эллипс и едва заметный шум против полос). */
+.hero-profile-name.has-profile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    max-width: min(420px, 92%);
+    box-sizing: border-box;
+    margin-top: 0;
+    padding: 16px 40px;
+}
+
+.hero-profile-name.has-profile::before,
+.hero-profile-name.has-profile::after {
+    content: "";
+    position: absolute;
+    inset: -26px -24px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 0%, rgba(0, 0, 0, 0) 100%);
+    mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 0%, rgba(0, 0, 0, 0) 100%);
+}
+
+/* Свечение без filter и mix-blend-mode: они на время перерисовки (например при наведении
+   на кнопку) превращали его в прямоугольник с резкими краями. Градиент с плавным спадом
+   плюс едва заметный шум против полос, оба обрезаны эллиптической маской. */
+.hero-profile-name.has-profile::before {
+    background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(220, 138, 221, 0.240) 0%, rgba(220, 138, 221, 0.233) 10%, rgba(220, 138, 221, 0.215) 20%, rgba(220, 138, 221, 0.188) 30%, rgba(220, 138, 221, 0.156) 40%, rgba(220, 138, 221, 0.120) 50%, rgba(220, 138, 221, 0.084) 60%, rgba(220, 138, 221, 0.052) 70%, rgba(220, 138, 221, 0.025) 80%, rgba(220, 138, 221, 0.007) 90%, rgba(220, 138, 221, 0.000) 100%);
+}
+
+.hero-profile-name.has-profile::after {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.hero-profile-name.has-profile.is-on::before {
+    opacity: 1;
+}
+
+.hero-profile-name.has-profile.is-on::after {
+    opacity: 0.04;
+}
+
+.hero-profile-title,
+.hero-profile-host {
+    position: relative;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.6s ease;
+}
+
+.hero-profile-title {
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.15;
+    color: var(--text-color);
+}
+
+.hero-profile-host {
+    font-family: monospace;
+    font-size: 12.5px;
+    color: var(--text-dim);
+}
+
+.hero-profile-name.is-on .hero-profile-title {
+    color: color-mix(in srgb, var(--accent) 12%, var(--text-color));
+}
+
+.hero-profile-name.is-on .hero-profile-host {
+    color: color-mix(in srgb, var(--accent) 35%, var(--text-dim));
+}
+
 .hero-meta {
     display: flex;
     flex-direction: column;
@@ -1459,6 +1535,12 @@ button.danger {
     }
     .hero-profile-name {
         margin-top: 0;
+    }
+    .hero-profile-name.has-profile {
+        padding: 8px 40px;
+    }
+    .hero-profile-title {
+        font-size: 22px;
     }
     .profiles-drawer-trigger {
         padding: 6px 14px;
@@ -2267,6 +2349,16 @@ html {
     box-sizing: border-box;
     overflow-wrap: anywhere;
     text-align: center;
+}
+
+.platform-android .hero-profile-name.has-profile {
+    max-width: 100%;
+    padding: 14px 24px;
+    overflow-wrap: normal;
+}
+
+.platform-android .hero-profile-title {
+    font-size: 24px;
 }
 
 /* Версия в боковом меню: одна строка вместо двух */
