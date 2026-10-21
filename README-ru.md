@@ -6,7 +6,7 @@
 <p><a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a></p>
 
 <p>
-<img src="https://img.shields.io/badge/версия-1.8.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/версия-1.8.1-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/платформа-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/на_чём_написано-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Rust"/>
 <img src="https://img.shields.io/badge/фреймворк-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -97,7 +97,7 @@ yay -S karincore-git
 Свежий `.deb` всегда доступен в разделе [Releases](https://github.com/detestern/KarinCore/releases). Он устанавливает привилегированный helper, правило `sudoers` из одной строки и юнит `systemd`, создаёт группу `karincore` и добавляет в неё устанавливающего пользователя (после установки перезайди в сессию). Убедись, что в системе уже стоят `openvpn` и `wireguard-tools`. Xray в `.deb` не входит: установи его отдельно (например, через [XTLS/Xray-install](https://github.com/XTLS/Xray-install)). Бинарник должен лежать в `/usr/bin/xray`; если установщик кладёт его в `/usr/local/bin/xray`, пакет сам создаст ссылку.
 
 ```bash
-sudo dpkg -i KarinCore_1.8.0_amd64.deb
+sudo dpkg -i KarinCore_1.8.1_amd64.deb
 sudo apt install -f # только если не хватает зависимостей
 ```
 
@@ -227,6 +227,7 @@ sudo pacman -S --overwrite '/usr/include/*' openssl glibc linux-api-headers
 
 | Версия | Название | Что изменилось |
 |---|---|---|
+| [v1.8.1](CHANGELOG-ru.md#v181--nameplate) | Nameplate | Название профиля на главном экране в две строки, со свечением при подключении |
 | [v1.8.0](CHANGELOG-ru.md#v180--pathfinder) | Pathfinder | Менеджер маршрутизации находит адреса, из-за которых не работает сайт, вкладка «Маршрутизация» упрощена |
 | [v1.7.0](CHANGELOG-ru.md#v170--lifeline) | Lifeline | Запасной сервер при обрыве туннеля, обновление подписок при запуске |
 | [v1.6.0](CHANGELOG-ru.md#v160--waypoint) | Waypoint | Сценарии подключений: переключение VPN по Wi‑Fi сети |

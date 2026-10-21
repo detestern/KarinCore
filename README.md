@@ -6,7 +6,7 @@
 <p><a href="README.md">🇬🇧 English</a> | <a href="README-ru.md">🇷🇺 Русский</a></p>
 
 <p>
-<img src="https://img.shields.io/badge/version-1.8.0-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
+<img src="https://img.shields.io/badge/version-1.8.1-dc8add?style=flat-square&labelColor=11111b" alt="Version"/>
 <img src="https://img.shields.io/badge/platform-linux-dc8add?style=flat-square&labelColor=11111b&logo=linux&logoColor=dc8add" alt="Platform"/>
 <img src="https://img.shields.io/badge/built_with-rust-dc8add?style=flat-square&labelColor=11111b&logo=rust&logoColor=dc8add" alt="Rust"/>
 <img src="https://img.shields.io/badge/framework-tauri-dc8add?style=flat-square&labelColor=11111b&logo=tauri&logoColor=dc8add" alt="Tauri"/>
@@ -97,7 +97,7 @@ yay -S karincore-git
 Grab the latest `.deb` from [Releases](https://github.com/detestern/KarinCore/releases). It installs the privileged helper, a one-line `sudoers` rule and the `systemd` unit, creates the `karincore` group and adds the installing user (log out and back in afterwards). Make sure `openvpn` and `wireguard-tools` are present on your system first. The `.deb` does not bundle Xray: install it separately (e.g. via [XTLS/Xray-install](https://github.com/XTLS/Xray-install)). The binary has to be at `/usr/bin/xray`; if the installer puts it in `/usr/local/bin/xray`, the package creates the link for you.
 
 ```bash
-sudo dpkg -i KarinCore_1.8.0_amd64.deb
+sudo dpkg -i KarinCore_1.8.1_amd64.deb
 sudo apt install -f # only if dependencies are missing
 ```
 
@@ -227,6 +227,7 @@ This split means the entire graphical stack (webview, rendering, everything) run
 
 | Version | Name | What changed |
 |---|---|---|
+| [v1.8.1](CHANGELOG.md#v181--nameplate) | Nameplate | Profile name on the main screen in two lines with a glow while connected |
 | [v1.8.0](CHANGELOG.md#v180--pathfinder) | Pathfinder | Routing Manager finds the addresses that break a site, Routing tab simplified |
 | [v1.7.0](CHANGELOG.md#v170--lifeline) | Lifeline | Backup server when the tunnel dies, subscriptions update on start |
 | [v1.6.0](CHANGELOG.md#v160--waypoint) | Waypoint | Connection scenarios: switch the VPN by Wi‑Fi network |

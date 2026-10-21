@@ -458,16 +458,41 @@ function getLinkDisplayName(url: string): string {
     return displayName;
 }
 
+// Имя профиля и сервер отдельно: для ссылки с именем в #fragment это (имя, хост),
+// для остальных только имя, без хоста.
+function getLinkNameParts(url: string): { name: string; host: string | null } {
+    try {
+        const u = new URL(url);
+        if (u.protocol !== 'ovpn:' && u.protocol !== 'wg:' && u.hash) {
+            const name = decodeURIComponent(u.hash.substring(1));
+            if (name) return { name, host: u.hostname };
+        }
+    } catch (e) { /* ниже вернём общее имя */ }
+    return { name: getLinkDisplayName(url), host: null };
+}
+
 function updateHeroProfileName() {
     const el = document.getElementById('hero-profile-name');
     if (!el) return;
     const target = activeLink || selectedProfileUrl;
     if (target) {
-        el.textContent = getLinkDisplayName(target);
+        const { name, host } = getLinkNameParts(target);
+        const nameEl = document.createElement('span');
+        nameEl.className = 'hero-profile-title';
+        nameEl.textContent = name;
+        el.replaceChildren(nameEl);
+        if (host) {
+            const hostEl = document.createElement('span');
+            hostEl.className = 'hero-profile-host';
+            hostEl.textContent = host;
+            el.appendChild(hostEl);
+        }
         el.removeAttribute('data-i18n');
+        el.classList.add('has-profile');
     } else {
         el.setAttribute('data-i18n', 'hero_no_profile');
         el.textContent = t('hero_no_profile');
+        el.classList.remove('has-profile');
     }
     scheduleBridgeSync();
 }
@@ -884,6 +909,7 @@ function setHeroPhase(phase: HeroPhase) {
     heroPhase = phase;
     circle.classList.toggle('connecting', phase === 'connecting');
     circle.classList.toggle('connected', phase === 'on');
+    document.getElementById('hero-profile-name')?.classList.toggle('is-on', phase === 'on');
     if (prev === 'on' && phase === 'idle') {
         circle.classList.add('disconnecting');
         if (heroEchoTimer) window.clearTimeout(heroEchoTimer);
@@ -1026,7 +1052,11 @@ function renderLinkItem(item: ProxyLink) {
             }
         } else {
             displayName = `${url.hostname}:${url.port || '443'}`;
-            if (url.hash) displayName = decodeURIComponent(url.hash.substring(1)) + ` (${url.hostname})`;
+            if (url.hash) {
+                displayName = decodeURIComponent(url.hash.substring(1));
+                const groupName = item.groupId ? appGroups.find(g => g.id === item.groupId)?.name : undefined;
+                if (!groupName || groupName.toLowerCase() !== url.hostname.toLowerCase()) displayName += ` (${url.hostname})`;
+            }
         }
     }   catch (e) { 
             displayName = item.url.substring(0, 30) + '...'; 
@@ -2197,7 +2227,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.8.0";
+        const CURRENT_VERSION = "1.8.1";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;

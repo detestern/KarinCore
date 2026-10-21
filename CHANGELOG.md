@@ -5,6 +5,14 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.8.1 — Nameplate
+
+<sub>2026-10-21</sub>
+
+* **Changed:** the main screen shows the profile in two lines: the profile name on top, large, and the server address under it in a smaller monospace font, instead of `name (server)` in one line.
+* **Added:** while the VPN is on, a soft glow appears behind the profile name and the text takes a light accent tint; when the VPN is off, there is no glow.
+* **Changed:** in the profiles menu, a profile inside a subscription group no longer repeats the server in brackets when the group title already shows the same server.
+
 ## v1.8.0 — Pathfinder
 
 <sub>2026-10-20</sub>
