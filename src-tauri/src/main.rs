@@ -386,6 +386,19 @@ async fn resolve_server_ips(server: &str, port: u16) -> (String, Vec<String>) {
     (out_addr, resolved_ips)
 }
 
+// Транспорты, которые KarinCore умеет собирать. Остальные (ws, grpc, httpupgrade, kcp...) раньше молча
+// превращались в tcp и соединение строилось не так, как в профиле; теперь это явная ошибка.
+fn vless_network(transport_type: &str) -> Result<&'static str, String> {
+    match transport_type {
+        "" | "tcp" | "raw" => Ok("tcp"),
+        "xhttp" | "splithttp" => Ok("xhttp"),
+        other => Err(format!(
+            "Транспорт «{}» в этой версии KarinCore не поддерживается. Профиль не изменён, соединение не установлено. Поддерживаются tcp и xhttp.",
+            other
+        )),
+    }
+}
+
 async fn build_vless_or_trojan_outbound(link: &str, protocol: &str) -> Result<(Value, String, Vec<String>), String> {
     let parsed_url = Url::parse(link).map_err(|e| e.to_string())?;
     let server = parsed_url.host_str().unwrap_or("").trim_matches(|c| c == '[' || c == ']').to_string();
@@ -410,7 +423,7 @@ async fn build_vless_or_trojan_outbound(link: &str, protocol: &str) -> Result<(V
     }
     if host.is_empty() { host = sni.clone(); }
 
-    let final_network = if transport_type == "xhttp" || transport_type == "httpupgrade" { "xhttp" } else { "tcp" };
+    let final_network = vless_network(&transport_type)?;
 
     let mut stream_settings = serde_json::Map::new();
     stream_settings.insert("network".to_string(), json!(final_network));
@@ -600,9 +613,9 @@ async fn ensure_geo_files() -> Result<(), String> {
 // **********************************
 // XRAY
 // **********************************
-// TUN-inbound появился в ветке 25.x; ниже этой версии ядро не поднимет tun0.
+// TUN-inbound появился в Xray 26.1.13 (13 января 2026); в более ранних версиях ядро не поднимет tun0.
 // Единственный поддерживаемый путь — /usr/bin/xray (пакет из репозитория дистрибутива).
-const XRAY_MIN_VERSION: (u32, u32, u32) = (25, 6, 8);
+const XRAY_MIN_VERSION: (u32, u32, u32) = (26, 1, 13);
 const XRAY_PATH: &str = "/usr/bin/xray";
 
 fn parse_xray_version(output: &str) -> Option<(u32, u32, u32)> {
@@ -690,6 +703,8 @@ async fn wait_for_core_ready() -> bool {
     false
 }
 
+const KS_FAILED_PREFIX: &str = "KS_FAILED:";
+
 fn teardown_connections() {
     // Всё привилегированное (killswitch, ядро, OpenVPN, WireGuard, маршруты, DNS) снимает helper.
     helper_client::call_quiet("teardown", &[]);
@@ -703,12 +718,16 @@ fn teardown_connections() {
 // новой попыткой подключения через teardown_connections().
 // Адреса сервера передаются списком (IPv4 и IPv6 вместе): helper раскладывает их
 // по iptables / ip6tables. Больше 16 адресов helper не принимает.
-fn enable_kill_switch(server_ips: &[String], tun_iface: &str) {
+// Результат важен: если Kill Switch не включился, подключаться нельзя (защита либо есть, либо нет).
+// Ошибка получает префикс KS_FAILED:, по нему интерфейс показывает отдельное окно.
+fn enable_kill_switch(server_ips: &[String], tun_iface: &str) -> Result<(), String> {
     let list = ip_list_param(&server_ips.iter().take(16).cloned().collect::<Vec<_>>());
     if list.is_empty() {
-        return;
+        return Err(format!("{}не удалось определить IP-адрес сервера, правила не на что строить", KS_FAILED_PREFIX));
     }
-    let _ = helper_client::call("ks-on", &[("server_ip", list.as_str()), ("iface", tun_iface)], None);
+    helper_client::call("ks-on", &[("server_ip", list.as_str()), ("iface", tun_iface)], None)
+        .map(|_| ())
+        .map_err(|e| format!("{}{}", KS_FAILED_PREFIX, e))
 }
 
 // IP-адреса, пригодные для параметра helper'а (остальное — например, имя хоста, оставшееся
@@ -994,7 +1013,10 @@ async fn start_openvpn_proxy(
     }
 
     if kill_switch {
-        enable_kill_switch(&resolved_ips_for_route_del, "tun-ovpn");
+        if let Err(e) = enable_kill_switch(&resolved_ips_for_route_del, "tun-ovpn") {
+            teardown_connections();
+            return Err(e);
+        }
     }
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
@@ -1127,7 +1149,10 @@ async fn start_wireguard_proxy(
     }
 
     if kill_switch {
-        enable_kill_switch(&resolved_ips_for_route_del, "wg0");
+        if let Err(e) = enable_kill_switch(&resolved_ips_for_route_del, "wg0") {
+            teardown_connections();
+            return Err(e);
+        }
     }
 
     if allow_server_proxy && !resolved_ips_for_route_del.is_empty() {
@@ -1226,7 +1251,10 @@ async fn start_proxy(
         return Err("Ядро не успело подняться (порт 2080 не отвечает). Попробуйте подключиться ещё раз.".into());
     }
     if kill_switch {
-        enable_kill_switch(std::slice::from_ref(&out_addr), "tun0");
+        if let Err(e) = enable_kill_switch(std::slice::from_ref(&out_addr), "tun0") {
+            teardown_connections();
+            return Err(e);
+        }
     }
     if allow_server_proxy {
         let ips = ip_list_param(&resolved_ips);
@@ -1697,6 +1725,24 @@ mod tests {
         assert_eq!(parse_xray_version("Xray 25.6.8 (Xray, Penetrates Everything.)"), Some((25, 6, 8)));
         assert_eq!(parse_xray_version("Xray v26.1.23 (go1.25)"), Some((26, 1, 23)));
         assert_eq!(parse_xray_version("garbage"), None);
-        assert!((25, 6, 7) < XRAY_MIN_VERSION && (25, 6, 8) >= XRAY_MIN_VERSION);
+        assert!((26, 1, 12) < XRAY_MIN_VERSION && (26, 1, 13) >= XRAY_MIN_VERSION && (25, 6, 8) < XRAY_MIN_VERSION);
+    }
+
+    #[test]
+    fn unsupported_transports_are_rejected_not_rewritten() {
+        assert_eq!(vless_network("tcp"), Ok("tcp"));
+        assert_eq!(vless_network(""), Ok("tcp"));
+        assert_eq!(vless_network("xhttp"), Ok("xhttp"));
+        assert_eq!(vless_network("splithttp"), Ok("xhttp"));
+        for t in ["ws", "grpc", "httpupgrade", "kcp", "h2"] {
+            let e = vless_network(t).unwrap_err();
+            assert!(e.contains(t), "{}", e);
+        }
+    }
+
+    #[test]
+    fn kill_switch_failure_has_prefix_for_the_ui() {
+        let e = enable_kill_switch(&["example.com".to_string()], "tun0").unwrap_err();
+        assert!(e.starts_with(KS_FAILED_PREFIX), "{}", e);
     }
 }

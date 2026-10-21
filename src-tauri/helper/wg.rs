@@ -37,12 +37,15 @@ fn is_ip_cidr_list(v: &str) -> bool {
                 Some((a, m)) => (a, Some(m)),
                 None => (p, None),
             };
-            if addr.parse::<std::net::IpAddr>().is_err() {
-                return false;
-            }
+            let ip = match addr.parse::<std::net::IpAddr>() {
+                Ok(ip) => ip,
+                Err(_) => return false,
+            };
+            // Длина префикса зависит от семейства: IPv4 до 32, IPv6 до 128.
+            let max = if ip.is_ipv4() { 32 } else { 128 };
             match mask {
                 None => true,
-                Some(m) => m.parse::<u8>().map(|n| n <= 128).unwrap_or(false),
+                Some(m) => m.parse::<u8>().map(|n| n <= max).unwrap_or(false),
             }
         })
 }
@@ -217,6 +220,19 @@ mod tests {
             k1 = K1,
             k2 = K2
         )
+    }
+
+    #[test]
+    fn cidr_prefix_depends_on_address_family() {
+        assert!(is_ip_cidr_list("10.0.0.2/32"));
+        assert!(is_ip_cidr_list("0.0.0.0/0, ::/0"));
+        assert!(is_ip_cidr_list("fd00::2/128"));
+        assert!(is_ip_cidr_list("10.0.0.2"));
+        assert!(!is_ip_cidr_list("10.0.0.2/33"));
+        assert!(!is_ip_cidr_list("10.0.0.2/64"));
+        assert!(!is_ip_cidr_list("fd00::2/129"));
+        assert!(!is_ip_cidr_list("10.0.0.2/32, fd00::2/200"));
+        assert!(!is_ip_cidr_list("10.0.0.2/"));
     }
 
     #[test]

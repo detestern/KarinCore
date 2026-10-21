@@ -751,6 +751,71 @@ async function saveNewLink() {
     alert(t('err_invalid_link'));
 }
 
+interface NoticeOptions { title: string; body: string; hint?: string; details?: string; actionLabel?: string; }
+
+// Окно сообщения в стиле приложения вместо alert. Возвращает 'action', если нажата дополнительная кнопка.
+function showNotice(opts: NoticeOptions): Promise<'action' | 'close'> {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('notice-modal') as HTMLDialogElement | null;
+        const titleEl = document.getElementById('notice-title');
+        const bodyEl = document.getElementById('notice-body');
+        const hintEl = document.getElementById('notice-hint');
+        const detailsEl = document.getElementById('notice-details') as HTMLDetailsElement | null;
+        const detailsText = document.getElementById('notice-details-text');
+        const btnOk = document.getElementById('notice-ok');
+        const btnAction = document.getElementById('notice-action') as HTMLButtonElement | null;
+        if (!modal || !titleEl || !bodyEl || !hintEl || !detailsEl || !detailsText || !btnOk || !btnAction) {
+            alert(`${opts.title}\n${opts.body}`);
+            resolve('close');
+            return;
+        }
+        titleEl.textContent = opts.title;
+        bodyEl.textContent = opts.body;
+        hintEl.textContent = opts.hint ?? '';
+        hintEl.hidden = !opts.hint;
+        detailsText.textContent = opts.details ?? '';
+        detailsEl.open = false;
+        detailsEl.hidden = !opts.details;
+        btnAction.textContent = opts.actionLabel ?? '';
+        btnAction.hidden = !opts.actionLabel;
+
+        const finish = (result: 'action' | 'close') => {
+            btnOk.removeEventListener('click', onOk);
+            btnAction.removeEventListener('click', onAction);
+            modal.removeEventListener('cancel', onCancel);
+            if (modal.open) modal.close();
+            resolve(result);
+        };
+        const onOk = () => finish('close');
+        const onAction = () => finish('action');
+        const onCancel = () => finish('close');
+        btnOk.addEventListener('click', onOk);
+        btnAction.addEventListener('click', onAction);
+        modal.addEventListener('cancel', onCancel);
+        modal.showModal();
+        (btnOk as HTMLButtonElement).focus();
+    });
+}
+
+const KS_FAILED_PREFIX = 'KS_FAILED:';
+
+// Ошибка подключения: если не включился Kill Switch, показываем отдельное окно с понятным объяснением.
+async function reportConnectError(error: unknown) {
+    const msg = String(error);
+    if (msg.startsWith(KS_FAILED_PREFIX)) {
+        const choice = await showNotice({
+            title: t('ks_fail_title'),
+            body: t('ks_fail_body'),
+            hint: t('ks_fail_hint'),
+            details: msg.slice(KS_FAILED_PREFIX.length).trim(),
+            actionLabel: t('btn_open_settings')
+        });
+        if (choice === 'action') (document.querySelector('.sidebar-item[data-target="page-settings"]') as HTMLElement | null)?.click();
+        return;
+    }
+    await showNotice({ title: t('notice_conn_title'), body: msg });
+}
+
 async function connectProxy(link: string, silent = false): Promise<boolean> {
     try {
         if(statusText) statusText.innerText = t('status_connecting');
@@ -783,10 +848,11 @@ async function connectProxy(link: string, silent = false): Promise<boolean> {
         return false;
     } catch (error) { 
         setHeroPhase(activeLink ? 'on' : 'idle');
-        if (!silent) {
-            alert(`Core Error: ${error}`); 
-            if(statusText) statusText.innerText = t('status_inactive'); 
-            typeKarinMessage('karin_connect_fail');
+        if(statusText) statusText.innerText = t('status_inactive');
+        // Если не включилась защита, сообщаем всегда, даже при фоновом подключении.
+        if (!silent || String(error).startsWith(KS_FAILED_PREFIX)) {
+            if (!silent) typeKarinMessage('karin_connect_fail');
+            await reportConnectError(error);
         }
         return false;
     }
@@ -2227,7 +2293,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.8.1";
+        const CURRENT_VERSION = "1.8.2";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;

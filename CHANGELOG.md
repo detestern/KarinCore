@@ -5,6 +5,17 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.8.2 — Safeguard
+
+<sub>2026-10-22</sub>
+
+* **Fixed:** Kill Switch no longer reports success when it did not turn on. Every firewall command is now checked; if anything fails, the rules already added are rolled back, the connection is cancelled, and a dialog explains what went wrong with the exact command and its error. Before, a missing `iptables`/`ip6tables` or a rejected rule still showed "on" and left traffic unprotected.
+* **Changed:** Kill Switch rules now live in their own firewall chain (`KARINCORE_KS`) that is placed first in the `OUTPUT` chain, so another rule that allows traffic higher up can no longer let packets bypass it. Rules of older versions are still removed when you turn it off. If the system has no IPv6, a missing `ip6tables` is not an error.
+* **Fixed:** profiles with an unsupported transport (`ws`, `grpc`, `httpupgrade`, `kcp` and others) were silently rewritten to `tcp`, so the connection was built differently from the profile. Now KarinCore refuses to connect and names the transport. Supported: `tcp` and `xhttp`.
+* **Fixed:** WireGuard address check: the prefix length is now limited per address family (IPv4 up to 32, IPv6 up to 128). `10.0.0.2/64` is no longer accepted.
+* **Changed:** the minimum Xray version is now 26.1.13, the first release with the TUN inbound. Older versions get a clear message to update.
+* **Changed:** connection errors are shown in an application dialog instead of the system alert box.
+
 ## v1.8.1 — Nameplate
 
 <sub>2026-10-21</sub>

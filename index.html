@@ -87,7 +87,7 @@
     </div>
     
     <div class="sidebar-footer" id="sidebar-footer">
-      <div class="app-version-text">v 1.8.1</div>
+      <div class="app-version-text">v 1.8.2</div>
       <div id="update-status" class="update-status"></div>
     </div>
   </div>
@@ -466,6 +466,25 @@
     <div style="display: flex; gap: 10px; justify-content: flex-end;">
       <button id="prompt-cancel" class="secondary" style="flex: 1;" data-i18n="btn_cancel">Отмена</button>
       <button id="prompt-ok" style="flex: 1;">ОК</button>
+    </div>
+  </dialog>
+
+  <dialog id="notice-modal" class="panel notice-modal" aria-labelledby="notice-title">
+    <div class="notice-head">
+      <span class="notice-icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+      </span>
+      <h3 id="notice-title">Ошибка</h3>
+    </div>
+    <p id="notice-body" class="notice-body"></p>
+    <p id="notice-hint" class="notice-hint" hidden></p>
+    <details id="notice-details" class="notice-details" hidden>
+      <summary data-i18n="notice_details">Подробности</summary>
+      <pre id="notice-details-text"></pre>
+    </details>
+    <div class="notice-actions">
+      <button id="notice-action" class="secondary" hidden></button>
+      <button id="notice-ok" data-i18n="btn_close">Закрыть</button>
     </div>
   </dialog>
 

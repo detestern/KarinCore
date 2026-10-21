@@ -380,31 +380,92 @@ fn ks_servers(raw: &str) -> Result<Vec<IpAddr>, String> {
     Ok(out)
 }
 
+/// Собственная цепочка Kill Switch. Правила лежат в ней, а в OUTPUT стоит один переход,
+/// вставленный первым (`-I OUTPUT 1`): чужие разрешающие правила выше не мешают.
+const KS_CHAIN: &str = "KARINCORE_KS";
+
+fn ks_run(ctx: &Ctx, tool: &str, args: &[&str]) -> Result<(), String> {
+    let res = ctx.run.run(tool, args);
+    if res.ok {
+        Ok(())
+    } else {
+        let why = res.stderr.trim();
+        Err(format!("{} {}: {}", tool, args.join(" "), if why.is_empty() { "команда завершилась с ошибкой" } else { why }))
+    }
+}
+
+/// IPv6 считается включённым, если у системы есть хотя бы один интерфейс с IPv6-адресом,
+/// кроме loopback, и IPv6 не выключен через sysctl.
+fn ipv6_active(ctx: &Ctx) -> bool {
+    let disabled = fs::read_to_string(ctx.paths.proc_dir.join("sys/net/ipv6/conf/all/disable_ipv6"))
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false);
+    if disabled {
+        return false;
+    }
+    fs::read_to_string(ctx.paths.proc_dir.join("net/if_inet6"))
+        .map(|t| t.lines().any(|l| l.split_whitespace().last().map(|d| d != "lo").unwrap_or(false)))
+        .unwrap_or(false)
+}
+
+/// Собирает цепочку для одного семейства адресов и проверяет, что переход в неё на месте.
+fn ks_family(ctx: &Ctx, tool: &str, any: &str, iface: &str, ips: &[String]) -> Result<(), String> {
+    ks_family_remove(ctx, tool);
+    ks_run(ctx, tool, &["-N", KS_CHAIN])?;
+    ks_run(ctx, tool, &["-A", KS_CHAIN, "-o", "lo", "-j", "ACCEPT"])?;
+    ks_run(ctx, tool, &["-A", KS_CHAIN, "-o", iface, "-j", "ACCEPT"])?;
+    for ip in ips {
+        ks_run(ctx, tool, &["-A", KS_CHAIN, "-d", ip, "-j", "ACCEPT"])?;
+    }
+    // Трафик, который сам Xray отправляет в outbound "direct" (метка 255), — зона Direct
+    // из пользовательских правил, её killswitch не режет.
+    ks_run(ctx, tool, &["-A", KS_CHAIN, "-d", any, "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"])?;
+    ks_run(ctx, tool, &["-A", KS_CHAIN, "-j", "DROP"])?;
+    // Переход включаем последним: пока он не вставлен, цепочка ничего не блокирует.
+    ks_run(ctx, tool, &["-I", "OUTPUT", "1", "-j", KS_CHAIN])?;
+    ks_run(ctx, tool, &["-C", "OUTPUT", "-j", KS_CHAIN])
+}
+
+fn ks_family_remove(ctx: &Ctx, tool: &str) {
+    let r = &ctx.run;
+    for _ in 0..3 {
+        let _ = r.run(tool, &["-D", "OUTPUT", "-j", KS_CHAIN]);
+    }
+    let _ = r.run(tool, &["-F", KS_CHAIN]);
+    let _ = r.run(tool, &["-X", KS_CHAIN]);
+}
+
 fn ks_on(ctx: &Ctx, req: &Request) -> Res {
     let iface = iface_param(req, IFACES)?;
     let servers = ks_servers(req.param("server_ip").ok_or("не указан параметр server_ip")?)?;
-    let state: Vec<String> = servers.iter().map(|ip| ip.to_string()).collect();
-    sys::ensure_dir(&ctx.paths.run_dir, 0o755, ctx.paths.owner_uid)?;
-    sys::write_atomic(&ctx.paths.run_dir, "killswitch_ip", state.join(",").as_bytes(), 0o644, ctx.paths.owner_uid)?;
-    let r = &ctx.run;
-    // Трафик, который сам Xray отправляет в outbound "direct" (метка 255), — зона Direct
-    // из пользовательских правил, её killswitch не режет. То же самое для обоих семейств адресов.
-    for (tool, any) in [("iptables", "0.0.0.0/0"), ("ip6tables", "::/0")] {
-        let v6 = tool == "ip6tables";
-        let _ = r.run(tool, &["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]);
-        let _ = r.run(tool, &["-A", "OUTPUT", "-o", iface, "-j", "ACCEPT"]);
-        for ip in servers.iter().filter(|ip| ip.is_ipv6() == v6) {
-            let _ = r.run(tool, &["-A", "OUTPUT", "-d", &ip.to_string(), "-j", "ACCEPT"]);
+    let v4: Vec<String> = servers.iter().filter(|ip| ip.is_ipv4()).map(|ip| ip.to_string()).collect();
+    let v6: Vec<String> = servers.iter().filter(|ip| ip.is_ipv6()).map(|ip| ip.to_string()).collect();
+    // Если сервер доступен по IPv6 или в системе включён IPv6, ip6tables обязателен.
+    let v6_required = !v6.is_empty() || ipv6_active(ctx);
+
+    // Kill Switch либо включён полностью, либо не включён совсем: при любой ошибке откатываем всё.
+    if let Err(e) = ks_family(ctx, "iptables", "0.0.0.0/0", iface, &v4) {
+        ks_off(ctx);
+        return Err(e);
+    }
+    if let Err(e) = ks_family(ctx, "ip6tables", "::/0", iface, &v6) {
+        if v6_required {
+            ks_off(ctx);
+            return Err(e);
         }
-        let _ = r.run(tool, &["-A", "OUTPUT", "-d", any, "-m", "mark", "--mark", "0xff", "-j", "ACCEPT"]);
-        let _ = r.run(tool, &["-A", "OUTPUT", "-j", "DROP"]);
+        // IPv6 в системе не используется: цепочку, если она частично создалась, убираем.
+        ks_family_remove(ctx, "ip6tables");
     }
     Ok(String::new())
 }
 
 fn ks_off(ctx: &Ctx) {
     let r = &ctx.run;
-    // `-D` удаляет одно совпадение за раз; правила могли накопиться после аварийного завершения.
+    for tool in ["iptables", "ip6tables"] {
+        ks_family_remove(ctx, tool);
+    }
+    // Правила прежних версий (без своей цепочки): `-D` удаляет одно совпадение за раз,
+    // правила могли накопиться после аварийного завершения.
     for _ in 0..3 {
         for (tool, any) in [("iptables", "0.0.0.0/0"), ("ip6tables", "::/0")] {
             let _ = r.run(tool, &["-D", "OUTPUT", "-j", "DROP"]);
@@ -551,25 +612,40 @@ mod tests {
         assert!(f.log().iter().any(|l| l.starts_with("journalctl -u karin-proxy-daemon.service -n 15")));
     }
 
+    fn enable_ipv6(c: &Ctx) {
+        let net = c.paths.proc_dir.join("net");
+        fs::create_dir_all(&net).unwrap();
+        fs::write(
+            net.join("if_inet6"),
+            "00000000000000000000000000000001 01 80 10 80       lo\nfe80000000000000aaaaaaaafffffff1 03 40 20 80   wlan0\n",
+        )
+        .unwrap();
+    }
+
     #[test]
-    fn ks_on_command_sequence_and_state_file() {
+    fn ks_on_builds_own_chain_and_jumps_first() {
         let (c, f) = ctx("ks");
         dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap();
-        assert_eq!(
-            f.log(),
-            vec![
-                "iptables -A OUTPUT -o lo -j ACCEPT",
-                "iptables -A OUTPUT -o tun0 -j ACCEPT",
-                "iptables -A OUTPUT -d 203.0.113.5 -j ACCEPT",
-                "iptables -A OUTPUT -d 0.0.0.0/0 -m mark --mark 0xff -j ACCEPT",
-                "iptables -A OUTPUT -j DROP",
-                "ip6tables -A OUTPUT -o lo -j ACCEPT",
-                "ip6tables -A OUTPUT -o tun0 -j ACCEPT",
-                "ip6tables -A OUTPUT -d ::/0 -m mark --mark 0xff -j ACCEPT",
-                "ip6tables -A OUTPUT -j DROP",
-            ]
-        );
-        assert_eq!(fs::read_to_string(c.paths.ks_state()).unwrap(), "203.0.113.5");
+        let log = f.log();
+        let v4: Vec<&String> = log.iter().filter(|l| l.starts_with("iptables ")).collect();
+        let want = [
+            "iptables -D OUTPUT -j KARINCORE_KS",
+            "iptables -D OUTPUT -j KARINCORE_KS",
+            "iptables -D OUTPUT -j KARINCORE_KS",
+            "iptables -F KARINCORE_KS",
+            "iptables -X KARINCORE_KS",
+            "iptables -N KARINCORE_KS",
+            "iptables -A KARINCORE_KS -o lo -j ACCEPT",
+            "iptables -A KARINCORE_KS -o tun0 -j ACCEPT",
+            "iptables -A KARINCORE_KS -d 203.0.113.5 -j ACCEPT",
+            "iptables -A KARINCORE_KS -d 0.0.0.0/0 -m mark --mark 0xff -j ACCEPT",
+            "iptables -A KARINCORE_KS -j DROP",
+            "iptables -I OUTPUT 1 -j KARINCORE_KS",
+            "iptables -C OUTPUT -j KARINCORE_KS",
+        ];
+        assert_eq!(v4, want.iter().map(|s| s.to_string()).collect::<Vec<_>>().iter().collect::<Vec<_>>());
+        // ни одного правила в конец OUTPUT
+        assert!(!log.iter().any(|l| l.contains("-A OUTPUT")));
     }
 
     #[test]
@@ -577,28 +653,84 @@ mod tests {
         let (c, f) = ctx("ksdual");
         dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5,2001:db8::1"), ("iface", "tun0")], b"")).unwrap();
         let log = f.log();
-        assert!(log.contains(&"iptables -A OUTPUT -d 203.0.113.5 -j ACCEPT".to_string()));
-        assert!(log.contains(&"ip6tables -A OUTPUT -d 2001:db8::1 -j ACCEPT".to_string()));
-        assert!(!log.contains(&"iptables -A OUTPUT -d 2001:db8::1 -j ACCEPT".to_string()));
-        assert_eq!(fs::read_to_string(c.paths.ks_state()).unwrap(), "203.0.113.5,2001:db8::1");
+        assert!(log.contains(&"iptables -A KARINCORE_KS -d 203.0.113.5 -j ACCEPT".to_string()));
+        assert!(log.contains(&"ip6tables -A KARINCORE_KS -d 2001:db8::1 -j ACCEPT".to_string()));
+        assert!(!log.contains(&"iptables -A KARINCORE_KS -d 2001:db8::1 -j ACCEPT".to_string()));
+        assert!(log.contains(&"ip6tables -I OUTPUT 1 -j KARINCORE_KS".to_string()));
         f.calls.borrow_mut().clear();
         dispatch(&c, &rq("ks-off", &[], b"")).unwrap();
         let log = f.log();
-        assert_eq!(log.iter().filter(|l| *l == "ip6tables -D OUTPUT -d 2001:db8::1 -j ACCEPT").count(), 3);
-        assert_eq!(log.iter().filter(|l| *l == "ip6tables -D OUTPUT -j DROP").count(), 3);
+        assert!(log.contains(&"ip6tables -F KARINCORE_KS".to_string()));
+        assert!(log.contains(&"ip6tables -X KARINCORE_KS".to_string()));
+    }
+
+    #[test]
+    fn ks_off_removes_chain_and_legacy_rules() {
+        let (c, f) = ctx("ksoff");
+        dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "wg0")], b"")).unwrap();
+        f.calls.borrow_mut().clear();
+        // правила версии 1.8.1 и старше: без своей цепочки, адреса сервера в файле состояния
+        sys::ensure_dir(&c.paths.run_dir, 0o755, c.paths.owner_uid).unwrap();
+        fs::write(c.paths.ks_state(), "203.0.113.5").unwrap();
+        dispatch(&c, &rq("ks-off", &[], b"")).unwrap();
+        let log = f.log();
+        assert!(log.contains(&"iptables -F KARINCORE_KS".to_string()));
+        assert!(log.contains(&"iptables -X KARINCORE_KS".to_string()));
+        assert_eq!(log.iter().filter(|l| *l == "iptables -D OUTPUT -j DROP").count(), 3);
+        assert_eq!(log.iter().filter(|l| *l == "iptables -D OUTPUT -d 203.0.113.5 -j ACCEPT").count(), 3);
         assert!(!c.paths.ks_state().exists());
     }
 
     #[test]
-    fn ks_off_removes_rules_and_state() {
-        let (c, f) = ctx("ksoff");
-        dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "wg0")], b"")).unwrap();
-        f.calls.borrow_mut().clear();
-        dispatch(&c, &rq("ks-off", &[], b"")).unwrap();
+    fn ks_on_failure_rolls_back_and_reports_the_command() {
+        let (c, f) = ctx("ksfail");
+        f.fail("iptables -A KARINCORE_KS -j DROP");
+        let e = dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap_err();
+        assert!(e.contains("iptables -A KARINCORE_KS -j DROP"), "{}", e);
+        assert!(e.contains("fake failure"), "{}", e);
         let log = f.log();
-        assert_eq!(log.iter().filter(|l| *l == "iptables -D OUTPUT -j DROP").count(), 3);
-        assert_eq!(log.iter().filter(|l| *l == "iptables -D OUTPUT -d 203.0.113.5 -j ACCEPT").count(), 3);
+        // перехода в OUTPUT не было, а цепочку после ошибки очистили и удалили
+        assert!(!log.iter().any(|l| l.starts_with("iptables -I OUTPUT")));
+        let drop_at = log.iter().position(|l| l == "iptables -A KARINCORE_KS -j DROP").unwrap();
+        assert!(log[drop_at..].iter().any(|l| l == "iptables -F KARINCORE_KS"));
+        assert!(log[drop_at..].iter().any(|l| l == "iptables -X KARINCORE_KS"));
         assert!(!c.paths.ks_state().exists());
+    }
+
+    #[test]
+    fn ks_on_fails_when_jump_is_not_in_place() {
+        let (c, f) = ctx("ksverify");
+        f.fail("iptables -C OUTPUT -j KARINCORE_KS");
+        let e = dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap_err();
+        assert!(e.contains("-C OUTPUT"), "{}", e);
+        let log = f.log();
+        let at = log.iter().position(|l| l == "iptables -C OUTPUT -j KARINCORE_KS").unwrap();
+        assert!(log[at..].iter().any(|l| l == "iptables -D OUTPUT -j KARINCORE_KS"));
+        assert!(log[at..].iter().any(|l| l == "iptables -X KARINCORE_KS"));
+    }
+
+    #[test]
+    fn ks_on_missing_ip6tables_is_fatal_only_when_ipv6_is_active() {
+        // IPv6 в системе нет: отсутствие ip6tables не мешает
+        let (c, f) = ctx("ksno6");
+        f.fail("ip6tables");
+        dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap();
+        assert!(!f.log().iter().any(|l| l.starts_with("ip6tables -I OUTPUT")));
+        // IPv6 есть: без ip6tables защита не включается, всё откатывается
+        let (c, f) = ctx("ks6");
+        enable_ipv6(&c);
+        f.fail("ip6tables");
+        let e = dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap_err();
+        assert!(e.starts_with("ip6tables"), "{}", e);
+        assert!(f.log().iter().any(|l| l == "iptables -X KARINCORE_KS"));
+        // IPv6 выключен через sysctl: снова не обязателен
+        let (c, f) = ctx("ks6off");
+        enable_ipv6(&c);
+        let sysctl = c.paths.proc_dir.join("sys/net/ipv6/conf/all");
+        fs::create_dir_all(&sysctl).unwrap();
+        fs::write(sysctl.join("disable_ipv6"), "1\n").unwrap();
+        f.fail("ip6tables");
+        dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap();
     }
 
     #[test]
