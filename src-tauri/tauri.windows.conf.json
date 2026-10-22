@@ -1,7 +1,6 @@
 {
   "bundle": {
     "resources": {
-      "target/release/karincore-helper.exe": "karincore-service.exe",
       "windows/core/xray.exe": "core/xray.exe",
       "windows/core/wintun.dll": "core/wintun.dll",
       "windows/core/geoip.dat": "core/geoip.dat",
