@@ -2,8 +2,15 @@
 //!
 //! Только стандартная библиотека. Разбор вывода вынесен в чистые функции, чтобы его
 //! можно было проверить тестами без NetworkManager.
+//!
+//! На Windows сценарии Wi‑Fi пока недоступны (появятся на одном из следующих этапов порта):
+//! чтение сетей отвечает ошибкой, и интерфейс показывает, что список недоступен.
 
+#![cfg_attr(windows, allow(dead_code))]
+
+#[cfg(not(windows))]
 use std::io::ErrorKind;
+#[cfg(not(windows))]
 use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +117,7 @@ pub fn current_ssid(networks: &[Network]) -> Option<String> {
     networks.iter().find(|n| n.in_use).map(|n| n.ssid.clone())
 }
 
+#[cfg(not(windows))]
 fn run_nmcli(args: &[&str]) -> Result<String, String> {
     match Command::new("nmcli").args(args).output() {
         Ok(out) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
@@ -117,6 +125,11 @@ fn run_nmcli(args: &[&str]) -> Result<String, String> {
         Err(e) if e.kind() == ErrorKind::NotFound => Err("nmcli not found".to_string()),
         Err(e) => Err(e.to_string()),
     }
+}
+
+#[cfg(windows)]
+fn run_nmcli(_args: &[&str]) -> Result<String, String> {
+    Err("Wi-Fi scenarios are not available on Windows yet".to_string())
 }
 
 /// Видимые сети (из кэша сканирования, без запроса прав) и сохранённые.

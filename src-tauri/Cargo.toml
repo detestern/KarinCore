@@ -1,6 +1,6 @@
 [package]
 name = "karin-proxy"
-version = "1.8.8"
+version = "0.1.0-alpha.1"
 description = "KarinCore - Modern and secure proxy client"
 authors = ["detestern <detestern@proton.me>"]
 edition = "2021"
@@ -33,3 +33,10 @@ reqwest = { version = "0.13.3", default-features = false, features = ["json", "n
 tokio = { version = "1.52.3", features = ["full"] }
 base64 = "0.21"
 rfd = "0.17.2"
+
+# Только для Windows: уведомления и буфер обмена через официальные плагины Tauri
+# (на Linux — notify-send и wl-paste/xclip). Версии ограничены так, чтобы не тянуть tauri 2.12+:
+# версия крейта tauri должна совпадать по minor с @tauri-apps/api, иначе `tauri build` откажется собирать.
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-notification = "~2.4"
+tauri-plugin-clipboard-manager = "~2.3"

@@ -286,8 +286,16 @@ pub fn state_file_path_from(xdg_state_home: Option<String>, home: Option<String>
     Some(base.join("karincore").join("shell.json"))
 }
 
+#[cfg(not(windows))]
 pub fn state_file_path() -> Option<PathBuf> {
     state_file_path_from(std::env::var("XDG_STATE_HOME").ok(), std::env::var("HOME").ok())
+}
+
+/// На Windows мост пока выключен: путь и проверку процесса добавим на одном из следующих этапов.
+/// Без статус-файла приложение работает как обычно, флаги командной строки обрабатывает single-instance.
+#[cfg(windows)]
+pub fn state_file_path() -> Option<PathBuf> {
+    None
 }
 
 /// Запись через `shell.json.tmp` и rename: читатель никогда не увидит половину файла.
@@ -648,6 +656,8 @@ mod tests {
         assert_eq!(json_escape("Нидерланды 🇳🇱"), "\"Нидерланды 🇳🇱\"");
     }
 
+    // Пути XDG в тесте записаны по-unix'овому; на Windows путь моста будет другим.
+    #[cfg(unix)]
     #[test]
     fn state_path_rules() {
         assert_eq!(

@@ -8,19 +8,33 @@
 //!
 //! Зависимостей нет: бинарник работает от root, поэтому его поверхность
 //! атаки должна быть минимальной.
+//!
+//! Пока helper собирается только для Unix. На Windows вместо него будет служба
+//! (порт в ветке `windows`), а этот бинарник там — заглушка, чтобы собиралось всё остальное.
 
+#[cfg(unix)]
 mod json;
+#[cfg(unix)]
 mod ops;
+#[cfg(unix)]
 mod ovpn;
+#[cfg(unix)]
 mod proto;
+#[cfg(unix)]
 mod sys;
+#[cfg(unix)]
 mod wg;
+#[cfg(unix)]
 mod xray;
 
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
+#[cfg(unix)]
 fn reply(ok: bool, msg: &str) {
     let mut out = std::io::stdout().lock();
     let _ = writeln!(out, "{}", if ok { "OK" } else { "ERR" });
@@ -30,10 +44,12 @@ fn reply(ok: bool, msg: &str) {
     let _ = out.flush();
 }
 
+#[cfg(unix)]
 fn running_as_root() -> bool {
     fs::metadata("/proc/self").map(|m| m.uid() == 0).unwrap_or(false)
 }
 
+#[cfg(unix)]
 fn run() -> i32 {
     let stdin = std::io::stdin();
     let req = match proto::read_request(&mut stdin.lock()) {
@@ -88,6 +104,13 @@ fn run() -> i32 {
     }
 }
 
+#[cfg(unix)]
 fn main() {
     std::process::exit(run());
+}
+
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("karincore-helper: на этой платформе не используется");
+    std::process::exit(2);
 }

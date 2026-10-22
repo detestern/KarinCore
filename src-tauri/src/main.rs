@@ -7,6 +7,7 @@ mod bridge;
 mod diag;
 mod finder;
 mod helper_client;
+mod platform;
 mod subjson;
 mod token;
 mod wifi;
@@ -1199,6 +1200,9 @@ async fn start_proxy(
     proxy_lan: bool,
     kill_switch: bool
 ) -> Result<String, String> {
+    if let Some(reason) = platform::CONNECT_UNAVAILABLE {
+        return Err(reason.to_string());
+    }
     // Ядро нужно всем режимам (VLESS/OpenVPN/WireGuard): без подходящего Xray даже не начинаем.
     ensure_xray()?;
 
@@ -1386,11 +1390,7 @@ async fn wifi_current() -> Result<Option<String>, String> {
 
 #[tauri::command]
 fn diag_core() -> String {
-    match std::process::Command::new("pgrep").args(["-x", "xray"]).status() {
-        Ok(status) if status.success() => "yes".to_string(),
-        Ok(_) => "no".to_string(),
-        Err(_) => "na".to_string(),
-    }
+    platform::core_running().to_string()
 }
 
 /// Строки журнала Xray, появившиеся после позиции `from` (если файл сменился — с начала).
@@ -1463,37 +1463,23 @@ fn diag_verdict(
     json!({ "code": outcome.code, "detail": outcome.detail, "steps": steps })
 }
 
-// Читает буфер обмена для кнопки «Вставить», если WebView не дал прочитать его сам.
-// Пробуем wl-paste (Wayland), затем xclip и xsel (X11); берём только короткий текст.
+// Читает буфер обмена для кнопки «Вставить», если WebView не дал прочитать его сам; берём только короткий текст.
 #[tauri::command]
-fn read_clipboard() -> Result<String, String> {
-    let attempts: [(&str, &[&str]); 3] = [
-        ("wl-paste", &["--no-newline"]),
-        ("xclip", &["-o", "-selection", "clipboard"]),
-        ("xsel", &["-ob"]),
-    ];
-    for (program, args) in attempts {
-        let Ok(output) = std::process::Command::new(program).args(args).output() else { continue };
-        if !output.status.success() { continue; }
-        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !text.is_empty() && text.len() <= 65_536 { return Ok(text); }
+fn read_clipboard(app: tauri::AppHandle) -> Result<String, String> {
+    match platform::read_clipboard(&app).map(|t| t.trim().to_string()) {
+        Some(text) if !text.is_empty() && text.len() <= 65_536 => Ok(text),
+        _ => Err("clipboard unavailable".to_string()),
     }
-    Err("clipboard unavailable".to_string())
 }
 
 #[tauri::command]
-fn open_browser(url: String) { std::process::Command::new("xdg-open").arg(url).spawn().ok(); }
+fn open_browser(url: String) { platform::open_url(&url); }
 
-// Короткое системное уведомление (например, о переключении сервера при обрыве). Если notify-send
-// не установлен, ничего не происходит: то же сообщение есть в самом приложении.
+// Короткое системное уведомление (например, о переключении сервера при обрыве).
 #[tauri::command]
-fn notify_desktop(title: String, body: String) {
+fn notify_desktop(app: tauri::AppHandle, title: String, body: String) {
     let clip = |text: String| text.chars().take(200).collect::<String>();
-    let _ = std::process::Command::new("notify-send")
-        .args(["-a", "KarinCore", "--"])
-        .arg(clip(title))
-        .arg(clip(body))
-        .spawn();
+    platform::notify(&app, &clip(title), &clip(body));
 }
 
 /// gid группы `karincore` из /etc/group.
@@ -1685,13 +1671,14 @@ fn main() {
 
     // Если экземпляр уже работает, этот процесс лишь передаст ему флаги и выйдет (single-instance),
     // поэтому тяжёлую подготовку (xray, geo-базы) не повторяем.
-    if running != Some(true) {
+    // На платформе без подключения (Windows, этап 1) ядро и geo-базы не нужны.
+    if running != Some(true) && platform::CONNECT_UNAVAILABLE.is_none() {
         if let Err(e) = ensure_xray() { eprintln!("karincore: {}", e); }
         tokio::runtime::Runtime::new().unwrap().block_on(async { let _ = ensure_geo_files().await; });
     }
 
     let startup_cli = cli.clone();
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Должен регистрироваться первым. Повторный запуск не открывает второе окно:
         // флаги уходят в работающий экземпляр и превращаются в те же действия, что кнопки на главном экране.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -1702,7 +1689,8 @@ fn main() {
                 let resolved = app.state::<bridge::BridgeState>().dispatch(actions);
                 emit_bridge_actions(app, resolved);
             }
-        }))
+        }));
+    let app = platform::register_plugins(builder)
         .manage(ProxyState { auth_token: Mutex::new(None) })
         .manage(finder::FinderState::default())
         .manage(bridge::BridgeState::new(env!("CARGO_PKG_VERSION"), std::process::id(), bridge::state_file_path()))

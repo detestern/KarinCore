@@ -9,9 +9,11 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+#[cfg_attr(windows, allow(dead_code))]
 pub const HELPER_PATH: &str = "/usr/libexec/karincore/karincore-helper";
 const MAGIC: &str = "KARIN-HELPER/1";
 
+#[cfg_attr(windows, allow(dead_code))]
 fn encode_header(op: &str, params: &[(&str, &str)], body_len: usize) -> String {
     let mut s = format!("{} {}", MAGIC, op);
     for (k, v) in params {
@@ -26,6 +28,7 @@ fn encode_header(op: &str, params: &[(&str, &str)], body_len: usize) -> String {
 
 /// Разбор ответа helper'а: первая строка `OK` или `ERR`, дальше сообщение.
 /// Любой другой вывод — это ошибка самого sudo (нет прав, не установлен helper).
+#[cfg_attr(windows, allow(dead_code))]
 fn parse_response(stdout: &str, stderr: &str) -> Result<String, String> {
     let mut lines = stdout.splitn(2, '\n');
     let first = lines.next().unwrap_or("").trim_end();
@@ -37,6 +40,7 @@ fn parse_response(stdout: &str, stderr: &str) -> Result<String, String> {
     }
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn sudo_failure_message(stderr: &str) -> String {
     let s = stderr.trim();
     let hint = "Нет доступа к helper'у KarinCore. Убедитесь, что пакет установлен целиком, а ваш пользователь состоит в группе karincore \
@@ -48,6 +52,7 @@ fn sudo_failure_message(stderr: &str) -> String {
     }
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn run_command(mut cmd: Command, op: &str, params: &[(&str, &str)], body: Option<&[u8]>) -> Result<String, String> {
     let body_len = body.map(|b| b.len()).unwrap_or(0);
     let header = encode_header(op, params, body_len);
@@ -71,10 +76,18 @@ fn run_command(mut cmd: Command, op: &str, params: &[(&str, &str)], body: Option
 }
 
 /// Вызов операции helper'а через `sudo -n`.
+#[cfg(not(windows))]
 pub fn call(op: &str, params: &[(&str, &str)], body: Option<&[u8]>) -> Result<String, String> {
     let mut cmd = Command::new("sudo");
     cmd.args(["-n", HELPER_PATH]);
     run_command(cmd, op, params, body)
+}
+
+/// На Windows helper'а пока нет: его заменит служба KarinCore (следующий этап порта).
+/// До тех пор все привилегированные операции честно отвечают ошибкой, ничего не запуская.
+#[cfg(windows)]
+pub fn call(op: &str, _params: &[(&str, &str)], _body: Option<&[u8]>) -> Result<String, String> {
+    Err(format!("Служба KarinCore для Windows ещё не готова (операция {}).", op))
 }
 
 /// Вызов, результат которого не важен (очистка, остановка).
@@ -82,7 +95,8 @@ pub fn call_quiet(op: &str, params: &[(&str, &str)]) {
     let _ = call(op, params, None);
 }
 
-#[cfg(test)]
+// Тесты запускают `sh` и проверяют Linux-транспорт через sudo.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

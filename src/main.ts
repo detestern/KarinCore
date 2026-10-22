@@ -2335,24 +2335,37 @@ function addRule(value: string, type: string) {
 // **********************************
 // APPLICATION UPDATE CHECKER
 // **********************************
+// Windows-сборки выходят пре-релизами с тегами windows-v<версия>, а «Latest» на GitHub остаётся
+// за Linux-версией. Поэтому смотрим список релизов и берём самый свежий с нашим префиксом.
+const CURRENT_VERSION = "0.1.0-alpha.1";
+const RELEASE_TAG_PREFIX = "windows-v";
+const RELEASES_PAGE = "https://github.com/detestern/KarinCore/releases";
+
+interface GithubRelease { tag_name?: unknown; html_url?: unknown; draft?: unknown; }
+
 async function checkApplicationUpdates() {
     const statusEl = document.getElementById('update-status');
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.8.8";
-
-        const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
+        const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases?per_page=30");
         if (!response.ok) return;
 
-        const data = await response.json();
-        const latestVersion = data.tag_name.replace('v', '').trim();
+        const list: unknown = await response.json();
+        if (!Array.isArray(list)) return;
+        const latest = (list as GithubRelease[]).find(r =>
+            typeof r.tag_name === 'string' && r.tag_name.startsWith(RELEASE_TAG_PREFIX) && r.draft !== true);
+        if (!latest || typeof latest.tag_name !== 'string') return;
+        const latestVersion = latest.tag_name.slice(RELEASE_TAG_PREFIX.length).trim();
+        // Открываем только страницу релиза в нашем репозитории.
+        const releaseUrl = typeof latest.html_url === 'string' && latest.html_url.startsWith(RELEASES_PAGE + "/")
+            ? latest.html_url : RELEASES_PAGE;
 
         if (latestVersion === CURRENT_VERSION) {
             statusEl.innerHTML = `<span style="opacity: 0.6;">${t('update_current')}</span>`;
         } else {
             statusEl.innerHTML = `
-                <a class="update-link" href="https://github.com/detestern/KarinCore/releases/latest" target="_blank">
+                <a class="update-link" href="${RELEASES_PAGE}" target="_blank">
                     ${t('update_available')}
                     <span class="notification-dot"></span>
                 </a>
@@ -2361,7 +2374,7 @@ async function checkApplicationUpdates() {
             const link = statusEl.querySelector('.update-link');
             link?.addEventListener('click', (e) => {
                 e.preventDefault();
-                invoke('open_browser', { url: "https://github.com/detestern/KarinCore/releases/latest" })
+                invoke('open_browser', { url: releaseUrl })
                     .catch(console.error);
             });
         }
