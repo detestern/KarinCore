@@ -694,6 +694,50 @@ function createProfileFromSubscription(result: SubscriptionResult, fallbackName:
     renderRoutingProfiles();
 }
 
+// Короткое уведомление в стиле приложения (вместо системного окна).
+let appToastTimer: number | null = null;
+function showToast(message: string, kind: 'ok' | 'fail' = 'ok') {
+    const el = document.getElementById('app-toast');
+    if (!el) return;
+    const icon = kind === 'ok'
+        ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>'
+        : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.2v.01"/></svg>';
+    el.replaceChildren();
+    const iconEl = document.createElement('span');
+    iconEl.className = 'app-toast-icon';
+    iconEl.innerHTML = icon;
+    const textEl = document.createElement('span');
+    textEl.textContent = message;
+    el.append(iconEl, textEl);
+    el.classList.toggle('is-fail', kind === 'fail');
+    el.classList.add('is-visible');
+    if (appToastTimer !== null) window.clearTimeout(appToastTimer);
+    appToastTimer = window.setTimeout(() => { el.classList.remove('is-visible'); appToastTimer = null; }, 3400);
+}
+
+// Вставка из буфера обмена в поле добавления. Сначала средства WebView, затем системные утилиты.
+async function pasteFromClipboard() {
+    let text = '';
+    try {
+        text = (await navigator.clipboard.readText()).trim();
+    } catch (error) {
+        console.debug('WebView clipboard read failed:', error);
+    }
+    if (!text) {
+        try { text = String(await invoke<string>('read_clipboard')).trim(); } catch (error) { console.debug('Clipboard helper failed:', error); }
+    }
+    if (!text) {
+        showToast(t('paste_failed'), 'fail');
+        linkInput?.focus();
+        return;
+    }
+    if (linkInput) {
+        linkInput.value = text;
+        linkInput.dispatchEvent(new Event('input', { bubbles: true }));
+        linkInput.focus();
+    }
+}
+
 async function saveNewLink() {
     if(!linkInput) return;
     const input = linkInput.value.trim();
@@ -1131,9 +1175,12 @@ function renderLinkItem(item: ProxyLink) {
     const formattedProtocol = formatProxyInfo(item.url);
     const pinIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>`;
     const checkboxHtml = isEditMode ? `<input type="checkbox" class="edit-checkbox" data-id="${esc(item.id)}" ${selectedLinks.has(item.id) ? 'checked' : ''}>` : '';
+    const itemGroup = item.groupId ? appGroups.find(g => g.id === item.groupId) : undefined;
+    const updateSubHtml = itemGroup?.subUrl ? `<button class="btn-update-sub" data-id="${esc(item.id)}">${t('btn_update_sub')}</button>` : '';
     const actionsHtml = isEditMode ? '' : `
         <button class="btn-menu-dots" data-index="${esc(item.id)}">⋮</button>
         <div class="dropdown-menu" id="menu-${esc(item.id)}" style="display:none;">
+          ${updateSubHtml}
           <button class="btn-share" data-url="${esc(item.url)}">${t('btn_share')}</button>
           <button class="btn-pin" data-id="${esc(item.id)}">${item.pinned ? t('btn_unpin') : t('btn_pin')}</button>
           <button class="btn-delete-link danger" style="background: transparent; color: var(--danger);" data-id="${esc(item.id)}">${t('btn_delete')}</button>
@@ -2293,7 +2340,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.8.3";
+        const CURRENT_VERSION = "1.8.4";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -2471,6 +2518,7 @@ function init() {
     }
     
     btnSave?.addEventListener('click', saveNewLink);
+    document.getElementById('btn-paste')?.addEventListener('click', () => { void pasteFromClipboard(); });
     btnImportFile?.addEventListener('click', () => { importFileInput?.click(); });
     document.getElementById('btn-ping-all')?.addEventListener('click', () => { void pingAllServers(); });
 
@@ -3044,13 +3092,14 @@ function remapLinkRefs(from: string, to: string) {
 
 // Сверяет серверы группы со свежим списком подписки: новые добавляются, пропавшие удаляются.
 // Закреплённые серверы, подключённый сейчас и выбранный профиль остаются на месте.
-function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: number; removed: number } {
+function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: number; removed: number; updated: number } {
     const fresh = Array.from(new Set(links));
     const inGroup = () => appLinks.filter(l => l.groupId === group.id);
     const matched = new Map<string, ProxyLink>();
     const kept = new Set<ProxyLink>();
     let added = 0;
     let removed = 0;
+    let updated = 0;
 
     // Сначала точные совпадения, затем тот же сервер в другой записи (имя или параметры изменились).
     fresh.forEach(url => {
@@ -3063,10 +3112,21 @@ function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: nu
         const entry = inGroup().find(l => !kept.has(l) && linkIdentity(l.url) === id);
         if (entry) { matched.set(url, entry); kept.add(entry); }
     });
+    // Сервер, у которого сменились id или адрес, но осталось имя: это та же запись, а не новый сервер.
+    // Берём только однозначные пары, иначе два сервера с одним именем можно перепутать.
+    const nameOf = (u: string) => getLinkNameParts(u).name.trim().toLowerCase();
+    const unmatchedFresh = fresh.filter(u => !matched.has(u));
+    unmatchedFresh.forEach(url => {
+        const n = nameOf(url);
+        if (!n || unmatchedFresh.filter(u => nameOf(u) === n).length !== 1) return;
+        const candidates = inGroup().filter(l => !kept.has(l) && nameOf(l.url) === n);
+        if (candidates.length === 1) { matched.set(url, candidates[0]); kept.add(candidates[0]); }
+    });
     matched.forEach((entry, url) => {
         if (entry.url === url) return;
         remapLinkRefs(entry.url, url);
         entry.url = url;
+        updated++;
     });
 
     fresh.forEach(url => {
@@ -3091,11 +3151,23 @@ function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: nu
                 return false;
             }
         }
+        // Остаток прошлых обновлений: тот же сервер под тем же именем, но с устаревшей ссылкой.
+        // Подключённую сейчас запись не трогаем, она заменится после отключения.
+        if (l.url !== activeLink) {
+            const n = nameOf(l.url);
+            const twin = n ? Array.from(kept).find(k => k.groupId === group.id && nameOf(k.url) === n) : undefined;
+            if (twin) {
+                if (l.pinned) twin.pinned = true;
+                remapLinkRefs(l.url, twin.url);
+                removed++;
+                return false;
+            }
+        }
         if (l.pinned || l.url === activeLink || l.url === selectedProfileUrl) return true;
         removed++;
         return false;
     });
-    return { added, removed };
+    return { added, removed, updated };
 }
 
 // Короткая обратная связь на кнопке: вращение пока идёт обновление, затем галочка или «!».
@@ -3107,15 +3179,17 @@ function flashSubRefresh(state: 'is-done' | 'is-fail') {
     window.setTimeout(() => button.classList.remove(state), 1500);
 }
 
-async function refreshSubscriptions(manual: boolean) {
-    if (subUpdateRunning) return;
-    const groups = appGroups.filter(g => g.subUrl);
+// only: обновить одну подписку (кнопка в меню сервера); без него обновляются все.
+async function refreshSubscriptions(manual: boolean, only?: ProxyGroup): Promise<{ ok: boolean; added: number; removed: number }> {
+    const failed = { ok: false, added: 0, removed: 0 };
+    if (subUpdateRunning) return failed;
+    const groups = only ? (only.subUrl ? [only] : []) : appGroups.filter(g => g.subUrl);
     if (groups.length === 0) {
         if (manual) flashSubRefresh('is-fail');
-        return;
+        return failed;
     }
     const due = manual ? groups : groups.filter(g => !g.updatedAt || Date.now() - g.updatedAt >= SUB_AUTO_MIN_AGE_MS);
-    if (due.length === 0) return;
+    if (due.length === 0) return failed;
 
     subUpdateRunning = true;
     const button = document.getElementById('btn-sub-refresh') as HTMLButtonElement | null;
@@ -3127,6 +3201,7 @@ async function refreshSubscriptions(manual: boolean) {
     let answered = 0;
     let added = 0;
     let removed = 0;
+    let updated = 0;
     let next = 0;
     const worker = async () => {
         while (next < due.length) {
@@ -3140,6 +3215,7 @@ async function refreshSubscriptions(manual: boolean) {
                 group.updatedAt = Date.now();
                 added += diff.added;
                 removed += diff.removed;
+                updated += diff.updated;
                 answered++;
             } catch {
                 // Подписка не ответила: её группа остаётся как была.
@@ -3158,8 +3234,33 @@ async function refreshSubscriptions(manual: boolean) {
     }
 
     saveData();
-    if (added || removed) renderLinks();
+    if (added || removed || updated) { renderLinks(); updateHeroProfileName(); }
     flashSubRefresh(answered > 0 ? 'is-done' : 'is-fail');
+    if (manual) {
+        if (answered === 0) showToast(t('sub_toast_fail'), 'fail');
+        else if (answered < due.length) showToast(t('sub_toast_partial').replace('{ok}', String(answered)).replace('{total}', String(due.length)), 'fail');
+        else if (added || removed) showToast(t('sub_toast_changes').replace('{added}', String(added)).replace('{removed}', String(removed)));
+        else if (updated) showToast(t('sub_toast_updated'));
+        else showToast(t('sub_toast_ok'));
+    }
+    return { ok: answered > 0, added, removed };
+}
+
+// Кнопка «Обновить подписку» в меню сервера: обновляет только ту подписку, которой принадлежит сервер.
+async function updateOneSubscription(button: HTMLButtonElement) {
+    const link = appLinks.find(l => l.id === button.dataset.id);
+    const group = link?.groupId ? appGroups.find(g => g.id === link.groupId) : undefined;
+    if (!group || !group.subUrl) return;
+    button.disabled = true;
+    button.textContent = t('sub_updating');
+    const res = await refreshSubscriptions(true, group);
+    // Результат показывает уведомление; список мог перерисоваться, пока шло обновление.
+    void res;
+    if (!button.isConnected) return;
+    button.disabled = false;
+    button.textContent = t('btn_update_sub');
+    const menu = button.closest('.dropdown-menu') as HTMLElement | null;
+    if (menu) menu.style.display = 'none';
 }
 
 // **********************************
@@ -3651,6 +3752,10 @@ document.addEventListener('click', async (e) => {
       }).catch(() => alert('Copy Error'));
     }
   
+    if (target.classList.contains('btn-update-sub')) {
+        void updateOneSubscription(target as HTMLButtonElement);
+    }
+
     if (target.classList.contains('btn-pin') && !target.closest('#edit-bar')) {
         const id = target.dataset.id;
         const link = appLinks.find(l => l.id === id);

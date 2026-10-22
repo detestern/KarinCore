@@ -5,6 +5,15 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.8.4 — Renewal
+
+<sub>2026-10-22</sub>
+
+* **Fixed:** updating a subscription could leave a second server with the same name next to the old one. This happened when the provider changed a server's id or address but kept its name, and the old entry was selected, pinned or connected. KarinCore now recognises such a server by its name, updates the existing entry in place and keeps its pin and selection. Duplicates left by earlier updates are merged on the next update.
+* **Added:** an in-app notification (not a system one) after you update subscriptions by hand: updated, nothing changed, partly updated or failed.
+* **Added:** a paste button inside the link field of the profiles panel, as on Android.
+* **Added:** «Update subscription» in the menu of every server that came from a subscription. It updates only that subscription; the button next to «Ping» still updates all of them.
+
 ## v1.8.3 — DNS
 
 <sub>2026-10-22</sub>

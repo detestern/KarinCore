@@ -1463,6 +1463,24 @@ fn diag_verdict(
     json!({ "code": outcome.code, "detail": outcome.detail, "steps": steps })
 }
 
+// Читает буфер обмена для кнопки «Вставить», если WebView не дал прочитать его сам.
+// Пробуем wl-paste (Wayland), затем xclip и xsel (X11); берём только короткий текст.
+#[tauri::command]
+fn read_clipboard() -> Result<String, String> {
+    let attempts: [(&str, &[&str]); 3] = [
+        ("wl-paste", &["--no-newline"]),
+        ("xclip", &["-o", "-selection", "clipboard"]),
+        ("xsel", &["-ob"]),
+    ];
+    for (program, args) in attempts {
+        let Ok(output) = std::process::Command::new(program).args(args).output() else { continue };
+        if !output.status.success() { continue; }
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !text.is_empty() && text.len() <= 65_536 { return Ok(text); }
+    }
+    Err("clipboard unavailable".to_string())
+}
+
 #[tauri::command]
 fn open_browser(url: String) { std::process::Command::new("xdg-open").arg(url).spawn().ok(); }
 
@@ -1668,7 +1686,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            start_proxy, stop_proxy, fetch_subscription, notify_desktop, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, diag_internet, diag_resolve, diag_tcp, diag_core, diag_tunnel, wifi_scan, wifi_current, diag_verdict, export_profile, minimize_window, maximize_window, close_window, open_browser, bridge_update,
+            start_proxy, stop_proxy, fetch_subscription, notify_desktop, get_geosite_list, get_logs, clear_logs, get_vpn_ip, check_ping, diag_internet, diag_resolve, diag_tcp, diag_core, diag_tunnel, wifi_scan, wifi_current, diag_verdict, export_profile, minimize_window, maximize_window, close_window, open_browser, read_clipboard, bridge_update,
             finder::finder_start, finder::finder_mark_background, finder::finder_poll, finder::finder_result, finder::finder_stop
         ]).build(tauri::generate_context!()).expect("error while building tauri application");
     app.run(|app_handle, event| {
