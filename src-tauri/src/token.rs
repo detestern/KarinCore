@@ -1,7 +1,8 @@
 //! Токен локального прокси (пароль для inbound'ов на 127.0.0.1).
 //!
 //! Раньше токен строился из текущего времени в наносекундах — это предсказуемо.
-//! Теперь 256 бит берутся из CSPRNG ядра (`/dev/urandom`).
+//! Теперь 256 бит берутся из CSPRNG системы: `/dev/urandom` на Linux,
+//! `ProcessPrng` на Windows (тот же источник использует стандартная библиотека Rust).
 
 use std::io::Read;
 
@@ -20,9 +21,37 @@ pub fn generate_from<R: Read>(src: &mut R) -> Result<String, String> {
     Ok(format!("karin_{}", to_hex(&buf)))
 }
 
+#[cfg(not(windows))]
 pub fn generate() -> Result<String, String> {
     let mut f = std::fs::File::open("/dev/urandom").map_err(|e| format!("Не удалось открыть /dev/urandom: {}", e))?;
     generate_from(&mut f)
+}
+
+#[cfg(windows)]
+pub fn generate() -> Result<String, String> {
+    generate_from(&mut WinRng)
+}
+
+/// Системный CSPRNG Windows (bcryptprimitives.dll, Windows 10 и новее).
+/// По документации `ProcessPrng` всегда возвращает TRUE и заполняет буфер целиком.
+#[cfg(windows)]
+struct WinRng;
+
+#[cfg(windows)]
+#[link(name = "bcryptprimitives", kind = "raw-dylib")]
+extern "system" {
+    fn ProcessPrng(pbdata: *mut u8, cbdata: usize) -> i32;
+}
+
+#[cfg(windows)]
+impl Read for WinRng {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // SAFETY: указатель и длина берутся из одного живого буфера `buf`.
+        if unsafe { ProcessPrng(buf.as_mut_ptr(), buf.len()) } == 0 {
+            return Err(std::io::Error::other("ProcessPrng failed"));
+        }
+        Ok(buf.len())
+    }
 }
 
 #[cfg(test)]
