@@ -2340,7 +2340,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.8.4";
+        const CURRENT_VERSION = "1.8.5";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;
@@ -3090,6 +3090,46 @@ function remapLinkRefs(from: string, to: string) {
     if (guard.serverUrl === from) { guard.serverUrl = to; saveGuard(); }
 }
 
+// Части ссылки, по которым сравниваются серверы: пользователь, адрес, порт и имя.
+function linkParts(url: string): { user: string; host: string; port: string; name: string } {
+    const raw = url.trim();
+    const name = getLinkNameParts(raw).name.trim().toLowerCase();
+    if (/^vmess:\/\//i.test(raw)) {
+        try {
+            const body = raw.slice(8).split('#')[0].replace(/-/g, '+').replace(/_/g, '/');
+            const v = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(body), c => c.charCodeAt(0))));
+            return { user: String(v.id ?? ''), host: String(v.add ?? '').toLowerCase(), port: String(v.port ?? ''), name: String(v.ps ?? '').trim().toLowerCase() || name };
+        } catch { /* ниже общий разбор */ }
+    }
+    try {
+        const u = new URL(raw);
+        let user = u.username;
+        try { user = decodeURIComponent(user); } catch { /* оставляем как есть */ }
+        return { user, host: u.hostname.toLowerCase(), port: u.port, name };
+    } catch {
+        return { user: '', host: '', port: '', name };
+    }
+}
+
+// Насколько две записи похожи на один и тот же сервер. В имени «nl-alex» и «en-alex» совпадает «alex»:
+// провайдер меняет часть имени, когда переключает вход (inbound), а сервер остаётся тем же.
+function linkSimilarity(a: string, b: string): number {
+    const x = linkParts(a);
+    const y = linkParts(b);
+    let score = 0;
+    if (x.host && x.host === y.host) score += 4;
+    if (x.user && x.user === y.user) score += 1;
+    if (x.port && x.port === y.port) score += 1;
+    const tokens = (n: string) => new Set(n.split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+    const tx = tokens(x.name);
+    const ty = tokens(y.name);
+    if (tx.size && ty.size) {
+        const common = Array.from(tx).filter(w => ty.has(w)).length;
+        score += 3 * common / (tx.size + ty.size - common);
+    }
+    return score;
+}
+
 // Сверяет серверы группы со свежим списком подписки: новые добавляются, пропавшие удаляются.
 // Закреплённые серверы, подключённый сейчас и выбранный профиль остаются на месте.
 function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: number; removed: number; updated: number } {
@@ -3122,6 +3162,23 @@ function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: nu
         const candidates = inGroup().filter(l => !kept.has(l) && nameOf(l.url) === n);
         if (candidates.length === 1) { matched.set(url, candidates[0]); kept.add(candidates[0]); }
     });
+    // Выбранный или закреплённый сервер пропал из подписки, а вместо него появился похожий (сменили вход,
+    // имя стало другим): подписка главная, так что это та же запись. Выбор, закрепление и сценарии переезжают.
+    // Подключённую сейчас запись не трогаем: она заменится после отключения.
+    const isProtected = (l: ProxyLink) => l.pinned || l.url === selectedProfileUrl
+        || scenarios.some(sc => sc.serverUrl === l.url) || guard.serverUrl === l.url;
+    const staleOld = inGroup().filter(l => !kept.has(l) && l.url !== activeLink && isProtected(l));
+    const newFresh = fresh.filter(u => !matched.has(u) && !appLinks.some(l => l.url === u));
+    const pairs: { old: ProxyLink; url: string; score: number }[] = [];
+    staleOld.forEach(old => newFresh.forEach(url => pairs.push({ old, url, score: linkSimilarity(old.url, url) })));
+    pairs.sort((a, b) => b.score - a.score);
+    pairs.forEach(pair => {
+        if (kept.has(pair.old) || matched.has(pair.url)) return;
+        // Единственная пара из оставшихся берётся даже без явного сходства: других кандидатов нет.
+        if (pair.score <= 0 && !(staleOld.length === 1 && newFresh.length === 1)) return;
+        matched.set(pair.url, pair.old);
+        kept.add(pair.old);
+    });
     matched.forEach((entry, url) => {
         if (entry.url === url) return;
         remapLinkRefs(entry.url, url);
@@ -3151,12 +3208,17 @@ function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: nu
                 return false;
             }
         }
-        // Остаток прошлых обновлений: тот же сервер под тем же именем, но с устаревшей ссылкой.
+        // Остаток прошлых обновлений: тот же сервер, но с устаревшей ссылкой (другое имя или вход).
         // Подключённую сейчас запись не трогаем, она заменится после отключения.
         if (l.url !== activeLink) {
-            const n = nameOf(l.url);
-            const twin = n ? Array.from(kept).find(k => k.groupId === group.id && nameOf(k.url) === n) : undefined;
-            if (twin) {
+            let twin: ProxyLink | undefined;
+            let best = 0;
+            kept.forEach(k => {
+                if (k.groupId !== group.id) return;
+                const score = linkSimilarity(l.url, k.url);
+                if (score > best) { best = score; twin = k; }
+            });
+            if (twin && best >= 3) {
                 if (l.pinned) twin.pinned = true;
                 remapLinkRefs(l.url, twin.url);
                 removed++;

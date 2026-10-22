@@ -5,6 +5,12 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.8.5 — Pairing
+
+<sub>2026-10-22</sub>
+
+* **Fixed:** updating a subscription still left a second server next to the old one when the provider changed a server's inbound. Changing the inbound also changes the name (for example `nl-alex` becomes `en-alex`), so the old entry was no longer recognised. The subscription is now the source of truth: KarinCore pairs the vanished selected or pinned server with the most similar new one (same address, user id, port or part of the name), updates the existing entry in place and keeps its pin, selection and scenarios. A server you are connected to is replaced after you disconnect. Duplicates already left by earlier updates are merged on the next update.
+
 ## v1.8.4 — Renewal
 
 <sub>2026-10-22</sub>
