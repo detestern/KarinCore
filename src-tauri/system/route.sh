@@ -2,6 +2,39 @@
 RP_FILTER_BAK="/etc/karin-proxy/rp_filter.bak"
 LOCAL_BYPASS_NETS="127.0.0.0/8 10.0.0.0/8 192.168.0.0/16"
 LOCAL_BYPASS_NETS6="fc00::/7 fe80::/10"
+DNS_LINKS_BAK="/run/karin-proxy/dns-domains.bak"
+
+# systemd-resolved отправляет запрос ВО ВСЕ интерфейсы с самым подходящим доменом. Если у другого
+# интерфейса (провайдер, локальная сеть, корпоративный VPN) тоже есть корневой домен "~.", он получает
+# те же запросы параллельно с туннелем: имена сайтов утекают к чужому DNS. Поэтому на время работы
+# туннеля "~." снимается с остальных интерфейсов, а при остановке возвращается как было.
+# Остальные домены интерфейсов (например, корпоративный поиск) не трогаем.
+dns_take_root_route() {
+    mkdir -p /run/karin-proxy 2>/dev/null
+    : > "$DNS_LINKS_BAK"
+    local line name doms rest d
+    resolvectl domain 2>/dev/null | while IFS= read -r line; do
+        case "$line" in "Link "*) ;; *) continue ;; esac
+        name=${line#*\(}; name=${name%%\)*}
+        [ "$name" = "tun0" ] && continue
+        doms=${line#*\):}
+        rest=""
+        case " $doms " in *" ~. "*) ;; *) continue ;; esac
+        for d in $doms; do [ "$d" = "~." ] || rest="$rest $d"; done
+        printf '%s\t%s\n' "$name" "$doms" >> "$DNS_LINKS_BAK"
+        # Пустой список передаётся как "": без аргументов resolvectl только показывает значение.
+        if [ -n "$rest" ]; then resolvectl domain "$name" $rest 2>/dev/null; else resolvectl domain "$name" "" 2>/dev/null; fi
+    done
+}
+
+dns_return_root_route() {
+    [ -f "$DNS_LINKS_BAK" ] || return 0
+    local name doms
+    while IFS=$'\t' read -r name doms; do
+        [ -n "$name" ] && resolvectl domain "$name" $doms 2>/dev/null
+    done < "$DNS_LINKS_BAK"
+    rm -f "$DNS_LINKS_BAK"
+}
 
 # Адрес сервера берём из первого outbound'а: vless/vmess хранят его в settings.vnext[0],
 # trojan и shadowsocks — в settings.servers[0]. В режимах OpenVPN/WireGuard такого поля нет — тогда пусто.
@@ -87,6 +120,11 @@ case "$1" in
         if command -v resolvectl >/dev/null 2>&1; then
             resolvectl dns tun0 127.0.0.1 2>/dev/null
             resolvectl domain tun0 "~." 2>/dev/null
+            resolvectl default-route tun0 yes 2>/dev/null
+            # Имена из одного слова не должны уходить мультикастом в туннель.
+            resolvectl llmnr tun0 no 2>/dev/null
+            resolvectl mdns tun0 no 2>/dev/null
+            dns_take_root_route
         else
             if [ ! -f /etc/karin-proxy/resolv.conf.bak ]; then
                 cp /etc/resolv.conf /etc/karin-proxy/resolv.conf.bak 2>/dev/null
@@ -123,6 +161,7 @@ case "$1" in
         # **********************************
         if command -v resolvectl >/dev/null 2>&1; then
             resolvectl revert tun0 2>/dev/null
+            dns_return_root_route
         elif [ -f /etc/karin-proxy/resolv.conf.bak ]; then
             cp /etc/karin-proxy/resolv.conf.bak /etc/resolv.conf 2>/dev/null
             rm -f /etc/karin-proxy/resolv.conf.bak

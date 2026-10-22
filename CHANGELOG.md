@@ -5,6 +5,14 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.8.7 — Hush
+
+<sub>2026-10-22</sub>
+
+* **Security:** DNS leak. `systemd-resolved` sends a query to every interface that has the best-matching domain, all at once. If another interface (the provider, the local network, a corporate VPN) also had the root route-only domain `~.`, it received the same queries as the tunnel, so the names of the sites you open reached a foreign DNS server. While the tunnel is up, KarinCore now removes `~.` from the other interfaces and puts it back when the tunnel stops. Their other domains (for example a corporate search domain) are not touched.
+* **Changed:** on the tunnel interface LLMNR and mDNS are turned off and the DNS default route is set explicitly, so single-word names are not multicast into the tunnel.
+* **Note:** if the network manager re-applies `~.` to another interface while the tunnel is up (for example after the Wi-Fi reconnects), reconnect the VPN to apply the protection again.
+
 ## v1.8.6 — Seal
 
 <sub>2026-10-22</sub>
