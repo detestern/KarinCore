@@ -5,6 +5,8 @@
 //! sudoers разрешает один бинарник без аргументов, а запрос уходит ему в stdin
 //! (протокол описан в `helper/proto.rs`). Проверка параметров и конфигураций
 //! выполняется на стороне root, а не здесь.
+//!
+//! На Windows тот же протокол уходит службе KarinCore через named pipe (`helper_pipe.rs`).
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -13,7 +15,6 @@ use std::process::{Command, Stdio};
 pub const HELPER_PATH: &str = "/usr/libexec/karincore/karincore-helper";
 const MAGIC: &str = "KARIN-HELPER/1";
 
-#[cfg_attr(windows, allow(dead_code))]
 fn encode_header(op: &str, params: &[(&str, &str)], body_len: usize) -> String {
     let mut s = format!("{} {}", MAGIC, op);
     for (k, v) in params {
@@ -26,18 +27,23 @@ fn encode_header(op: &str, params: &[(&str, &str)], body_len: usize) -> String {
     s
 }
 
-/// Разбор ответа helper'а: первая строка `OK` или `ERR`, дальше сообщение.
-/// Любой другой вывод — это ошибка самого sudo (нет прав, не установлен helper).
-#[cfg_attr(windows, allow(dead_code))]
-fn parse_response(stdout: &str, stderr: &str) -> Result<String, String> {
+/// Ответ helper'а (или службы на Windows): первая строка `OK` или `ERR`, дальше сообщение.
+/// `None` — ответ не в этом формате.
+fn parse_reply(stdout: &str) -> Option<Result<String, String>> {
     let mut lines = stdout.splitn(2, '\n');
     let first = lines.next().unwrap_or("").trim_end();
     let rest = lines.next().unwrap_or("").trim_end().to_string();
     match first {
-        "OK" => Ok(rest),
-        "ERR" => Err(if rest.is_empty() { "helper вернул ошибку".to_string() } else { rest }),
-        _ => Err(sudo_failure_message(stderr)),
+        "OK" => Some(Ok(rest)),
+        "ERR" => Some(Err(if rest.is_empty() { "helper вернул ошибку".to_string() } else { rest })),
+        _ => None,
     }
+}
+
+/// Любой ответ не в формате helper'а — это ошибка самого sudo (нет прав, не установлен helper).
+#[cfg_attr(windows, allow(dead_code))]
+fn parse_response(stdout: &str, stderr: &str) -> Result<String, String> {
+    parse_reply(stdout).unwrap_or_else(|| Err(sudo_failure_message(stderr)))
 }
 
 #[cfg_attr(windows, allow(dead_code))]
@@ -83,11 +89,24 @@ pub fn call(op: &str, params: &[(&str, &str)], body: Option<&[u8]>) -> Result<St
     run_command(cmd, op, params, body)
 }
 
-/// На Windows helper'а пока нет: его заменит служба KarinCore (следующий этап порта).
-/// До тех пор все привилегированные операции честно отвечают ошибкой, ничего не запуская.
+/// Операции, ради которых службу стоит запустить. Остальные (остановка, очистка)
+/// при незапущенной службе делать нечего: ядра нет, отвечаем «готово».
 #[cfg(windows)]
-pub fn call(op: &str, _params: &[(&str, &str)], _body: Option<&[u8]>) -> Result<String, String> {
-    Err(format!("Служба KarinCore для Windows ещё не готова (операция {}).", op))
+const OPS_THAT_START_THE_SERVICE: &[&str] = &["version", "core-config", "core-restart"];
+
+/// Вызов операции службы KarinCore через named pipe.
+#[cfg(windows)]
+pub fn call(op: &str, params: &[(&str, &str)], body: Option<&[u8]>) -> Result<String, String> {
+    let body_len = body.map(|b| b.len()).unwrap_or(0);
+    let mut message = encode_header(op, params, body_len).into_bytes();
+    if let Some(b) = body {
+        message.extend_from_slice(b);
+    }
+    let Some(out) = crate::helper_pipe::transact(&message, OPS_THAT_START_THE_SERVICE.contains(&op))? else {
+        return Ok(String::new());
+    };
+    parse_reply(&String::from_utf8_lossy(&out))
+        .unwrap_or_else(|| Err("Служба KarinCore ответила в неизвестном формате. Переустановите KarinCore.".into()))
 }
 
 /// Вызов, результат которого не важен (очистка, остановка).

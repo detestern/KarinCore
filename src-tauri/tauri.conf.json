@@ -54,14 +54,6 @@
         }
       }
     },
-    "windows": {
-      "nsis": {
-        "installMode": "perMachine"
-      },
-      "webviewInstallMode": {
-        "type": "downloadBootstrapper"
-      }
-    },
     "icon": [
       "icons/icon.png",
       "icons/icon.icns",

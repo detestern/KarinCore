@@ -14,11 +14,14 @@ pub const MAX_HEADER: usize = 4096;
 
 pub struct Request {
     pub op: String,
+    // Параметры пока нужны только операциям Linux-helper'а.
+    #[cfg_attr(windows, allow(dead_code))]
     pub params: Vec<(String, String)>,
     pub body: Vec<u8>,
 }
 
 impl Request {
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn param(&self, key: &str) -> Option<&str> {
         self.params.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
     }

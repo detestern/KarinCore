@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Xray, wintun и geo-базы для установщика Windows (scripts/fetch-windows-core.sh)
+src-tauri/windows/core/

@@ -7,6 +7,8 @@ mod bridge;
 mod diag;
 mod finder;
 mod helper_client;
+#[cfg(windows)]
+mod helper_pipe;
 mod platform;
 mod subjson;
 mod token;
@@ -30,12 +32,10 @@ struct ProxyState {
 // **********************************
 // CORE HELPER FUNCTIONS
 // **********************************
-// Логи пишет root-процесс (Xray, OpenVPN, helper) в каталог, принадлежащий root, —
-// из GUI их можно только читать. Очистка идёт через helper.
-const LOG_DIR: &str = "/var/log/karin-proxy";
-
+// Логи пишет привилегированный процесс (Xray, OpenVPN, helper/служба) в защищённый каталог —
+// из GUI их можно только читать. Очистка идёт через helper. Пути зависят от платформы.
 fn get_log_paths() -> (String, String) {
-    (format!("{}/error.log", LOG_DIR), format!("{}/access.log", LOG_DIR))
+    platform::log_paths()
 }
 
 fn build_xray_rules(state: Value, priority: Vec<String>) -> Value {
@@ -670,6 +670,7 @@ fn ensure_xray() -> Result<(), String> {
     }
 }
 
+#[cfg(not(windows))]
 fn daemon_unit_installed() -> bool {
     std::process::Command::new("systemctl")
         .args(["list-unit-files", "--no-legend", "karin-proxy-daemon.service"])
@@ -681,6 +682,14 @@ fn daemon_unit_installed() -> bool {
 // Централизованный рестарт ядра: сначала проверяем, что systemd-юнит вообще
 // установлен (иначе сразу понятная ошибка вместо "ядро упало"), затем
 // перезапускаем и, если не вышло, прикладываем последние строки journalctl.
+#[cfg(windows)]
+fn restart_core_daemon() -> Result<(), String> {
+    helper_client::call("core-restart", &[], None)
+        .map(|_| ())
+        .map_err(|log| format!("Ядро Xray не запустилось. Лог:\n{}", log))
+}
+
+#[cfg(not(windows))]
 fn restart_core_daemon() -> Result<(), String> {
     if !daemon_unit_installed() {
         return Err("Системный сервис karin-proxy-daemon.service не установлен. Похоже, пакет установлен некорректно — переустановите KarinCore.".into());
@@ -1200,11 +1209,12 @@ async fn start_proxy(
     proxy_lan: bool,
     kill_switch: bool
 ) -> Result<String, String> {
-    if let Some(reason) = platform::CONNECT_UNAVAILABLE {
-        return Err(reason.to_string());
-    }
+    platform::check_connect_supported(&vless_link, kill_switch, KS_FAILED_PREFIX)?;
     // Ядро нужно всем режимам (VLESS/OpenVPN/WireGuard): без подходящего Xray даже не начинаем.
-    ensure_xray()?;
+    // На Windows xray.exe ставит установщик, а проверяет служба перед запуском.
+    if platform::PREPARE_CORE_AT_START {
+        ensure_xray()?;
+    }
 
     teardown_connections();
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -1246,7 +1256,7 @@ async fn start_proxy(
 
     let (err_log, acc_log) = get_log_paths();
 
-    let config = serde_json::json!({
+    let mut config = serde_json::json!({
         "log": { "loglevel": "debug", "access": acc_log, "error": err_log },
         "dns": dns_config,
         "routing": { "domainStrategy": "IPIfNonMatch", "rules": all_rules },
@@ -1263,6 +1273,7 @@ async fn start_proxy(
             { "tag": "dns-out", "protocol": "dns" }
         ]
     });
+    platform::adapt_core_config(&mut config);
 
     // helper проверяет конфигурацию (allowlist, фиксированные пути логов, listen только на loopback)
     // и сам записывает её в /etc/karin-proxy/config.json.
@@ -1280,7 +1291,9 @@ async fn start_proxy(
             return Err(e);
         }
     }
-    if allow_server_proxy {
+    // На Windows Xray привяжет свои соединения к физическому адаптеру (этап TUN),
+    // исключения маршрутов для адреса сервера там не нужны.
+    if allow_server_proxy && cfg!(not(windows)) {
         let ips = ip_list_param(&resolved_ips);
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
@@ -1483,6 +1496,7 @@ fn notify_desktop(app: tauri::AppHandle, title: String, body: String) {
 }
 
 /// gid группы `karincore` из /etc/group.
+#[cfg(not(windows))]
 fn karincore_gid() -> Option<u32> {
     let text = std::fs::read_to_string("/etc/group").ok()?;
     text.lines().find_map(|line| {
@@ -1493,6 +1507,7 @@ fn karincore_gid() -> Option<u32> {
     })
 }
 
+#[cfg(not(windows))]
 /// Есть ли эта группа у запущенного процесса. Членство, добавленное после входа в систему,
 /// в процессе появляется только после нового входа, поэтому смотрим /proc/self/status.
 fn process_has_gid(gid: u32) -> bool {
@@ -1505,6 +1520,12 @@ fn process_has_gid(gid: u32) -> bool {
 
 /// Объяснение, почему журналы не читаются. Журналы содержат адреса сайтов, поэтому их читает
 /// только root и группа `karincore`.
+#[cfg(windows)]
+fn log_access_message() -> String {
+    platform::log_access_message()
+}
+
+#[cfg(not(windows))]
 fn log_access_message() -> String {
     match karincore_gid() {
         None => "Нет доступа к журналам: в системе нет группы karincore. Переустановите пакет KarinCore.".to_string(),
@@ -1671,8 +1692,8 @@ fn main() {
 
     // Если экземпляр уже работает, этот процесс лишь передаст ему флаги и выйдет (single-instance),
     // поэтому тяжёлую подготовку (xray, geo-базы) не повторяем.
-    // На платформе без подключения (Windows, этап 1) ядро и geo-базы не нужны.
-    if running != Some(true) && platform::CONNECT_UNAVAILABLE.is_none() {
+    // На Windows Xray и geo-базы ставит установщик: здесь готовить нечего.
+    if running != Some(true) && platform::PREPARE_CORE_AT_START {
         if let Err(e) = ensure_xray() { eprintln!("karincore: {}", e); }
         tokio::runtime::Runtime::new().unwrap().block_on(async { let _ = ensure_geo_files().await; });
     }

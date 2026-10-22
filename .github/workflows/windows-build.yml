@@ -63,6 +63,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -73,6 +75,8 @@ jobs:
       - run: npm ci
       - name: Version metadata
         run: python scripts/check-version.py
+      - name: Fetch Xray, wintun and geo files (pinned SHA-256)
+        run: ./scripts/fetch-windows-core.sh
       - name: Build NSIS installer
         run: npm run tauri build -- --bundles nsis
       - name: Check installer
@@ -93,8 +97,10 @@ jobs:
           retention-days: 14
       # Тесты после сборки: установщик для ручной проверки остаётся в артефактах,
       # даже если какой-то тест на Windows ещё не проходит. Публикацию упавший тест блокирует.
-      - name: Tests (app)
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bin karin-proxy
+      - name: Tests (app and KarinCore service)
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bins
+      - name: Clippy (KarinCore service — warnings are errors)
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --bin karincore-helper -- -D warnings
 
   publish-release:
     name: Publish GitHub pre-release

@@ -9,22 +9,28 @@
 //! Зависимостей нет: бинарник работает от root, поэтому его поверхность
 //! атаки должна быть минимальной.
 //!
-//! Пока helper собирается только для Unix. На Windows вместо него будет служба
-//! (порт в ветке `windows`), а этот бинарник там — заглушка, чтобы собиралось всё остальное.
+//! На Windows этот же бинарник — служба KarinCore (`--service`): тот же протокол
+//! и та же проверка конфигурации Xray, но запросы приходят через named pipe,
+//! а не через sudo (см. `winops.rs` и `win/`).
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod json;
 #[cfg(unix)]
 mod ops;
 #[cfg(unix)]
 mod ovpn;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod proto;
 #[cfg(unix)]
 mod sys;
 #[cfg(unix)]
 mod wg;
-#[cfg(unix)]
+#[cfg(windows)]
+mod win;
+// Логика службы для Windows проверяется тестами и на Linux.
+#[cfg(any(windows, test))]
+mod winops;
+#[cfg(any(unix, windows))]
 mod xray;
 
 #[cfg(unix)]
@@ -109,7 +115,12 @@ fn main() {
     std::process::exit(run());
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn main() {
+    std::process::exit(win::main());
+}
+
+#[cfg(not(any(unix, windows)))]
 fn main() {
     eprintln!("karincore-helper: на этой платформе не используется");
     std::process::exit(2);
