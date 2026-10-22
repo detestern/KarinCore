@@ -857,11 +857,13 @@ async function saveNewLink() {
             const result = await Promise.race([subscriptionRequest, uiWatchdog]);
             const domain = new URL(input).hostname;
             // Adding the same subscription again updates its group instead of creating a copy.
-            let group = appGroups.find(g => g.sourceUrl === input);
+            // A group added before the link was remembered has no source: it is recognised by its name (the domain).
+            let group = appGroups.find(g => g.sourceUrl === input) || appGroups.find(g => !g.sourceUrl && g.name === domain);
             if (!group) {
                 group = { id: 'grp_' + Date.now(), name: domain, pinned: false, isOpen: true, sourceUrl: input };
                 appGroups.push(group);
             }
+            group.sourceUrl = input;
             applySubscriptionResult(group, result);
 
             saveData();
@@ -943,15 +945,63 @@ function remapLinkRefs(from: string, to: string) {
     if (guard.serverUrl === from) { guard.serverUrl = to; saveGuard(); }
 }
 
-// Compares the servers of a group with the fresh subscription list: new ones are added,
-// vanished ones are removed. Pinned servers, the connected one and the selected profile stay.
-function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: number; removed: number } {
+// Parts of a link used to compare servers: user id, address, port and name.
+function linkParts(url: string): { user: string; host: string; port: string; name: string } {
+    const raw = url.trim();
+    let name = '';
+    try {
+        const u = new URL(raw);
+        if (u.protocol !== 'ovpn:' && u.protocol !== 'wg:' && u.hash) name = decodeURIComponent(u.hash.substring(1));
+    } catch { /* no name */ }
+    name = name.trim().toLowerCase();
+    if (/^vmess:\/\//i.test(raw)) {
+        try {
+            const body = raw.slice(8).split('#')[0].replace(/-/g, '+').replace(/_/g, '/');
+            const v = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(body), c => c.charCodeAt(0))));
+            return { user: String(v.id ?? ''), host: String(v.add ?? '').toLowerCase(), port: String(v.port ?? ''), name: String(v.ps ?? '').trim().toLowerCase() || name };
+        } catch { /* fall through to the generic parser */ }
+    }
+    try {
+        const u = new URL(raw);
+        let user = u.username;
+        try { user = decodeURIComponent(user); } catch { /* keep as is */ }
+        return { user, host: u.hostname.toLowerCase(), port: u.port, name };
+    } catch {
+        return { user: '', host: '', port: '', name };
+    }
+}
+
+// How likely two entries are the same server. In "nl-alex" and "en-alex" the part "alex" matches:
+// a provider changes part of the name when it switches the inbound, but the server stays the same.
+function linkSimilarity(a: string, b: string): number {
+    const x = linkParts(a);
+    const y = linkParts(b);
+    let score = 0;
+    if (x.host && x.host === y.host) score += 4;
+    if (x.user && x.user === y.user) score += 1;
+    if (x.port && x.port === y.port) score += 1;
+    const tokens = (n: string) => new Set(n.split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+    const tx = tokens(x.name);
+    const ty = tokens(y.name);
+    if (tx.size && ty.size) {
+        const common = Array.from(tx).filter(w => ty.has(w)).length;
+        score += 3 * common / (tx.size + ty.size - common);
+    }
+    return score;
+}
+
+// Compares the servers of a group with the fresh subscription list: new ones are added, vanished
+// ones are removed. The subscription is the source of truth: a selected or pinned server that vanished
+// is paired with the most similar new one (renamed, other inbound, new id) and updated in place.
+// The connected server is not touched; it is replaced after disconnecting.
+function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: number; removed: number; updated: number } {
     const fresh = Array.from(new Set(links));
     const inGroup = () => appLinks.filter(l => l.groupId === group.id);
     const matched = new Map<string, ProxyLink>();
     const kept = new Set<ProxyLink>();
     let added = 0;
     let removed = 0;
+    let updated = 0;
 
     // Exact matches first, then the same server stored in another form (name or parameters changed).
     fresh.forEach(url => {
@@ -964,10 +1014,37 @@ function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: nu
         const entry = inGroup().find(l => !kept.has(l) && linkIdentity(l.url) === id);
         if (entry) { matched.set(url, entry); kept.add(entry); }
     });
+    // A server whose id or address changed but whose name stayed is the same entry, not a new server.
+    // Only unambiguous pairs are taken, otherwise two servers with one name could be mixed up.
+    const nameOf = (u: string) => linkParts(u).name;
+    const unmatchedFresh = fresh.filter(u => !matched.has(u));
+    unmatchedFresh.forEach(url => {
+        const n = nameOf(url);
+        if (!n || unmatchedFresh.filter(u => nameOf(u) === n).length !== 1) return;
+        const candidates = inGroup().filter(l => !kept.has(l) && nameOf(l.url) === n);
+        if (candidates.length === 1) { matched.set(url, candidates[0]); kept.add(candidates[0]); }
+    });
+    // A selected or pinned server vanished from the subscription and a similar one appeared instead
+    // (the inbound was switched, so the name changed): same entry. Selection, pin and scenarios move along.
+    const isProtected = (l: ProxyLink) => l.pinned || l.url === selectedProfileUrl
+        || scenarios.some(item => item.serverUrl === l.url) || guard.serverUrl === l.url;
+    const staleOld = inGroup().filter(l => !kept.has(l) && l.url !== activeLink && isProtected(l));
+    const newFresh = fresh.filter(u => !matched.has(u) && !appLinks.some(l => l.url === u));
+    const pairs: { old: ProxyLink; url: string; score: number }[] = [];
+    staleOld.forEach(old => newFresh.forEach(url => pairs.push({ old, url, score: linkSimilarity(old.url, url) })));
+    pairs.sort((x, y) => y.score - x.score);
+    pairs.forEach(pair => {
+        if (kept.has(pair.old) || matched.has(pair.url)) return;
+        // The only remaining pair is taken even without visible similarity: there is no other candidate.
+        if (pair.score <= 0 && !(staleOld.length === 1 && newFresh.length === 1)) return;
+        matched.set(pair.url, pair.old);
+        kept.add(pair.old);
+    });
     matched.forEach((entry, url) => {
         if (entry.url === url) return;
         remapLinkRefs(entry.url, url);
         entry.url = url;
+        updated++;
     });
 
     fresh.forEach((url, index) => {
@@ -992,6 +1069,23 @@ function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: nu
                 return false;
             }
         }
+        // Leftover of an earlier update: the same server with an outdated link (other name or inbound).
+        // The connected entry is not touched; it is replaced after disconnecting.
+        if (l.url !== activeLink) {
+            let twin: ProxyLink | undefined;
+            let best = 0;
+            kept.forEach(k => {
+                if (k.groupId !== group.id) return;
+                const score = linkSimilarity(l.url, k.url);
+                if (score > best) { best = score; twin = k; }
+            });
+            if (twin && best >= 3) {
+                if (l.pinned) twin.pinned = true;
+                remapLinkRefs(l.url, twin.url);
+                removed++;
+                return false;
+            }
+        }
         if (l.pinned || l.url === activeLink || l.url === selectedProfileUrl) return true;
         removed++;
         return false;
@@ -1001,7 +1095,7 @@ function mergeSubscriptionLinks(group: ProxyGroup, links: string[]): { added: nu
     const rank = (l: ProxyLink) => { const i = fresh.indexOf(l.url); return i < 0 ? fresh.length : i; };
     const ordered = inGroup().sort((x, y) => rank(x) - rank(y));
     appLinks = appLinks.filter(l => l.groupId !== group.id).concat(ordered);
-    return { added, removed };
+    return { added, removed, updated };
 }
 
 async function fetchSubscriptionResult(url: string): Promise<SubscriptionResult> {
@@ -1012,7 +1106,7 @@ async function fetchSubscriptionResult(url: string): Promise<SubscriptionResult>
     return Promise.race([subscriptionRequest, uiWatchdog]);
 }
 
-function applySubscriptionResult(group: ProxyGroup, result: SubscriptionResult): { added: number; removed: number } {
+function applySubscriptionResult(group: ProxyGroup, result: SubscriptionResult): { added: number; removed: number; updated: number } {
     const diff = mergeSubscriptionLinks(group, result.links);
     if (result.routingOverride) {
         group.providerRouting = result.importedRouting;
@@ -1024,10 +1118,28 @@ function applySubscriptionResult(group: ProxyGroup, result: SubscriptionResult):
     return diff;
 }
 
-// The refresh button on a single group keeps its dialogs; the bulk update below is silent.
+// Short in-app message about the result of a manual update (the system alert box is not used).
+function toastSubscriptionResult(answered: number, total: number, added: number, removed: number, updated: number) {
+    if (answered === 0) showInfoToast(t('sub_toast_fail'));
+    else if (answered < total) showInfoToast(t('sub_toast_partial').replace('{ok}', String(answered)).replace('{total}', String(total)));
+    else if (added || removed) showInfoToast(t('sub_toast_changes').replace('{added}', String(added)).replace('{removed}', String(removed)));
+    else if (updated) showInfoToast(t('sub_toast_updated'));
+    else showInfoToast(t('sub_toast_ok'));
+}
+
+function subscriptionErrorText(error: unknown): string {
+    const message = String(error);
+    if (message.includes('SUBSCRIPTION_UI_TIMEOUT') || message.includes('SUBSCRIPTION_TIMEOUT')) return t('err_subscription_timeout');
+    if (message.includes('SUBSCRIPTION_CONNECT')) return t('err_subscription_connect');
+    return t('sub_toast_fail');
+}
+
+// The refresh button on a single group (and the menu item of its servers) reports the result in a toast.
 async function refreshSubscriptionGroup(groupId: string) {
     const group = appGroups.find(g => g.id === groupId);
     if (!group?.sourceUrl) return;
+    if (subUpdateRunning) return;
+    subUpdateRunning = true;
 
     const button = document.querySelector<HTMLButtonElement>(
         `.btn-refresh-subscription[data-group-id="${groupId}"]`
@@ -1041,7 +1153,7 @@ async function refreshSubscriptionGroup(groupId: string) {
     try {
         const result = await fetchSubscriptionResult(group.sourceUrl);
         if (!Array.isArray(result.links) || result.links.length === 0) throw new Error('empty');
-        applySubscriptionResult(group, result);
+        const diff = applySubscriptionResult(group, result);
 
         saveData();
         renderLinks();
@@ -1049,20 +1161,11 @@ async function refreshSubscriptionGroup(groupId: string) {
         updateHeroProfileName();
         scheduleScenarioSync(300);
         scheduleGuardSync(600);
-        typeKarinMessage('karin_add_link');
-        alert(t('subscription_refresh_ok'));
+        toastSubscriptionResult(1, 1, diff.added, diff.removed, diff.updated);
     } catch (error) {
-        const message = String(error);
-        if (message.includes('SUBSCRIPTION_UI_TIMEOUT') || message.includes('SUBSCRIPTION_TIMEOUT')) {
-            alert(t('err_subscription_timeout'));
-        } else if (message.includes('SUBSCRIPTION_CONNECT')) {
-            alert(`${t('err_subscription_connect')}\n\n${message}`);
-        } else if (message.includes('certificate') || message.includes('tls') || message.includes('TLS')) {
-            alert(`${t('err_subscription_tls')}\n\n${message}`);
-        } else {
-            alert(`${t('subscription_refresh_failed')}\n\n${message}`);
-        }
+        showInfoToast(subscriptionErrorText(error));
     } finally {
+        subUpdateRunning = false;
         const currentButton = document.querySelector<HTMLButtonElement>(
             `.btn-refresh-subscription[data-group-id="${groupId}"]`
         );
@@ -1101,6 +1204,9 @@ async function refreshSubscriptions(manual: boolean) {
 
     let answered = 0;
     let changed = 0;
+    let added = 0;
+    let removed = 0;
+    let updated = 0;
     let next = 0;
     const worker = async () => {
         while (next < due.length) {
@@ -1111,7 +1217,10 @@ async function refreshSubscriptions(manual: boolean) {
                 if (!Array.isArray(result.links) || result.links.length === 0) throw new Error('empty');
                 if (!appGroups.includes(group)) continue;
                 const diff = applySubscriptionResult(group, result);
-                changed += diff.added + diff.removed;
+                changed += diff.added + diff.removed + diff.updated;
+                added += diff.added;
+                removed += diff.removed;
+                updated += diff.updated;
                 answered++;
             } catch {
                 // The subscription did not answer: its group stays as it was.
@@ -1138,6 +1247,7 @@ async function refreshSubscriptions(manual: boolean) {
         scheduleGuardSync(600);
     }
     if (manual || changed > 0) flashSubRefresh(answered > 0 ? 'is-done' : 'is-fail');
+    if (manual) toastSubscriptionResult(answered, due.length, added, removed, updated);
 }
 
 function initSubscriptionUpdates() {
@@ -2704,9 +2814,14 @@ function renderLinkItem(item: ProxyLink) {
     const safeProtocol = escapeHtml(formattedProtocol);
     const pinIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>`;
     const checkboxHtml = isEditMode ? `<input type="checkbox" class="edit-checkbox" data-id="${safeId}" ${selectedLinks.has(item.id) ? 'checked' : ''}>` : '';
+    const itemGroup = item.groupId ? appGroups.find(g => g.id === item.groupId) : undefined;
+    const updateSubHtml = itemGroup?.sourceUrl
+        ? `<button class="btn-update-sub" data-group-id="${escapeHtml(itemGroup.id)}">${escapeHtml(t('btn_update_sub'))}</button>`
+        : '';
     const actionsHtml = isEditMode ? '' : `
         <button class="btn-menu-dots" data-index="${safeId}">⋮</button>
         <div class="dropdown-menu" id="menu-${safeId}">
+          ${updateSubHtml}
           <button class="btn-share" data-url="${safeUrl}">${escapeHtml(t('btn_share'))}</button>
           <button class="btn-pin" data-id="${safeId}">${escapeHtml(item.pinned ? t('btn_unpin') : t('btn_pin'))}</button>
           <button class="btn-delete-link danger" data-id="${safeId}">${escapeHtml(t('btn_delete'))}</button>
@@ -5103,6 +5218,13 @@ document.addEventListener('click', async (e) => {
       }).catch(() => alert('Copy Error'));
     }
   
+    if (target.classList.contains('btn-update-sub')) {
+        const menu = target.closest('.dropdown-menu') as HTMLElement | null;
+        if (menu) menu.style.display = 'none';
+        const groupId = target.dataset.groupId;
+        if (groupId) void refreshSubscriptionGroup(groupId);
+    }
+
     if (target.classList.contains('btn-pin') && !target.closest('#edit-bar')) {
         const id = target.dataset.id;
         const link = appLinks.find(l => l.id === id);

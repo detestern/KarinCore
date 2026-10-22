@@ -725,7 +725,9 @@ button.danger {
        app CSP, so the script opens a menu by setting display:flex from JS. */
     display: none;
     flex-direction: column;
-    width: 130px;
+    min-width: 130px;
+    width: max-content;
+    max-width: 240px;
     box-shadow: 0 8px 16px rgba(0,0,0,0.4);
     overflow: hidden;
 }
@@ -2568,6 +2570,7 @@ html.platform-android {
 .platform-android .dropdown-menu button {
     min-height: 44px;
     font-size: 14px;
+    white-space: nowrap;
 }
 
 .platform-android .dropdown-menu {
@@ -4151,8 +4154,8 @@ dialog.scenario-modal { width: min(420px, calc(100vw - 32px)); max-height: calc(
     border-radius: 999px; padding: 1px 9px;
 }
 .profiles-empty { padding: 28px 8px; text-align: center; color: var(--text-dim); font-size: 14px; }
-.profiles-list .dropdown-menu { top: 100%; width: 190px; }
-.profiles-list .dropdown-menu button { min-height: 44px; font-size: 14px; }
+.profiles-list .dropdown-menu { top: 100%; width: max-content; min-width: 190px; max-width: 260px; }
+.profiles-list .dropdown-menu button { min-height: 44px; font-size: 14px; white-space: nowrap; }
 
 /* Менеджер маршрутизации */
 .finder-body { display: flex; flex-direction: column; gap: 14px; }

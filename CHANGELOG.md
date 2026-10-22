@@ -4,6 +4,17 @@ All notable Android-port changes are tracked here.
 
 ## Unreleased
 
+## [0.1.0-alpha.51] - 2026-10-22
+
+### Fixed
+- Updating a subscription no longer leaves a second server next to the old one. When a provider changed a server's inbound, its name changed too (for example `nl-alex` became `en-alex`) and the old entry was not recognised. The subscription is now the source of truth: a selected or pinned server that vanished is paired with the most similar new one (same address, user id, port or part of the name) and updated in place, keeping its pin, selection and scenarios. A server you are connected to is replaced after you disconnect. Duplicates left by earlier updates are merged on the next update.
+- A subscription added before its link was remembered is recognised by its name when you add the link again, instead of creating a second group.
+- Profiles with an unsupported transport (`ws`, `grpc`, `httpupgrade`, `kcp` and others) were silently rewritten to `tcp`. Now the connection is refused with a clear message that names the transport.
+
+### Added
+- "Update subscription" in the menu of every server that came from a subscription. It updates only that subscription.
+- After you update subscriptions by hand, a short message tells the result: updated, nothing changed, partly updated or failed. It replaces the system alert box, which could stay invisible.
+
 ## [0.1.0-alpha.50] - 2026-10-21
 
 ### Changed

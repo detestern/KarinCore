@@ -850,6 +850,19 @@ async fn resolve_server_ips(server: &str, port: u16) -> (String, Vec<String>) {
     (out_addr, resolved_ips)
 }
 
+// Transports KarinCore can build. Others (ws, grpc, httpupgrade, kcp...) used to be silently turned into
+// tcp, so the connection did not match the profile; now it is an explicit error.
+fn vless_network(transport_type: &str) -> Result<&'static str, String> {
+    match transport_type {
+        "" | "tcp" | "raw" => Ok("tcp"),
+        "xhttp" | "splithttp" => Ok("xhttp"),
+        other => Err(format!(
+            "Транспорт «{}» в этой версии KarinCore не поддерживается. Профиль не изменён, соединение не установлено. Поддерживаются tcp и xhttp.",
+            other
+        )),
+    }
+}
+
 async fn build_vless_or_trojan_outbound(
     link: &str,
     protocol: &str,
@@ -893,11 +906,7 @@ async fn build_vless_or_trojan_outbound(
         host = sni.clone();
     }
 
-    let final_network = if transport_type == "xhttp" || transport_type == "httpupgrade" {
-        "xhttp"
-    } else {
-        "tcp"
-    };
+    let final_network = vless_network(&transport_type)?;
 
     let mut stream_settings = serde_json::Map::new();
     stream_settings.insert("network".to_string(), json!(final_network));
@@ -4007,6 +4016,18 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unsupported_transports_are_rejected_not_rewritten() {
+        assert_eq!(vless_network("tcp"), Ok("tcp"));
+        assert_eq!(vless_network(""), Ok("tcp"));
+        assert_eq!(vless_network("xhttp"), Ok("xhttp"));
+        assert_eq!(vless_network("splithttp"), Ok("xhttp"));
+        for t in ["ws", "grpc", "httpupgrade", "kcp", "h2"] {
+            let e = vless_network(t).unwrap_err();
+            assert!(e.contains(t), "{}", e);
+        }
+    }
 
     #[test]
     fn xray_rules_preserve_priority_and_supported_rule_types() {
