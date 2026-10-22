@@ -439,6 +439,67 @@ fn ks_family_remove(ctx: &Ctx, tool: &str) {
     let _ = r.run(tool, &["-X", KS_CHAIN]);
 }
 
+/// Таблица nftables Kill Switch: своя, поэтому не задевает чужие правила и убирается целиком.
+const KS_NFT_TABLE: &str = "karincore_ks";
+
+/// Набор правил для `nft -f`. Первые две строки создают таблицу, если её нет, и сразу удаляют:
+/// так повторное включение работает и при существующей таблице, а весь файл применяется
+/// одной транзакцией — защита появляется целиком или не появляется совсем.
+fn ks_nft_ruleset(iface: &str, v4: &[String], v6: &[String]) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("add table inet {t}\ndelete table inet {t}\n", t = KS_NFT_TABLE));
+    s.push_str(&format!("table inet {} {{\n  chain output {{\n", KS_NFT_TABLE));
+    s.push_str("    type filter hook output priority -1; policy accept;\n");
+    s.push_str("    oifname \"lo\" accept\n");
+    s.push_str(&format!("    oifname \"{}\" accept\n", iface));
+    if !v4.is_empty() {
+        s.push_str(&format!("    ip daddr {{ {} }} accept\n", v4.join(", ")));
+    }
+    if !v6.is_empty() {
+        s.push_str(&format!("    ip6 daddr {{ {} }} accept\n", v6.join(", ")));
+    }
+    // Трафик, который сам Xray отправляет в outbound "direct" (метка 255), — зона Direct.
+    s.push_str("    meta mark 0xff accept\n");
+    s.push_str("    drop\n  }\n}\n");
+    s
+}
+
+fn ks_nft_remove(ctx: &Ctx) {
+    let _ = ctx.run.run("nft", &["delete", "table", "inet", KS_NFT_TABLE]);
+    let _ = fs::remove_file(ctx.paths.run_dir.join("ks.nft"));
+}
+
+fn ks_on_nft(ctx: &Ctx, iface: &str, v4: &[String], v6: &[String]) -> Result<(), String> {
+    sys::ensure_dir(&ctx.paths.run_dir, 0o755, ctx.paths.owner_uid)?;
+    let text = ks_nft_ruleset(iface, v4, v6);
+    sys::write_atomic(&ctx.paths.run_dir, "ks.nft", text.as_bytes(), 0o600, ctx.paths.owner_uid)?;
+    let file = ctx.paths.run_dir.join("ks.nft");
+    let file = file.to_string_lossy().into_owned();
+    ks_run(ctx, "nft", &["-f", &file])?;
+    ks_run(ctx, "nft", &["list", "table", "inet", KS_NFT_TABLE])
+}
+
+fn ks_on_iptables(ctx: &Ctx, iface: &str, v4: &[String], v6: &[String], v6_required: bool) -> Result<(), String> {
+    // Таблицу nftables от прошлого включения убираем: двойной набор правил не нужен.
+    if ctx.run.has_tool("nft") {
+        ks_nft_remove(ctx);
+    }
+    // Kill Switch либо включён полностью, либо не включён совсем: при любой ошибке откатываем всё.
+    if let Err(e) = ks_family(ctx, "iptables", "0.0.0.0/0", iface, v4) {
+        ks_off(ctx);
+        return Err(e);
+    }
+    if let Err(e) = ks_family(ctx, "ip6tables", "::/0", iface, v6) {
+        if v6_required {
+            ks_off(ctx);
+            return Err(e);
+        }
+        // IPv6 в системе не используется: цепочку, если она частично создалась, убираем.
+        ks_family_remove(ctx, "ip6tables");
+    }
+    Ok(())
+}
+
 fn ks_on(ctx: &Ctx, req: &Request) -> Res {
     let iface = iface_param(req, IFACES)?;
     let servers = ks_servers(req.param("server_ip").ok_or("не указан параметр server_ip")?)?;
@@ -447,24 +508,35 @@ fn ks_on(ctx: &Ctx, req: &Request) -> Res {
     // Если сервер доступен по IPv6 или в системе включён IPv6, ip6tables обязателен.
     let v6_required = !v6.is_empty() || ipv6_active(ctx);
 
-    // Kill Switch либо включён полностью, либо не включён совсем: при любой ошибке откатываем всё.
-    if let Err(e) = ks_family(ctx, "iptables", "0.0.0.0/0", iface, &v4) {
-        ks_off(ctx);
-        return Err(e);
-    }
-    if let Err(e) = ks_family(ctx, "ip6tables", "::/0", iface, &v6) {
-        if v6_required {
-            ks_off(ctx);
-            return Err(e);
-        }
-        // IPv6 в системе не используется: цепочку, если она частично создалась, убираем.
+    // nftables — основной способ: одна транзакция на оба семейства адресов.
+    // Если nft нет или он не сработал (например, ядро без nf_tables), работаем через iptables.
+    let mut nft_error = None;
+    if ctx.run.has_tool("nft") {
+        // Цепочки iptables от прошлой версии убираем, чтобы правила не дублировались.
+        ks_family_remove(ctx, "iptables");
         ks_family_remove(ctx, "ip6tables");
+        match ks_on_nft(ctx, iface, &v4, &v6) {
+            Ok(()) => return Ok(String::new()),
+            Err(e) => {
+                ks_nft_remove(ctx);
+                nft_error = Some(e);
+            }
+        }
     }
-    Ok(String::new())
+    match ks_on_iptables(ctx, iface, &v4, &v6, v6_required) {
+        Ok(()) => Ok(String::new()),
+        Err(e) => Err(match nft_error {
+            Some(n) => format!("{}; {}", e, n),
+            None => e,
+        }),
+    }
 }
 
 fn ks_off(ctx: &Ctx) {
     let r = &ctx.run;
+    if r.has_tool("nft") {
+        ks_nft_remove(ctx);
+    }
     for tool in ["iptables", "ip6tables"] {
         ks_family_remove(ctx, tool);
     }
@@ -555,6 +627,9 @@ mod tests {
             }
             fn signal(&self, p: u32, s: i32) {
                 self.0.signal(p, s)
+            }
+            fn has_tool(&self, t: &str) -> bool {
+                self.0.has_tool(t)
             }
         }
         let fake = std::rc::Rc::new(Fake::new());
@@ -779,6 +854,92 @@ mod tests {
         fs::write(sysctl.join("disable_ipv6"), "1\n").unwrap();
         f.fail("ip6tables");
         dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap();
+    }
+
+    #[test]
+    fn ks_on_with_nft_applies_one_ruleset_and_checks_it() {
+        let (c, f) = ctx("ksnft");
+        f.install("nft");
+        dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5,2001:db8::1"), ("iface", "tun0")], b"")).unwrap();
+        let log = f.log();
+        let file = c.paths.run_dir.join("ks.nft");
+        assert!(log.contains(&format!("nft -f {}", file.display())));
+        assert_eq!(log.last().unwrap(), "nft list table inet karincore_ks");
+        // iptables при живом nft только чистится от прошлых цепочек, правил в него не пишется
+        assert!(!log.iter().any(|l| l.contains("-A KARINCORE_KS") || l.contains("-I OUTPUT")));
+        let text = fs::read_to_string(&file).unwrap();
+        let want = [
+            "add table inet karincore_ks",
+            "delete table inet karincore_ks",
+            "table inet karincore_ks {",
+            "  chain output {",
+            "    type filter hook output priority -1; policy accept;",
+            "    oifname \"lo\" accept",
+            "    oifname \"tun0\" accept",
+            "    ip daddr { 203.0.113.5 } accept",
+            "    ip6 daddr { 2001:db8::1 } accept",
+            "    meta mark 0xff accept",
+            "    drop",
+            "  }",
+            "}",
+            "",
+        ]
+        .join("\n");
+        assert_eq!(text, want);
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn ks_nft_ruleset_skips_empty_families() {
+        let t = ks_nft_ruleset("wg0", &["198.51.100.7".to_string(), "198.51.100.8".to_string()], &[]);
+        assert!(t.contains("ip daddr { 198.51.100.7, 198.51.100.8 } accept"));
+        assert!(!t.contains("ip6 daddr"));
+        assert!(t.trim_end().ends_with("}"));
+    }
+
+    #[test]
+    fn ks_off_removes_nft_table() {
+        let (c, f) = ctx("ksnftoff");
+        f.install("nft");
+        dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap();
+        f.calls.borrow_mut().clear();
+        dispatch(&c, &rq("ks-off", &[], b"")).unwrap();
+        assert!(f.log().contains(&"nft delete table inet karincore_ks".to_string()));
+        assert!(!c.paths.run_dir.join("ks.nft").exists());
+        // и цепочки iptables от прошлых версий тоже убираются
+        assert!(f.log().contains(&"iptables -X KARINCORE_KS".to_string()));
+    }
+
+    #[test]
+    fn ks_on_falls_back_to_iptables_when_nft_fails() {
+        let (c, f) = ctx("ksnftfb");
+        f.install("nft");
+        f.fail("nft -f");
+        dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap();
+        let log = f.log();
+        assert!(log.contains(&"nft delete table inet karincore_ks".to_string()));
+        assert!(log.contains(&"iptables -I OUTPUT 1 -j KARINCORE_KS".to_string()));
+    }
+
+    #[test]
+    fn ks_on_reports_both_errors_when_nft_and_iptables_fail() {
+        let (c, f) = ctx("ksnftboth");
+        f.install("nft");
+        f.fail("nft -f");
+        f.fail("iptables -A KARINCORE_KS -j DROP");
+        let e = dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap_err();
+        assert!(e.contains("iptables -A KARINCORE_KS -j DROP"), "{}", e);
+        assert!(e.contains("nft -f"), "{}", e);
+        assert!(!f.log().iter().any(|l| l.starts_with("iptables -I OUTPUT")));
+    }
+
+    #[test]
+    fn ks_on_without_nft_does_not_touch_nft() {
+        let (c, f) = ctx("ksnonft");
+        dispatch(&c, &rq("ks-on", &[("server_ip", "203.0.113.5"), ("iface", "tun0")], b"")).unwrap();
+        dispatch(&c, &rq("ks-off", &[], b"")).unwrap();
+        assert!(!f.log().iter().any(|l| l.starts_with("nft ")));
     }
 
     #[test]

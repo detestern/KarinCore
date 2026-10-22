@@ -717,7 +717,7 @@ fn teardown_connections() {
 // (systemd Restart=on-failure) — снимаются только явным отключением или
 // новой попыткой подключения через teardown_connections().
 // Адреса сервера передаются списком (IPv4 и IPv6 вместе): helper раскладывает их
-// по iptables / ip6tables. Больше 16 адресов helper не принимает.
+// по nftables (или iptables / ip6tables, если nft нет). Больше 16 адресов helper не принимает.
 // Результат важен: если Kill Switch не включился, подключаться нельзя (защита либо есть, либо нет).
 // Ошибка получает префикс KS_FAILED:, по нему интерфейс показывает отдельное окно.
 fn enable_kill_switch(server_ips: &[String], tun_iface: &str) -> Result<(), String> {

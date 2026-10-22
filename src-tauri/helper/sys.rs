@@ -158,6 +158,8 @@ pub trait Runner {
     /// Запускает процесс в отдельной группе, вывод дописывается в `log`. Возвращает pid.
     fn spawn_detached(&self, tool: &str, args: &[&str], log: &Path) -> Result<u32, String>;
     fn signal(&self, pid: u32, sig: i32);
+    /// Есть ли в системе доверенный бинарник с таким именем.
+    fn has_tool(&self, tool: &str) -> bool;
 }
 
 pub struct SysRunner;
@@ -226,6 +228,10 @@ impl Runner for SysRunner {
         Ok(child.id())
     }
 
+    fn has_tool(&self, tool: &str) -> bool {
+        resolve_tool(tool).is_some()
+    }
+
     fn signal(&self, pid: u32, sig: i32) {
         // SAFETY: простой системный вызов kill(2) с числовыми аргументами.
         unsafe {
@@ -244,6 +250,8 @@ pub mod testutil {
         pub fail_on: RefCell<Vec<String>>,
         pub outputs: RefCell<Vec<(String, String)>>,
         pub signals: RefCell<Vec<(u32, i32)>>,
+        /// Инструменты, которых «нет в системе». По умолчанию нет nft: старые тесты идут по iptables.
+        pub missing: RefCell<Vec<String>>,
     }
 
     impl Fake {
@@ -253,7 +261,11 @@ pub mod testutil {
                 fail_on: RefCell::new(vec![]),
                 outputs: RefCell::new(vec![]),
                 signals: RefCell::new(vec![]),
+                missing: RefCell::new(vec!["nft".to_string()]),
             }
+        }
+        pub fn install(&self, tool: &str) {
+            self.missing.borrow_mut().retain(|t| t != tool);
         }
         pub fn log(&self) -> Vec<String> {
             self.calls.borrow().clone()
@@ -286,6 +298,9 @@ pub mod testutil {
         }
         fn signal(&self, pid: u32, sig: i32) {
             self.signals.borrow_mut().push((pid, sig));
+        }
+        fn has_tool(&self, tool: &str) -> bool {
+            !self.missing.borrow().iter().any(|t| t == tool)
         }
     }
 

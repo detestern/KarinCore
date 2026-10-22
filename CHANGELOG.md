@@ -5,6 +5,14 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.8.8 — Bulwark
+
+<sub>2026-10-22</sub>
+
+* **Changed:** Kill Switch now uses nftables when `nft` is installed. All rules (IPv4 and IPv6) live in one separate table `karincore_ks` and are applied in a single step: the protection is either fully on or not on at all. Disabling removes the whole table. You can check it with `sudo nft list table inet karincore_ks`.
+* **Fallback:** if `nft` is missing or the kernel cannot apply the rules, KarinCore uses iptables as before. If both fail, the connection is not started and you see the error of each.
+* **Note:** rules left by older versions (the `KARINCORE_KS` iptables chain) are removed when Kill Switch is turned on or off.
+
 ## v1.8.7 — Hush
 
 <sub>2026-10-22</sub>
