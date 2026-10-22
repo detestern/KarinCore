@@ -64,8 +64,12 @@ if ! getent group karincore >/dev/null 2>&1; then
     groupadd -r karincore
 fi
 
-# Каталоги для логов и состояния helper'а — строго root:root, 0755/0700.
-install -d -m 0755 -o root -g root /var/log/karin-proxy
+# Каталоги состояния helper'а — строго root:root; каталог журналов см. ниже (root:karincore, 0750).
+# Журналы содержат адреса сайтов: читать их могут только root и группа karincore.
+# Журналы старых версий (0644) получают те же права; xray дописывает в существующие файлы.
+install -d -m 0750 -o root -g karincore /var/log/karin-proxy
+chgrp karincore /var/log/karin-proxy/*.log 2>/dev/null || true
+chmod 0640 /var/log/karin-proxy/*.log 2>/dev/null || true
 install -d -m 0755 -o root -g root /etc/karin-proxy
 
 # Добавляем в группу пользователя, который ставил пакет (sudo/doas/pkexec).

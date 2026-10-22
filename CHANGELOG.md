@@ -5,6 +5,14 @@ KarinCore for Linux: every release, newest first. The Android port is developed 
 <p><a href="CHANGELOG.md">🇬🇧 English</a> | <a href="CHANGELOG-ru.md">🇷🇺 Русский</a> · <a href="README.md">← README</a></p>
 
 
+## v1.8.6 — Seal
+
+<sub>2026-10-22</sub>
+
+* **Security:** the Xray and tunnel logs list the sites you visit, but any local user could read them (directory `0755`, files `0644`). Now the log directory is `0750` and the files are `0640`, owned by `root:karincore`, so only root and members of the `karincore` group can read them. The package sets this on install and upgrade, and the helper fixes logs left by older versions the next time you connect. Without the `karincore` group the logs stay readable by root only.
+* **Changed:** if the app cannot read the logs (the log viewer and the Routing Manager), it now says why and what to do: add yourself with `sudo gpasswd -a $USER karincore` and log in again.
+* **Upgrading:** users who already got into the `karincore` group at install keep working. If you see a message about log access, log out and in again.
+
 ## v1.8.5 — Pairing
 
 <sub>2026-10-22</sub>

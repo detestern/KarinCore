@@ -7,6 +7,7 @@ use crate::proto::Request;
 use crate::sys::{self, Paths, Runner};
 use crate::{ovpn, wg, xray};
 use std::fs;
+use std::os::unix::fs::OpenOptionsExt;
 use std::net::IpAddr;
 use std::path::Path;
 
@@ -106,7 +107,7 @@ fn utf8_body(req: &Request, what: &str) -> Result<String, String> {
 // ---------------------------------------------------------------- каталоги и логи
 
 fn ensure_log_files(ctx: &Ctx) -> Result<(), String> {
-    sys::ensure_dir(&ctx.paths.log_dir, 0o755, ctx.paths.owner_uid)?;
+    sys::secure_log_dir(&ctx.paths)?;
     for f in [ctx.paths.err_log(), ctx.paths.acc_log()] {
         if let Ok(md) = fs::metadata(&f) {
             if md.len() > LOG_ROTATE_BYTES {
@@ -114,21 +115,24 @@ fn ensure_log_files(ctx: &Ctx) -> Result<(), String> {
             }
         }
         // создаём, если нет (дописывание пустой строки не нужно — просто open)
-        let _ = fs::OpenOptions::new().create(true).append(true).open(&f);
+        let _ = fs::OpenOptions::new().create(true).append(true).mode(0o640).open(&f);
+        sys::secure_log_file(&ctx.paths, &f);
     }
     Ok(())
 }
 
 fn log_line(ctx: &Ctx, text: &str) {
-    if sys::ensure_dir(&ctx.paths.log_dir, 0o755, ctx.paths.owner_uid).is_ok() {
+    if sys::secure_log_dir(&ctx.paths).is_ok() {
         sys::append_log(&ctx.paths.err_log(), text);
+        sys::secure_log_file(&ctx.paths, &ctx.paths.err_log());
     }
 }
 
 fn logs_clear(ctx: &Ctx) -> Res {
-    sys::ensure_dir(&ctx.paths.log_dir, 0o755, ctx.paths.owner_uid)?;
+    sys::secure_log_dir(&ctx.paths)?;
     for f in [ctx.paths.err_log(), ctx.paths.acc_log()] {
         fs::write(&f, "").map_err(|e| format!("{}: {}", f.display(), e))?;
+        sys::secure_log_file(&ctx.paths, &f);
     }
     Ok(String::new())
 }
@@ -591,6 +595,50 @@ mod tests {
         let hostile = GUI_XRAY.replace("127.0.0.1", "/etc/evil.sock");
         assert!(dispatch(&c, &rq("core-config", &[], hostile.as_bytes())).is_err());
         assert_eq!(fs::read(c.paths.conf_dir.join("config.json")).unwrap(), before);
+    }
+
+    #[test]
+    fn core_config_makes_logs_readable_only_by_the_karincore_group() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let (c, _) = ctx("logperm");
+        // Остатки старой версии: каталог 0755, журналы 0644.
+        sys::ensure_dir(&c.paths.log_dir, 0o755, c.paths.owner_uid).unwrap();
+        fs::write(c.paths.err_log(), "old").unwrap();
+        fs::set_permissions(c.paths.err_log(), fs::Permissions::from_mode(0o644)).unwrap();
+        dispatch(&c, &rq("core-config", &[], GUI_XRAY.as_bytes())).unwrap();
+        let gid = sys::lookup_gid(&c.paths.group_file, "karincore").unwrap();
+        let dir = fs::metadata(&c.paths.log_dir).unwrap();
+        assert_eq!(dir.mode() & 0o777, 0o750);
+        assert_eq!(dir.gid(), gid);
+        for f in [c.paths.err_log(), c.paths.acc_log()] {
+            let md = fs::metadata(&f).unwrap();
+            assert_eq!(md.mode() & 0o777, 0o640, "{}", f.display());
+            assert_eq!(md.gid(), gid);
+        }
+        assert_eq!(fs::read_to_string(c.paths.err_log()).unwrap(), "old");
+    }
+
+    #[test]
+    fn logs_stay_private_after_clear_and_helper_lines() {
+        use std::os::unix::fs::MetadataExt;
+        let (c, _) = ctx("logpriv");
+        log_line(&c, "line");
+        assert_eq!(fs::metadata(c.paths.err_log()).unwrap().mode() & 0o777, 0o640);
+        dispatch(&c, &rq("logs-clear", &[], b"")).unwrap();
+        for f in [c.paths.err_log(), c.paths.acc_log()] {
+            assert_eq!(fs::metadata(&f).unwrap().mode() & 0o777, 0o640);
+        }
+        assert_eq!(fs::metadata(&c.paths.log_dir).unwrap().mode() & 0o777, 0o750);
+    }
+
+    #[test]
+    fn without_the_karincore_group_logs_are_not_opened_to_anyone() {
+        use std::os::unix::fs::MetadataExt;
+        let (c, _) = ctx("nogroup");
+        fs::remove_file(&c.paths.group_file).unwrap();
+        dispatch(&c, &rq("core-config", &[], GUI_XRAY.as_bytes())).unwrap();
+        assert_eq!(fs::metadata(&c.paths.log_dir).unwrap().mode() & 0o007, 0);
+        assert_eq!(fs::metadata(c.paths.err_log()).unwrap().mode() & 0o007, 0);
     }
 
     #[test]

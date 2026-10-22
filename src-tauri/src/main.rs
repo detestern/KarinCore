@@ -1496,13 +1496,46 @@ fn notify_desktop(title: String, body: String) {
         .spawn();
 }
 
+/// gid группы `karincore` из /etc/group.
+fn karincore_gid() -> Option<u32> {
+    let text = std::fs::read_to_string("/etc/group").ok()?;
+    text.lines().find_map(|line| {
+        let mut parts = line.split(':');
+        if parts.next()? != "karincore" { return None; }
+        parts.next()?;
+        parts.next()?.parse().ok()
+    })
+}
+
+/// Есть ли эта группа у запущенного процесса. Членство, добавленное после входа в систему,
+/// в процессе появляется только после нового входа, поэтому смотрим /proc/self/status.
+fn process_has_gid(gid: u32) -> bool {
+    let Ok(status) = std::fs::read_to_string("/proc/self/status") else { return false };
+    status.lines().any(|line| {
+        (line.starts_with("Groups:") || line.starts_with("Gid:"))
+            && line.split_whitespace().skip(1).any(|v| v.parse::<u32>().ok() == Some(gid))
+    })
+}
+
+/// Объяснение, почему журналы не читаются. Журналы содержат адреса сайтов, поэтому их читает
+/// только root и группа `karincore`.
+fn log_access_message() -> String {
+    match karincore_gid() {
+        None => "Нет доступа к журналам: в системе нет группы karincore. Переустановите пакет KarinCore.".to_string(),
+        Some(gid) if !process_has_gid(gid) => "Нет доступа к журналам: их читает только группа karincore (в них есть адреса сайтов).\nДобавьте себя в группу: sudo gpasswd -a $USER karincore\nи перезайдите в сессию. Если вы уже в группе, просто перезайдите.".to_string(),
+        Some(_) => "Нет доступа к журналам, хотя вы в группе karincore. Переподключите VPN: права на журналы обновятся.".to_string(),
+    }
+}
+
 #[tauri::command]
 fn get_logs() -> Result<String, String> {
     let (log_path, _) = get_log_paths();
     
-    // Проверяем, существует ли файл, ДО того как его читать
-    if !std::path::Path::new(&log_path).exists() {
-        return Ok("Ожидание запуска прокси (файлы логов еще не созданы)...".to_string());
+    // Отличаем «файла ещё нет» от «нет прав»: на каталог без права входа exists() тоже отвечает false.
+    match std::fs::metadata(&log_path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => return Ok(log_access_message()),
+        Err(_) => return Ok("Ожидание запуска прокси (файлы логов еще не созданы)...".to_string()),
     }
 
     match std::fs::read_to_string(&log_path) {
@@ -1514,6 +1547,7 @@ fn get_logs() -> Result<String, String> {
             let last_lines = if lines.len() > 50 { &lines[lines.len() - 50..] } else { &lines[..] };
             Ok(last_lines.join("\n"))
         },
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Ok(log_access_message()),
         Err(e) => Ok(format!("Ошибка чтения логов: {}\nУбедитесь, что прокси запущен.", e))
     }
 }

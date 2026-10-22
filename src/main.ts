@@ -1679,8 +1679,8 @@ async function finderBegin() {
     finderReset('bounds');
     try {
         await invoke('finder_start', { direction: finder.from });
-    } catch {
-        finder.error = t('fm_log_err');
+    } catch (error) {
+        finder.error = String(error).includes('logperm') ? t('fm_log_perm') : t('fm_log_err');
         renderFinder();
         return;
     }
@@ -2340,7 +2340,7 @@ async function checkApplicationUpdates() {
     if (!statusEl) return;
 
     try {
-        const CURRENT_VERSION = "1.8.5";
+        const CURRENT_VERSION = "1.8.6";
 
         const response = await fetch("https://api.github.com/repos/detestern/KarinCore/releases/latest");
         if (!response.ok) return;

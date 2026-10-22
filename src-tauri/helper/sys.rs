@@ -15,6 +15,8 @@ pub struct Paths {
     pub run_dir: PathBuf,
     pub resolv: PathBuf,
     pub proc_dir: PathBuf,
+    /// Файл групп: из него берётся gid группы `karincore`, которой разрешено читать журналы.
+    pub group_file: PathBuf,
     /// Кто должен владеть каталогами конфигурации (на реальной системе — root, uid 0).
     pub owner_uid: u32,
 }
@@ -27,6 +29,7 @@ impl Paths {
             run_dir: "/run/karin-proxy".into(),
             resolv: "/etc/resolv.conf".into(),
             proc_dir: "/proc".into(),
+            group_file: "/etc/group".into(),
             owner_uid: 0,
         }
     }
@@ -105,8 +108,38 @@ pub fn write_atomic(dir: &Path, name: &str, data: &[u8], mode: u32, owner_uid: u
     Ok(())
 }
 
+/// gid группы по имени из файла групп (`name:x:gid:members`).
+pub fn lookup_gid(group_file: &Path, name: &str) -> Option<u32> {
+    let text = fs::read_to_string(group_file).ok()?;
+    text.lines().find_map(|line| {
+        let mut parts = line.split(':');
+        if parts.next()? != name {
+            return None;
+        }
+        parts.next()?;
+        parts.next()?.parse().ok()
+    })
+}
+
+/// Журналы содержат адреса сайтов, поэтому читать их может только root и группа `karincore`:
+/// каталог 0750, файлы 0640. Права и группа выставляются при каждом вызове, так что журналы,
+/// созданные старыми версиями с правами 0644, исправляются при первом же подключении.
+/// Если группы `karincore` нет, журналы остаются доступны только root.
+pub fn secure_log_dir(paths: &Paths) -> Result<(), String> {
+    ensure_dir(&paths.log_dir, 0o750, paths.owner_uid)?;
+    let dir = &paths.log_dir;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o750)).map_err(|e| format!("{}: {}", dir.display(), e))?;
+    let gid = lookup_gid(&paths.group_file, "karincore");
+    std::os::unix::fs::chown(dir, Some(paths.owner_uid), gid).map_err(|e| format!("{}: {}", dir.display(), e))
+}
+
+pub fn secure_log_file(paths: &Paths, file: &Path) {
+    let _ = fs::set_permissions(file, fs::Permissions::from_mode(0o640));
+    let _ = std::os::unix::fs::chown(file, None, lookup_gid(&paths.group_file, "karincore"));
+}
+
 pub fn append_log(path: &Path, text: &str) {
-    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).mode(0o644).open(path) {
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).mode(0o640).open(path) {
         let _ = f.write_all(text.as_bytes());
         if !text.ends_with('\n') {
             let _ = f.write_all(b"\n");
@@ -178,7 +211,7 @@ impl Runner for SysRunner {
         let out = fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .mode(0o644)
+            .mode(0o640)
             .open(log)
             .map_err(|e| format!("{}: {}", log.display(), e))?;
         let err = out.try_clone().map_err(|e| e.to_string())?;
@@ -267,8 +300,12 @@ pub mod testutil {
             run_dir: root.join("run"),
             resolv: root.join("resolv.conf"),
             proc_dir: root.join("proc"),
+            group_file: root.join("group"),
             owner_uid: uid,
         };
+        // Своя группа «karincore» с gid текущего пользователя: chown на неё разрешён без root.
+        let gid = fs::metadata(&root).unwrap().gid();
+        fs::write(&p.group_file, format!("root:x:0:\nkarincore:x:{}:tester\n", gid)).unwrap();
         fs::create_dir_all(&p.conf_dir).unwrap();
         fs::set_permissions(&p.conf_dir, fs::Permissions::from_mode(0o755)).unwrap();
         fs::create_dir_all(&p.proc_dir).unwrap();
@@ -329,6 +366,16 @@ mod tests {
         let d = p.log_dir.clone();
         ensure_dir(&d, 0o755, p.owner_uid).unwrap();
         assert_eq!(fs::metadata(&d).unwrap().mode() & 0o777, 0o755);
+    }
+
+    #[test]
+    fn lookup_gid_reads_the_group_file() {
+        let p = temp_paths("gid");
+        fs::write(&p.group_file, "root:x:0:\nkarincore:x:987:alice,bob\nkarincore2:x:5:\n").unwrap();
+        assert_eq!(lookup_gid(&p.group_file, "karincore"), Some(987));
+        assert_eq!(lookup_gid(&p.group_file, "karin"), None);
+        assert_eq!(lookup_gid(&p.group_file, "nobody"), None);
+        assert_eq!(lookup_gid(&p.conf_dir.join("missing"), "karincore"), None);
     }
 
     #[test]

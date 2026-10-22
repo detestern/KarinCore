@@ -620,8 +620,10 @@ fn parse_direction(direction: &str) -> Result<usize, String> {
 pub async fn finder_start(state: State<'_, FinderState>, direction: String) -> Result<(), String> {
     let direction = parse_direction(&direction)?;
     let (err_path, _) = crate::get_log_paths();
-    if !std::path::Path::new(&err_path).exists() {
-        return Err("log".into());
+    match std::fs::File::open(&err_path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => return Err("logperm".into()),
+        Err(_) => return Err("log".into()),
     }
     *state.slot() = Some(Session::new(direction, err_path));
     Ok(())
