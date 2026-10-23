@@ -1,11 +1,10 @@
 //! Платформенный слой GUI: то, что на Linux и Windows делается по-разному.
 //! Всё остальное в main.rs общее для обеих систем.
 //!
-//! Windows-версия сейчас на этапе 2: служба KarinCore запускает Xray от SYSTEM, но без TUN.
-//! Ядро работает как локальный прокси (пинг и «мой IP» идут через него), а весь остальной
-//! трафик системы через туннель пока не направляется — это следующий этап.
+//! Windows-версия сейчас на этапе 3: служба KarinCore запускает Xray от SYSTEM, и весь трафик
+//! системы идёт через TUN-адаптер Wintun. Kill Switch, OpenVPN и WireGuard — следующие этапы.
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 /// Проверять Xray и докачивать geo-базы при запуске приложения. На Windows Xray и geo-базы
 /// кладёт установщик рядом со службой, а наличие xray.exe проверяет сама служба.
@@ -33,13 +32,89 @@ pub fn check_connect_supported(_link: &str, _kill_switch: bool, _ks_prefix: &str
     Ok(())
 }
 
-/// Приводит конфиг Xray, собранный для Linux, к тому, что сейчас умеет Windows-версия:
-/// без TUN и без DNS-слушателя на 127.0.0.1:53 (их заменит TUN-адаптер на следующем этапе)
-/// и без `sockopt.mark` (меток пакетов в Windows нет).
+// **********************************
+// TUN НА WINDOWS
+// **********************************
+// На Linux маршруты и DNS настраивает route.sh, а петлю разрывает метка пакетов (mark 255).
+// На Windows всё это делает сам Xray (26.9.30+) по полям TUN-inbound:
+//   * gateway — адреса адаптера (IPv4 и IPv6, иначе IPv6 через туннель не пойдёт);
+//   * autoSystemRoutingTable — весь трафик в адаптер. Половинки (0/1 + 128/1) точнее любого
+//     маршрута по умолчанию, поэтому выигрывают у него независимо от метрик; локальная сеть
+//     остаётся напрямую, потому что её маршруты ещё точнее;
+//   * autoOutboundsInterface: "auto" — собственные соединения Xray привязаны к физическому
+//     адаптеру (замена mark 255), Xray сам следит за сменой сети;
+//   * dns — DNS-сервер адаптера: адрес внутри подсети туннеля, запросы к нему отвечает
+//     DNS-модуль Xray (как 127.0.0.1:53 на Linux);
+//   * autoSystemWfpBlockLeak — WFP-фильтры: DNS (порт 53) не уходит мимо туннеля, в том числе
+//     от службы DNS-клиента Windows, которая иначе спрашивает все адаптеры сразу.
+//     Если фильтры не встали, Xray не запускается: лучше без туннеля, чем с утечкой.
+// Всё это живёт, пока работает xray.exe: адаптер, маршруты, DNS и фильтры исчезают вместе с ним.
+
+/// Имя адаптера Wintun в «Сетевых подключениях».
+pub const WIN_TUN_NAME: &str = "karincore";
+/// DNS-сервер адаптера (внутри подсети 172.19.0.0/30, на адаптере 172.19.0.1).
+pub const WIN_TUN_DNS: &str = "172.19.0.2";
+
+/// `ipv6` — включён ли IPv6 в системе. Если его отключили (DisabledComponents), адрес и
+/// маршруты IPv6 на адаптер не ставятся: иначе Xray не запустится. IPv6 мимо туннеля при этом
+/// всё равно не уйдёт — его целиком блокирует `misconfigtun`.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn strip_for_windows(config: &mut Value) {
+fn windows_tun_settings(ipv6: bool) -> Value {
+    let (gateway, routes) = if ipv6 {
+        (json!(["172.19.0.1/30", "fd00:19::1/126"]), json!(["0.0.0.0/1", "128.0.0.0/1", "::/1", "8000::/1"]))
+    } else {
+        (json!(["172.19.0.1/30"]), json!(["0.0.0.0/1", "128.0.0.0/1"]))
+    };
+    json!({
+        "name": WIN_TUN_NAME,
+        "mtu": 1500,
+        "gateway": gateway,
+        "dns": [WIN_TUN_DNS],
+        "autoSystemRoutingTable": routes,
+        "autoOutboundsInterface": "auto",
+        "autoSystemWfpBlockLeak": ["dns", "misconfigtun"]
+    })
+}
+
+/// IPv6 отключён в реестре для обычных (не туннельных) адаптеров — к ним относится и Wintun.
+/// https://learn.microsoft.com/troubleshoot/windows-server/networking/configure-ipv6-in-windows
+#[cfg(windows)]
+fn ipv6_disabled() -> bool {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD};
+    let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let key = wide(r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters");
+    let name = wide("DisabledComponents");
+    let mut value = 0u32;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: строки с нулём на конце, буфер — u32 нужного размера.
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&mut value as *mut u32).cast(),
+            &mut size,
+        )
+    };
+    rc == 0 && value & 0x10 != 0
+}
+
+/// Приводит конфиг Xray, собранный для Linux, к Windows:
+/// TUN-inbound настраивает систему сам (см. выше), DNS-слушателя на 127.0.0.1:53 нет —
+/// его роль играет DNS-адрес адаптера; `sockopt.mark` убирается (меток в Windows нет).
+/// Если «проксировать IP сервера» выключено, трафик других программ к адресам сервера
+/// идёт напрямую, как исключение маршрута для сервера в route.sh.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn windows_config(config: &mut Value, server_ips: &[String], allow_server_proxy: bool, ipv6: bool) {
     if let Some(inbounds) = config.get_mut("inbounds").and_then(Value::as_array_mut) {
-        inbounds.retain(|ib| !matches!(ib.get("tag").and_then(Value::as_str), Some("tun-in") | Some("dns-in")));
+        inbounds.retain(|ib| ib.get("tag").and_then(Value::as_str) != Some("dns-in"));
+        for ib in inbounds.iter_mut() {
+            if ib.get("tag").and_then(Value::as_str) == Some("tun-in") {
+                ib["settings"] = windows_tun_settings(ipv6);
+            }
+        }
     }
     if let Some(outbounds) = config.get_mut("outbounds").and_then(Value::as_array_mut) {
         for ob in outbounds {
@@ -61,15 +136,25 @@ pub fn strip_for_windows(config: &mut Value) {
             }
         }
     }
+    if let Some(rules) = config.pointer_mut("/routing/rules").and_then(Value::as_array_mut) {
+        let mut first = vec![json!({
+            "type": "field", "inboundTag": ["tun-in"], "ip": [WIN_TUN_DNS], "port": "53", "outboundTag": "dns-out"
+        })];
+        let ips: Vec<&String> = server_ips.iter().filter(|s| s.parse::<std::net::IpAddr>().is_ok()).collect();
+        if !allow_server_proxy && !ips.is_empty() {
+            first.push(json!({ "type": "field", "inboundTag": ["tun-in"], "ip": ips, "outboundTag": "direct" }));
+        }
+        rules.splice(0..0, first);
+    }
 }
 
 #[cfg(windows)]
-pub fn adapt_core_config(config: &mut Value) {
-    strip_for_windows(config);
+pub fn adapt_core_config(config: &mut Value, server_ips: &[String], allow_server_proxy: bool) {
+    windows_config(config, server_ips, allow_server_proxy, !ipv6_disabled());
 }
 
 #[cfg(not(windows))]
-pub fn adapt_core_config(_config: &mut Value) {}
+pub fn adapt_core_config(_config: &mut Value, _server_ips: &[String], _allow_server_proxy: bool) {}
 
 // **********************************
 // ЖУРНАЛЫ
@@ -208,14 +293,16 @@ pub fn core_running() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
-    #[test]
-    fn windows_config_has_no_tun_dns_listener_or_marks() {
-        let mut c = json!({
+    fn linux_config() -> Value {
+        json!({
+            "routing": { "rules": [
+                { "type": "field", "inboundTag": ["dns-in"], "outboundTag": "dns-out" },
+                { "type": "field", "network": "tcp,udp", "outboundTag": "proxy" }
+            ] },
             "inbounds": [
                 { "tag": "mixed", "port": 2080 },
-                { "tag": "tun-in", "protocol": "tun" },
+                { "tag": "tun-in", "protocol": "tun", "settings": { "name": "tun0", "mtu": 1500, "gateway": ["172.19.0.1/30"] } },
                 { "tag": "dns-in", "port": 53 },
                 { "tag": "ping-in", "port": 2082 }
             ],
@@ -225,13 +312,50 @@ mod tests {
                 { "tag": "vpn", "streamSettings": { "sockopt": { "mark": 111, "interface": "wg0" } } },
                 { "tag": "block", "protocol": "blackhole" }
             ]
-        });
-        strip_for_windows(&mut c);
+        })
+    }
+
+    #[test]
+    fn windows_tun_replaces_route_sh_and_marks() {
+        let mut c = linux_config();
+        windows_config(&mut c, &["203.0.113.5".into(), "2001:db8::1".into(), "host.example".into()], false, true);
         let tags: Vec<&str> = c["inbounds"].as_array().unwrap().iter().map(|i| i["tag"].as_str().unwrap()).collect();
-        assert_eq!(tags, vec!["mixed", "ping-in"]);
+        assert_eq!(tags, vec!["mixed", "tun-in", "ping-in"]);
+        let tun = &c["inbounds"][1]["settings"];
+        assert_eq!(tun["name"], "karincore");
+        assert_eq!(tun["autoOutboundsInterface"], "auto");
+        assert_eq!(tun["dns"], json!(["172.19.0.2"]));
+        assert_eq!(tun["autoSystemWfpBlockLeak"], json!(["dns", "misconfigtun"]));
+        assert_eq!(tun["autoSystemRoutingTable"], json!(["0.0.0.0/1", "128.0.0.0/1", "::/1", "8000::/1"]));
+        assert_eq!(tun["gateway"], json!(["172.19.0.1/30", "fd00:19::1/126"]));
         assert_eq!(c["outbounds"][0]["streamSettings"], json!({ "network": "tcp" }));
         assert!(c["outbounds"][1].get("streamSettings").is_none());
         assert_eq!(c["outbounds"][2]["streamSettings"]["sockopt"], json!({ "interface": "wg0" }));
         assert!(!c.to_string().contains("mark"));
+        let rules = c["routing"]["rules"].as_array().unwrap();
+        assert_eq!(rules[0]["outboundTag"], "dns-out");
+        assert_eq!(rules[0]["ip"], json!(["172.19.0.2"]));
+        assert_eq!(rules[1]["ip"], json!(["203.0.113.5", "2001:db8::1"]));
+        assert_eq!(rules[1]["outboundTag"], "direct");
+        assert_eq!(rules.len(), 4);
+    }
+
+    #[test]
+    fn server_ip_goes_through_tunnel_when_allowed() {
+        let mut c = linux_config();
+        windows_config(&mut c, &["203.0.113.5".into()], true, true);
+        let rules = c["routing"]["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 3);
+        assert!(!c.to_string().contains("203.0.113.5"));
+    }
+
+    #[test]
+    fn without_ipv6_no_v6_address_or_routes_but_leak_block_stays() {
+        let mut c = linux_config();
+        windows_config(&mut c, &[], false, false);
+        let tun = &c["inbounds"][1]["settings"];
+        assert_eq!(tun["gateway"], json!(["172.19.0.1/30"]));
+        assert_eq!(tun["autoSystemRoutingTable"], json!(["0.0.0.0/1", "128.0.0.0/1"]));
+        assert_eq!(tun["autoSystemWfpBlockLeak"], json!(["dns", "misconfigtun"]));
     }
 }

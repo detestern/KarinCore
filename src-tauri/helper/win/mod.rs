@@ -1,7 +1,7 @@
 //! Служба KarinCore для Windows. Работает от SYSTEM и принимает запросы GUI через
 //! named pipe `\\.\pipe\karincore-helper`; что и как выполняется — в `winops.rs`.
 //!
-//! Запуск: `karincore-service.exe --service` (так служба зарегистрирована установщиком).
+//! Запуск: `karincore-helper.exe --service` (так служба зарегистрирована установщиком).
 //! Для отладки администратор может запустить `--console`: тот же цикл, но в окне консоли.
 
 mod cmd;
@@ -58,7 +58,8 @@ pub fn serve(stop: &AtomicBool) -> Result<(), String> {
     let os = os::WinOs::default();
     winops::Os::secure_dir(&os, &p.data, None)?;
     let server = pipe::Server::create()?;
-    let ctx = Ctx { paths: &p, os: &os, settle_ms: 1000 };
+    // Настройка TUN-адаптера занимает пару секунд: если она не удалась, Xray к этому времени уже завершится.
+    let ctx = Ctx { paths: &p, os: &os, settle_ms: 2500 };
     let mut state = State::default();
     log("служба запущена");
 
@@ -105,13 +106,13 @@ pub fn main() -> i32 {
             match serve(&CONSOLE_STOP) {
                 Ok(()) => 0,
                 Err(e) => {
-                    eprintln!("karincore-service: {}", e);
+                    eprintln!("karincore-helper: {}", e);
                     1
                 }
             }
         }
         _ => {
-            eprintln!("karincore-service: служба KarinCore. Её запускает Windows; для отладки: --console (от администратора).");
+            eprintln!("karincore-helper: служба KarinCore. Её запускает Windows; для отладки: --console (от администратора).");
             2
         }
     }

@@ -49,8 +49,11 @@ impl Os for WinOs {
 
     fn core_stop(&self) {
         if let Some(mut c) = self.child.borrow_mut().take() {
+            // Xray завершается принудительно. Адаптер Wintun со своими адресами, маршрутами и DNS
+            // исчезает вместе с процессом, WFP-фильтры динамической сессии Windows снимает сама.
             let _ = c.kill();
             let _ = c.wait();
+            flush_dns_cache();
         }
     }
 
@@ -71,4 +74,13 @@ impl Os for WinOs {
     fn sleep_ms(&self, ms: u64) {
         std::thread::sleep(std::time::Duration::from_millis(ms));
     }
+}
+
+/// Сбрасывает кэш DNS Windows: иначе после отключения могут остаться ответы, полученные через туннель.
+fn flush_dns_cache() {
+    let root = std::env::var_os("SystemRoot").map(std::path::PathBuf::from).unwrap_or_else(|| r"C:\Windows".into());
+    let mut cmd = Command::new(root.join("System32").join("ipconfig.exe"));
+    cmd.arg("/flushdns").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    super::cmd::no_window(&mut cmd);
+    let _ = cmd.status();
 }

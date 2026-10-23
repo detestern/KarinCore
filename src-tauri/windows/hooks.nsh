@@ -1,15 +1,16 @@
 ; Хуки установщика NSIS (Tauri): служба KarinCore.
 ;
-; Служба (karincore-service.exe, LocalSystem) запускается по требованию: её стартует само
-; приложение при подключении, в автозагрузке её нет. Вошедшим пользователям (IU) разрешено
+; Служба (karincore-helper.exe --service, LocalSystem) запускается по требованию: её стартует
+; само приложение при подключении, в автозагрузке её нет. Вошедшим пользователям (IU) разрешено
 ; только запускать службу и узнавать её состояние; остановить или настроить её может
 ; только администратор.
+;
+; karincore-helper.exe копировать не нужно: Tauri кладёт в установку все [[bin]] пакета
+; и сам удаляет их при деинсталляции.
 
 !define KARIN_SERVICE "KarinCore"
-; Бинарник службы не перечислен в ресурсах Tauri: при сборке самой службы build.rs Tauri
-; проверяет ресурсы, и служба требовала бы саму себя. Поэтому его кладёт этот хук.
-; Путь — от каталога хука (src-tauri/windows) к собранному helper'у.
-!define KARIN_SERVICE_SRC "${__FILEDIR__}\..\target\release\karincore-helper.exe"
+; Одинарные кавычки: внутри нужны \" — так sc.exe получает путь с пробелами в кавычках.
+!define KARIN_SERVICE_BIN '\"$INSTDIR\karincore-helper.exe\" --service'
 !define KARIN_SERVICE_SDDL "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
 
 !macro NSIS_HOOK_PREINSTALL
@@ -20,11 +21,12 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  File "/oname=$INSTDIR\karincore-service.exe" "${KARIN_SERVICE_SRC}"
+  ; Сборки до этапа 3 ставили вторую копию службы под этим именем.
+  Delete "$INSTDIR\karincore-service.exe"
   ; create не сработает, если служба уже есть (обновление) — тогда config обновит путь.
-  nsExec::ExecToLog '"$SYSDIR\sc.exe" create ${KARIN_SERVICE} binPath= "\"$INSTDIR\karincore-service.exe\" --service" start= demand DisplayName= "KarinCore"'
+  nsExec::ExecToLog '"$SYSDIR\sc.exe" create ${KARIN_SERVICE} binPath= "${KARIN_SERVICE_BIN}" start= demand DisplayName= "KarinCore"'
   Pop $0
-  nsExec::ExecToLog '"$SYSDIR\sc.exe" config ${KARIN_SERVICE} binPath= "\"$INSTDIR\karincore-service.exe\" --service" start= demand obj= LocalSystem DisplayName= "KarinCore"'
+  nsExec::ExecToLog '"$SYSDIR\sc.exe" config ${KARIN_SERVICE} binPath= "${KARIN_SERVICE_BIN}" start= demand obj= LocalSystem DisplayName= "KarinCore"'
   Pop $0
   nsExec::ExecToLog '"$SYSDIR\sc.exe" description ${KARIN_SERVICE} "KarinCore VPN: starts the Xray core and sets up the tunnel when you connect in the KarinCore app."'
   Pop $0

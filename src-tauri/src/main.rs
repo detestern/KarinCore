@@ -1273,7 +1273,7 @@ async fn start_proxy(
             { "tag": "dns-out", "protocol": "dns" }
         ]
     });
-    platform::adapt_core_config(&mut config);
+    platform::adapt_core_config(&mut config, &resolved_ips, allow_server_proxy);
 
     // helper проверяет конфигурацию (allowlist, фиксированные пути логов, listen только на loopback)
     // и сам записывает её в /etc/karin-proxy/config.json.
@@ -1291,8 +1291,8 @@ async fn start_proxy(
             return Err(e);
         }
     }
-    // На Windows Xray привяжет свои соединения к физическому адаптеру (этап TUN),
-    // исключения маршрутов для адреса сервера там не нужны.
+    // На Windows исключение для адреса сервера — правило в конфиге Xray (platform::windows_config),
+    // а собственные соединения Xray привязаны к физическому адаптеру.
     if allow_server_proxy && cfg!(not(windows)) {
         let ips = ip_list_param(&resolved_ips);
         tokio::spawn(async move {

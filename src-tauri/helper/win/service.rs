@@ -83,7 +83,7 @@ pub fn run() -> i32 {
     // SAFETY: таблица заканчивается нулевой записью и живёт до возврата из функции.
     if unsafe { StartServiceCtrlDispatcherW(table.as_ptr()) } == 0 {
         eprintln!(
-            "karincore-service: запускается службой Windows (KarinCore), а не вручную: {}",
+            "karincore-helper: запускается службой Windows (KarinCore), а не вручную: {}",
             last_error()
         );
         return 1;

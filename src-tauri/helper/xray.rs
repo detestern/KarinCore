@@ -91,7 +91,19 @@ const INBOUND_SETTINGS_KEYS: &[&str] = &[
     "followRedirect",
     "userLevel",
     "ip",
+    "autoSystemRoutingTable",
+    "autoOutboundsInterface",
+    "autoSystemWfpBlockLeak",
 ];
+
+/// Поля TUN-inbound, которыми Xray сам настраивает систему (маршруты, привязку исходящих
+/// соединений, блокировку утечек через WFP). Их принимает только Windows-служба: на Linux
+/// маршруты ставит route.sh, а Xray таких прав не получает.
+const TUN_SYSTEM_KEYS: &[&str] = &["autoSystemRoutingTable", "autoOutboundsInterface", "autoSystemWfpBlockLeak"];
+const TUN_SYSTEM_KEYS_ALLOWED: bool = cfg!(windows);
+const WFP_BLOCK_LEAK_VALUES: &[&str] = &["dns", "misconfigtun"];
+const MAX_TUN_ROUTES: usize = 8;
+const MAX_TUN_DNS: usize = 4;
 const SNIFFING_KEYS: &[&str] = &[
     "enabled",
     "destOverride",
@@ -368,6 +380,11 @@ fn check_inbounds(v: &Value) -> Result<(), String> {
                     return Err(format!("Недопустимое имя TUN-интерфейса: {}", n));
                 }
             }
+            if proto == "tun" {
+                check_tun_settings(settings, TUN_SYSTEM_KEYS_ALLOWED)?;
+            } else if TUN_SYSTEM_KEYS.iter().any(|k| settings.get(k).is_some()) {
+                return Err("Системные поля TUN допустимы только у TUN-inbound".into());
+            }
             if let Some(accounts) = settings.get("accounts") {
                 for a in arr_of(accounts, "settings.accounts")? {
                     let ao = obj_of(a, "settings.accounts[]")?;
@@ -377,6 +394,65 @@ fn check_inbounds(v: &Value) -> Result<(), String> {
         }
         if let Some(sn) = ib.get("sniffing") {
             check_keys(obj_of(sn, "sniffing")?, SNIFFING_KEYS, "sniffing")?;
+        }
+    }
+    Ok(())
+}
+
+/// Адрес с длиной префикса: `10.0.0.1/30`, `::/1`.
+fn is_cidr(s: &str) -> bool {
+    let Some((addr, len)) = s.split_once('/') else { return false };
+    let Ok(ip) = addr.parse::<IpAddr>() else { return false };
+    let max = if ip.is_ipv4() { 32 } else { 128 };
+    !len.is_empty() && len.len() <= 3 && len.bytes().all(|b| b.is_ascii_digit()) && len.parse::<u32>().map(|l| l <= max).unwrap_or(false)
+}
+
+fn str_list<'a>(v: &'a Value, ctx: &str, max: usize) -> Result<Vec<&'a str>, String> {
+    let arr = arr_of(v, ctx)?;
+    if arr.len() > max {
+        return Err(format!("{}: слишком много значений (максимум {})", ctx, max));
+    }
+    arr.iter().map(|x| x.as_str().ok_or_else(|| format!("{}: ожидались строки", ctx))).collect()
+}
+
+/// Поля TUN-inbound: адреса, DNS и (только на Windows) системная настройка самим Xray.
+fn check_tun_settings(settings: &Value, system_keys_allowed: bool) -> Result<(), String> {
+    if let Some(g) = settings.get("gateway") {
+        for c in str_list(g, "tun.gateway", 4)? {
+            if !is_cidr(c) {
+                return Err(format!("tun.gateway: некорректный адрес {}", c));
+            }
+        }
+    }
+    if let Some(d) = settings.get("dns") {
+        for a in str_list(d, "tun.dns", MAX_TUN_DNS)? {
+            if a.parse::<IpAddr>().is_err() {
+                return Err(format!("tun.dns: ожидался IP-адрес, получено {}", a));
+            }
+        }
+    }
+    let used: Vec<&str> = TUN_SYSTEM_KEYS.iter().copied().filter(|k| settings.get(k).is_some()).collect();
+    if !used.is_empty() && !system_keys_allowed {
+        return Err(format!("Поле tun.{} на этой платформе не поддерживается", used[0]));
+    }
+    if let Some(r) = settings.get("autoSystemRoutingTable") {
+        for c in str_list(r, "tun.autoSystemRoutingTable", MAX_TUN_ROUTES)? {
+            if !is_cidr(c) {
+                return Err(format!("tun.autoSystemRoutingTable: некорректный адрес {}", c));
+            }
+        }
+    }
+    if let Some(i) = settings.get("autoOutboundsInterface") {
+        // Только автоматический выбор: имя адаптера из GUI не принимаем.
+        if i.as_str() != Some("auto") {
+            return Err("tun.autoOutboundsInterface допускает только \"auto\"".into());
+        }
+    }
+    if let Some(w) = settings.get("autoSystemWfpBlockLeak") {
+        for x in str_list(w, "tun.autoSystemWfpBlockLeak", WFP_BLOCK_LEAK_VALUES.len())? {
+            if !WFP_BLOCK_LEAK_VALUES.contains(&x) {
+                return Err(format!("tun.autoSystemWfpBlockLeak: недопустимое значение {}", x));
+            }
         }
     }
     Ok(())
@@ -653,6 +729,41 @@ mod tests {
     fn control_chars_in_values_rejected() {
         let cfg = with("\"pass\":\"tok\"", "\"pass\":\"to\\u0000k\"");
         assert!(validate(&cfg, &LOGS).is_err());
+    }
+
+    fn windows_tun() -> &'static str {
+        r#"{"name":"karincore","mtu":1500,"gateway":["172.19.0.1/30","fd00:19::1/126"],"dns":["172.19.0.2"],
+            "autoSystemRoutingTable":["0.0.0.0/1","128.0.0.0/1","::/1","8000::/1"],"autoOutboundsInterface":"auto",
+            "autoSystemWfpBlockLeak":["dns","misconfigtun"]}"#
+    }
+
+    #[test]
+    fn windows_tun_settings_are_checked() {
+        let ok = json::parse(windows_tun()).unwrap();
+        assert!(check_tun_settings(&ok, true).is_ok());
+        // на Linux системные поля отклоняются
+        assert!(check_tun_settings(&ok, false).is_err());
+        for (from, to) in [
+            ("\"auto\"", "\"Ethernet\""),
+            ("\"misconfigtun\"", "\"all\""),
+            ("\"8000::/1\"", "\"8000::/129\""),
+            ("\"0.0.0.0/1\"", "\"0.0.0.0\""),
+            ("\"172.19.0.2\"", "\"dns.google\""),
+            ("\"172.19.0.1/30\"", "\"172.19.0.1/33\""),
+        ] {
+            let bad = json::parse(&windows_tun().replace(from, to)).unwrap();
+            assert!(check_tun_settings(&bad, true).is_err(), "{} -> {}", from, to);
+        }
+        let many = format!(r#"{{"autoSystemRoutingTable":[{}]}}"#, vec!["\"10.0.0.0/8\""; 9].join(","));
+        assert!(check_tun_settings(&json::parse(&many).unwrap(), true).is_err());
+    }
+
+    #[test]
+    fn system_tun_keys_only_on_tun_and_only_on_windows() {
+        let cfg = with(r#"{"name":"tun0","mtu":1500,"gateway":["172.19.0.1/30"]}"#, windows_tun());
+        assert_eq!(validate(&cfg, &LOGS).is_ok(), cfg!(windows));
+        let on_mixed = with(r#"{"accounts":[{"user":"karin","pass":"tok"}]}"#, r#"{"autoOutboundsInterface":"auto"}"#);
+        assert!(validate(&on_mixed, &LOGS).is_err());
     }
 
     #[test]
