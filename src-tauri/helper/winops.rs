@@ -70,6 +70,10 @@ pub trait Os {
     fn core_stop(&self);
     fn core_running(&self) -> bool;
     fn sleep_ms(&self, ms: u64);
+    /// Включает Kill Switch по плану [`kill_switch_plan`] одной транзакцией WFP (всё или ничего).
+    fn ks_on(&self, paths: &Paths) -> Result<(), String>;
+    /// Снимает фильтры Kill Switch; если их нет, это не ошибка.
+    fn ks_off(&self) -> Result<(), String>;
 }
 
 /// Состояние службы между запросами.
@@ -113,11 +117,18 @@ pub fn dacl_sddl(reader: Option<&str>, is_dir: bool) -> Result<String, String> {
     Ok(s)
 }
 
-/// Операции, которые на Windows пока означают «делать нечего»: GUI вызывает их при отключении.
-const NOOP_OPS: &[&str] = &["ks-off", "dns-restore", "route-cleanup", "ovpn-stop", "wg-down"];
+/// Операции, которые на Windows означают «делать нечего»: GUI вызывает их при отключении,
+/// а маршруты и DNS на Windows живут и умирают вместе с процессом Xray.
+const NOOP_OPS: &[&str] = &["dns-restore", "route-cleanup", "ovpn-stop", "wg-down"];
 
-/// Операции, которые изменяют состояние ядра: их выполняет только владелец работающего ядра.
-const OWNER_OPS: &[&str] = &["core-config", "core-restart", "core-stop", "logs-clear", "teardown", "stop-services"];
+/// Операции, которые изменяют состояние ядра или защиты: пока ядро работает,
+/// их выполняет только тот пользователь, который его настроил.
+const OWNER_OPS: &[&str] =
+    &["core-config", "core-restart", "core-stop", "logs-clear", "teardown", "stop-services", "ks-on", "ks-off"];
+
+/// Имя TUN-адаптера (как в GUI, platform::WIN_TUN_NAME): Kill Switch пропускает трафик через него.
+pub const TUN_IFACE: &str = "karincore";
+const KS_MAX_SERVERS: usize = 16;
 
 pub fn dispatch(ctx: &Ctx, state: &mut State, req: &Request, caller: &str) -> Res {
     if req.op == "version" {
@@ -142,9 +153,13 @@ pub fn dispatch(ctx: &Ctx, state: &mut State, req: &Request, caller: &str) -> Re
         }
         "logs-clear" => logs_clear(ctx, state),
         "teardown" => {
+            // Как на Linux: отключение снимает и Kill Switch. Ошибку не прячем.
+            let ks = ctx.os.ks_off();
             ctx.os.core_stop();
-            Ok(String::new())
+            ks.map(|_| String::new())
         }
+        "ks-on" => ks_on(ctx, req),
+        "ks-off" => ctx.os.ks_off().map(|_| String::new()),
         "stop-services" => {
             ctx.os.core_stop();
             state.stop_requested = true;
@@ -153,6 +168,91 @@ pub fn dispatch(ctx: &Ctx, state: &mut State, req: &Request, caller: &str) -> Re
         op if NOOP_OPS.contains(&op) => Ok(String::new()),
         op => Err(format!("Операция {} пока не поддерживается в Windows-версии KarinCore.", op)),
     }
+}
+
+/// Параметры ks-on те же, что у Linux-helper'а: адреса сервера (проверяются, но правил для них
+/// не нужно — соединения с сервером открывает xray.exe, а он разрешён целиком) и интерфейс.
+fn ks_on(ctx: &Ctx, req: &Request) -> Res {
+    let raw = req.param("server_ip").ok_or("не указан ни один адрес сервера")?;
+    let ips: Vec<&str> = raw.split(',').filter(|s| !s.is_empty()).collect();
+    if ips.is_empty() || ips.len() > KS_MAX_SERVERS {
+        return Err(format!("нужно от 1 до {} адресов сервера", KS_MAX_SERVERS));
+    }
+    for ip in &ips {
+        ip.parse::<std::net::IpAddr>().map_err(|_| format!("некорректный IP-адрес: {}", ip))?;
+    }
+    if req.param("iface") != Some(TUN_IFACE) {
+        return Err(format!("Kill Switch на Windows работает только с адаптером {}", TUN_IFACE));
+    }
+    if !ctx.os.core_running() {
+        return Err("ядро не запущено: Kill Switch не на что опирать".into());
+    }
+    ctx.os.ks_on(ctx.paths)?;
+    Ok(String::new())
+}
+
+// ---------------------------------------------------------------- Kill Switch: план фильтров
+
+/// Слой WFP, на котором стоит фильтр: исходящие соединения (CONNECT) и входящие (RECV_ACCEPT).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KsLayer {
+    ConnectV4,
+    ConnectV6,
+    AcceptV4,
+    AcceptV6,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KsCond {
+    /// Трафик внутри компьютера (127.0.0.1, ::1).
+    Loopback,
+    /// Любой трафик процесса xray.exe из каталога установки (аналог метки 0xff на Linux).
+    CoreApp,
+    /// Трафик через адаптер KarinCore.
+    TunInterface,
+    Protocol(u8),
+    /// Для ICMP это тип сообщения (так устроены поля WFP).
+    LocalPort(u16),
+    RemotePort(u16),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KsFilter {
+    pub layer: KsLayer,
+    pub permit: bool,
+    /// Вес внутри нашего подслоя: решает самый тяжёлый подходящий фильтр.
+    pub weight: u8,
+    pub conds: Vec<KsCond>,
+}
+
+pub const KS_LAYERS: [KsLayer; 4] = [KsLayer::ConnectV4, KsLayer::ConnectV6, KsLayer::AcceptV4, KsLayer::AcceptV6];
+/// Столько ключей фильтров зарезервировано (снимаются все, даже если план стал короче).
+pub const KS_MAX_FILTERS: usize = 64;
+
+/// Что пропускает Kill Switch. Как nftables-таблица на Linux: loopback, туннель и само ядро;
+/// всё остальное — блокировать. Плюс то, без чего Windows теряет сеть на физическом адаптере:
+/// DHCP (продление адреса) и обнаружение соседей IPv6. Локальная сеть блокируется, как на Linux.
+pub fn kill_switch_plan() -> Vec<KsFilter> {
+    use KsCond::*;
+    let mut v = Vec::new();
+    let permit = |layer, weight, conds: Vec<KsCond>| KsFilter { layer, permit: true, weight, conds };
+    for layer in KS_LAYERS {
+        v.push(permit(layer, 15, vec![Loopback]));
+        v.push(permit(layer, 15, vec![CoreApp]));
+        v.push(permit(layer, 14, vec![TunInterface]));
+        let v6 = matches!(layer, KsLayer::ConnectV6 | KsLayer::AcceptV6);
+        if v6 {
+            v.push(permit(layer, 12, vec![Protocol(17), LocalPort(546), RemotePort(547)]));
+            // Router/Neighbor Solicitation/Advertisement и Redirect
+            for icmp_type in 133..=137 {
+                v.push(permit(layer, 12, vec![Protocol(58), LocalPort(icmp_type)]));
+            }
+        } else {
+            v.push(permit(layer, 12, vec![Protocol(17), LocalPort(68), RemotePort(67)]));
+        }
+        v.push(KsFilter { layer, permit: false, weight: 0, conds: vec![] });
+    }
+    v
 }
 
 fn utf8_body(req: &Request) -> Result<String, String> {
@@ -289,6 +389,8 @@ mod tests {
         running: Cell<bool>,
         start_fails: Cell<bool>,
         dies_at_start: Cell<bool>,
+        ks: Cell<bool>,
+        ks_fails: Cell<bool>,
     }
 
     impl Os for Fake {
@@ -321,6 +423,19 @@ mod tests {
             self.running.get()
         }
         fn sleep_ms(&self, _ms: u64) {}
+        fn ks_on(&self, _paths: &Paths) -> Result<(), String> {
+            self.log.borrow_mut().push("ks-on".into());
+            if self.ks_fails.get() {
+                return Err("FwpmTransactionCommit0: 0x80320009".into());
+            }
+            self.ks.set(true);
+            Ok(())
+        }
+        fn ks_off(&self) -> Result<(), String> {
+            self.log.borrow_mut().push("ks-off".into());
+            self.ks.set(false);
+            Ok(())
+        }
     }
 
     fn paths(tag: &str) -> Paths {
@@ -334,6 +449,20 @@ mod tests {
 
     fn rq(op: &str, body: &[u8]) -> Request {
         Request { op: op.into(), params: vec![], body: body.to_vec() }
+    }
+
+    fn ks_rq(server: &str, iface: &str) -> Request {
+        Request {
+            op: "ks-on".into(),
+            params: vec![("server_ip".into(), server.into()), ("iface".into(), iface.into())],
+            body: vec![],
+        }
+    }
+
+    fn running(tag: &str) -> (Paths, Fake) {
+        let p = paths(tag);
+        let os = Fake::default();
+        (p, os)
     }
 
     const CONFIG: &str = r#"{"log":{"loglevel":"debug","access":"C:\\evil.log","error":"C:\\evil.log"},
@@ -491,7 +620,7 @@ mod tests {
         for op in NOOP_OPS {
             assert_eq!(dispatch(&ctx, &mut st, &rq(op, b""), ME), Ok(String::new()));
         }
-        for op in ["ks-on", "bypass", "dns-vpn", "geo-install", "wg-up", "ovpn-start", "route-fwmark"] {
+        for op in ["bypass", "dns-vpn", "geo-install", "wg-up", "ovpn-start", "route-fwmark"] {
             let e = dispatch(&ctx, &mut st, &rq(op, b""), ME).unwrap_err();
             assert!(e.contains("Windows"), "{}", op);
         }
@@ -532,5 +661,97 @@ mod tests {
         let trailing = handle_message(&ctx, &mut st, b"KARIN-HELPER/1 version\nextra", ME);
         assert!(trailing.starts_with(b"ERR\n"));
         assert_eq!(reply(&Ok(String::new())), b"OK\n");
+    }
+
+    #[test]
+    fn kill_switch_needs_running_core_and_valid_params() {
+        let (p, os) = running("ks");
+        let ctx = Ctx { paths: &p, os: &os, settle_ms: 0 };
+        let mut st = State::default();
+        // ядро ещё не запущено
+        assert!(dispatch(&ctx, &mut st, &ks_rq("203.0.113.5", TUN_IFACE), ME).is_err());
+        dispatch(&ctx, &mut st, &rq("core-config", CONFIG.as_bytes()), ME).unwrap();
+        dispatch(&ctx, &mut st, &rq("core-restart", b""), ME).unwrap();
+        for (server, iface) in [("", TUN_IFACE), ("example.com", TUN_IFACE), ("203.0.113.5", "tun0"), ("1.2.3.4,evil", TUN_IFACE)] {
+            assert!(dispatch(&ctx, &mut st, &ks_rq(server, iface), ME).is_err(), "{} {}", server, iface);
+        }
+        let many = vec!["203.0.113.5"; 17].join(",");
+        assert!(dispatch(&ctx, &mut st, &ks_rq(&many, TUN_IFACE), ME).is_err());
+        assert!(!os.ks.get());
+        dispatch(&ctx, &mut st, &ks_rq("203.0.113.5,2001:db8::1", TUN_IFACE), ME).unwrap();
+        assert!(os.ks.get());
+    }
+
+    #[test]
+    fn kill_switch_failure_is_reported_not_hidden() {
+        let (p, os) = running("ksfail");
+        os.ks_fails.set(true);
+        let ctx = Ctx { paths: &p, os: &os, settle_ms: 0 };
+        let mut st = State::default();
+        dispatch(&ctx, &mut st, &rq("core-config", CONFIG.as_bytes()), ME).unwrap();
+        dispatch(&ctx, &mut st, &rq("core-restart", b""), ME).unwrap();
+        let e = dispatch(&ctx, &mut st, &ks_rq("203.0.113.5", TUN_IFACE), ME).unwrap_err();
+        assert!(e.contains("0x80320009"));
+        assert!(!os.ks.get());
+    }
+
+    #[test]
+    fn teardown_lifts_kill_switch_and_other_user_cannot() {
+        let (p, os) = running("ksoff");
+        let ctx = Ctx { paths: &p, os: &os, settle_ms: 0 };
+        let mut st = State::default();
+        dispatch(&ctx, &mut st, &rq("core-config", CONFIG.as_bytes()), ME).unwrap();
+        dispatch(&ctx, &mut st, &rq("core-restart", b""), ME).unwrap();
+        dispatch(&ctx, &mut st, &ks_rq("203.0.113.5", TUN_IFACE), ME).unwrap();
+        assert!(dispatch(&ctx, &mut st, &rq("ks-off", b""), OTHER).is_err());
+        assert!(os.ks.get());
+        dispatch(&ctx, &mut st, &rq("teardown", b""), ME).unwrap();
+        assert!(!os.ks.get());
+        assert!(!os.running.get());
+        // после падения ядра (оно не работает) снять защиту может кто угодно из вошедших
+        os.ks.set(true);
+        dispatch(&ctx, &mut st, &rq("ks-off", b""), OTHER).unwrap();
+        assert!(!os.ks.get());
+    }
+
+    #[test]
+    fn stop_services_keeps_kill_switch_like_linux() {
+        let (p, os) = running("ksstop");
+        let ctx = Ctx { paths: &p, os: &os, settle_ms: 0 };
+        let mut st = State::default();
+        dispatch(&ctx, &mut st, &rq("core-config", CONFIG.as_bytes()), ME).unwrap();
+        dispatch(&ctx, &mut st, &rq("core-restart", b""), ME).unwrap();
+        dispatch(&ctx, &mut st, &ks_rq("203.0.113.5", TUN_IFACE), ME).unwrap();
+        dispatch(&ctx, &mut st, &rq("stop-services", b""), ME).unwrap();
+        assert!(os.ks.get());
+    }
+
+    #[test]
+    fn kill_switch_plan_blocks_everything_else_on_every_layer() {
+        let plan = kill_switch_plan();
+        assert!(plan.len() <= KS_MAX_FILTERS);
+        for layer in KS_LAYERS {
+            let on: Vec<&KsFilter> = plan.iter().filter(|f| f.layer == layer).collect();
+            let blocks: Vec<&&KsFilter> = on.iter().filter(|f| !f.permit).collect();
+            assert_eq!(blocks.len(), 1, "{:?}", layer);
+            assert!(blocks[0].conds.is_empty(), "блок должен ловить всё");
+            for f in on.iter().filter(|f| f.permit) {
+                assert!(!f.conds.is_empty(), "разрешение без условий открыло бы всё");
+                assert!(f.weight > blocks[0].weight);
+            }
+            for need in [KsCond::Loopback, KsCond::CoreApp, KsCond::TunInterface] {
+                assert!(on.iter().any(|f| f.permit && f.conds == vec![need]), "{:?} {:?}", layer, need);
+            }
+        }
+        // кроме ядра, туннеля и loopback пропускаются только DHCP и ICMPv6-служебные сообщения
+        for f in plan.iter().filter(|f| f.permit) {
+            match f.conds.as_slice() {
+                [KsCond::Loopback] | [KsCond::CoreApp] | [KsCond::TunInterface] => {}
+                [KsCond::Protocol(17), KsCond::LocalPort(68), KsCond::RemotePort(67)]
+                | [KsCond::Protocol(17), KsCond::LocalPort(546), KsCond::RemotePort(547)] => {}
+                [KsCond::Protocol(58), KsCond::LocalPort(t)] => assert!((133..=137).contains(t)),
+                other => panic!("лишнее разрешение: {:?}", other),
+            }
+        }
     }
 }

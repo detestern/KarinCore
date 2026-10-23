@@ -11,7 +11,7 @@ name = "karin-proxy"
 path = "src/main.rs"
 
 # Привилегированный helper (запускается через sudo от root, std-only, без зависимостей).
-# На Windows это служба KarinCore (karincore-service.exe); там она использует windows-sys —
+# На Windows это служба KarinCore (karincore-helper.exe --service); там она использует windows-sys —
 # только объявления функций Win32 от Microsoft, без собственного кода.
 [[bin]]
 name = "karincore-helper"
@@ -45,12 +45,16 @@ tauri-plugin-clipboard-manager = "~2.3"
 # Win32 API для службы (канал, права, SCM) и для клиента службы в GUI. 0.61 уже есть в дереве зависимостей Tauri.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_WindowsFilteringPlatform",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_Pipes",
     "Win32_System_Registry",
+    "Win32_System_Rpc",
     "Win32_System_Services",
     "Win32_System_Threading",
 ] }

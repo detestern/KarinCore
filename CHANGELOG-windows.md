@@ -6,6 +6,11 @@ pre-releases under `windows-v<version>` tags; the Linux desktop history is in
 
 ## Unreleased
 
+### Added
+- Kill Switch. If the tunnel drops unexpectedly, all traffic outside the tunnel is blocked, except the KarinCore core itself, the local loopback and what Windows needs to keep its network address (DHCP, IPv6 neighbor discovery). The local network is blocked too, as on Linux. The rules are applied all at once: if any of them cannot be set, the connection does not start and a dialog explains why.
+- The block survives a crash of the app, the service or the core, and is lifted when you disconnect or connect again. A restart of the computer always lifts it, so a failure can never leave you without a network for good. Installing or removing KarinCore lifts it too.
+- Settings and the Routing Manager show Windows-specific hints instead of Linux commands.
+
 ## [0.1.0-alpha.2] - 2026-10-23
 
 First Windows build that connects: all of the computer's traffic goes through

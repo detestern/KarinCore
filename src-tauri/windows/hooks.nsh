@@ -18,6 +18,10 @@
   nsExec::ExecToLog '"$SYSDIR\sc.exe" stop ${KARIN_SERVICE}'
   Pop $0
   Sleep 2000
+  ; Kill Switch мог остаться после аварийного завершения: снимаем, иначе сеть пропадёт до перезагрузки.
+  ; При первой установке файла ещё нет — команда просто не выполнится.
+  nsExec::ExecToLog '"$INSTDIR\karincore-helper.exe" --ks-off'
+  Pop $0
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -38,6 +42,9 @@
   nsExec::ExecToLog '"$SYSDIR\sc.exe" stop ${KARIN_SERVICE}'
   Pop $0
   Sleep 2000
+  ; Снимаем Kill Switch: после удаления программы снять его было бы нечем (кроме перезагрузки).
+  nsExec::ExecToLog '"$INSTDIR\karincore-helper.exe" --ks-off'
+  Pop $0
   nsExec::ExecToLog '"$SYSDIR\sc.exe" delete ${KARIN_SERVICE}'
   Pop $0
   Delete "$INSTDIR\karincore-service.exe"

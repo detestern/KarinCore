@@ -74,6 +74,14 @@ impl Os for WinOs {
     fn sleep_ms(&self, ms: u64) {
         std::thread::sleep(std::time::Duration::from_millis(ms));
     }
+
+    fn ks_on(&self, paths: &Paths) -> Result<(), String> {
+        super::wfp::ks_on(&paths.xray_exe())
+    }
+
+    fn ks_off(&self) -> Result<(), String> {
+        super::wfp::ks_off()
+    }
 }
 
 /// Сбрасывает кэш DNS Windows: иначе после отключения могут остаться ответы, полученные через туннель.

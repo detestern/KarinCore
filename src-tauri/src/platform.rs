@@ -2,7 +2,8 @@
 //! Всё остальное в main.rs общее для обеих систем.
 //!
 //! Windows-версия сейчас на этапе 3: служба KarinCore запускает Xray от SYSTEM, и весь трафик
-//! системы идёт через TUN-адаптер Wintun. Kill Switch, OpenVPN и WireGuard — следующие этапы.
+//! системы идёт через TUN-адаптер Wintun, Kill Switch — фильтры WFP в службе.
+//! OpenVPN и WireGuard — следующие этапы.
 
 use serde_json::{json, Value};
 
@@ -10,19 +11,11 @@ use serde_json::{json, Value};
 /// кладёт установщик рядом со службой, а наличие xray.exe проверяет сама служба.
 pub const PREPARE_CORE_AT_START: bool = cfg!(not(windows));
 
-/// Отказ в том, что эта платформа пока не умеет. Отказ Kill Switch идёт с префиксом
-/// `ks_prefix` (KS_FAILED:), чтобы интерфейс показал его в окне Kill Switch.
+/// Отказ в том, что эта платформа пока не умеет.
 #[cfg(windows)]
-pub fn check_connect_supported(link: &str, kill_switch: bool, ks_prefix: &str) -> Result<(), String> {
+pub fn check_connect_supported(link: &str, _kill_switch: bool, _ks_prefix: &str) -> Result<(), String> {
     if link.starts_with("ovpn://") || link.starts_with("wg://") {
         return Err("OpenVPN и WireGuard появятся в Windows-версии позже. Сейчас подключаются VLESS, VMess, Trojan и Shadowsocks.".into());
-    }
-    if kill_switch {
-        // Защита либо включена полностью, либо подключение не стартует.
-        return Err(format!(
-            "{}Kill Switch в Windows-версии ещё не готов. Выключите его в настройках, чтобы подключиться.",
-            ks_prefix
-        ));
     }
     Ok(())
 }
@@ -50,8 +43,11 @@ pub fn check_connect_supported(_link: &str, _kill_switch: bool, _ks_prefix: &str
 //     Если фильтры не встали, Xray не запускается: лучше без туннеля, чем с утечкой.
 // Всё это живёт, пока работает xray.exe: адаптер, маршруты, DNS и фильтры исчезают вместе с ним.
 
-/// Имя адаптера Wintun в «Сетевых подключениях».
+/// Имя адаптера Wintun в «Сетевых подключениях». Служба знает его же (winops::TUN_IFACE).
 pub const WIN_TUN_NAME: &str = "karincore";
+
+/// Интерфейс туннеля для Kill Switch: на Linux его поднимает route.sh, на Windows — Xray.
+pub const KS_TUN_IFACE: &str = if cfg!(windows) { WIN_TUN_NAME } else { "tun0" };
 /// DNS-сервер адаптера (внутри подсети 172.19.0.0/30, на адаптере 172.19.0.1).
 pub const WIN_TUN_DNS: &str = "172.19.0.2";
 

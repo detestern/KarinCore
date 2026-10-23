@@ -349,7 +349,15 @@ window.addEventListener('beforeunload', () => { invoke('stop_proxy').catch(conso
 // **********************************
 // INTERNATIONALIZATION (i18n)
 // **********************************
+// Строки, которые на Windows звучат иначе (другие команды и механизмы), лежат под ключом
+// `<ключ>__win`; если перевода нет, берётся английский вариант для Windows.
+const IS_WINDOWS = navigator.userAgent.includes('Windows');
+
 function t(key: string): string { 
+    if (IS_WINDOWS) {
+        const win = translations[currentLang]?.[key + '__win'] || translations.en?.[key + '__win'];
+        if (win) return win;
+    }
     return translations[currentLang]?.[key] || key; 
 }
 

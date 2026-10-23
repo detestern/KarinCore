@@ -9,6 +9,7 @@ mod os;
 mod pipe;
 mod sec;
 mod service;
+mod wfp;
 
 use std::fs;
 use std::io::Write;
@@ -101,6 +102,14 @@ pub fn serve(stop: &AtomicBool) -> Result<(), String> {
 pub fn main() -> i32 {
     match std::env::args().nth(1).as_deref() {
         Some("--service") => service::run(),
+        // Для деинсталлятора (он работает от администратора): снять Kill Switch, если он остался.
+        Some("--ks-off") => match wfp::ks_off() {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("karincore-helper: {}", e);
+                1
+            }
+        },
         Some("--console") => {
             static CONSOLE_STOP: AtomicBool = AtomicBool::new(false);
             match serve(&CONSOLE_STOP) {

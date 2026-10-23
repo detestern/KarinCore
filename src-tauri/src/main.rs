@@ -1286,7 +1286,7 @@ async fn start_proxy(
         return Err("Ядро не успело подняться (порт 2080 не отвечает). Попробуйте подключиться ещё раз.".into());
     }
     if kill_switch {
-        if let Err(e) = enable_kill_switch(std::slice::from_ref(&out_addr), "tun0") {
+        if let Err(e) = enable_kill_switch(std::slice::from_ref(&out_addr), platform::KS_TUN_IFACE) {
             teardown_connections();
             return Err(e);
         }
