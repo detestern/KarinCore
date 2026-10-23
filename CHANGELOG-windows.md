@@ -6,6 +6,13 @@ pre-releases under `windows-v<version>` tags; the Linux desktop history is in
 
 ## Unreleased
 
+## [0.1.0-alpha.2] - 2026-10-23
+
+First Windows build that connects: all of the computer's traffic goes through
+the tunnel. Kill Switch, OpenVPN and WireGuard come in the next builds.
+
+Upgrading: install over the previous build; your servers and settings are kept.
+
 ### Added
 - KarinCore service for Windows. The installer registers it; it runs as SYSTEM only while you are connected and is started by the app itself, not at boot. The app talks to it through a local channel that other computers cannot reach, and checks that the other end really is the KarinCore service before it sends anything.
 - Xray 26.10.21, Wintun and the geo databases ship with the installer, with pinned checksums.

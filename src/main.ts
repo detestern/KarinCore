@@ -2337,7 +2337,7 @@ function addRule(value: string, type: string) {
 // **********************************
 // Windows-сборки выходят пре-релизами с тегами windows-v<версия>, а «Latest» на GitHub остаётся
 // за Linux-версией. Поэтому смотрим список релизов и берём самый свежий с нашим префиксом.
-const CURRENT_VERSION = "0.1.0-alpha.1";
+const CURRENT_VERSION = "0.1.0-alpha.2";
 const RELEASE_TAG_PREFIX = "windows-v";
 const RELEASES_PAGE = "https://github.com/detestern/KarinCore/releases";
 
